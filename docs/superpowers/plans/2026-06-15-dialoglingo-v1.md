@@ -89,6 +89,7 @@
 ### Renderer: Shared State and Client
 
 - Create: `src/renderer/src/lib/trpc.ts`
+- Create: `src/renderer/src/lib/useJobSubscription.ts`
 - Create: `src/renderer/src/app/store/uiState.ts`
 - Create: `src/renderer/src/app/store/sourcePanel.ts`
 
@@ -201,7 +202,7 @@ Expected: FAIL with `Cannot find module '../../src/shared/navigation'` or missin
     "@tanstack/react-virtual": "^3.0.0",
     "@trpc/client": "^10.0.0",
     "@trpc/server": "^10.0.0",
-    "anki-apkg-export": "^4.0.3",
+    "@paperclipsapp/anki-apkg-export": "^5.0.0",
     "better-sqlite3": "^11.0.0",
     "drizzle-orm": "^0.33.0",
     "electron": "^34.0.0",
@@ -382,7 +383,7 @@ import { createSettingsService } from '../../src/main/settings/service'
 
 describe('createSettingsService', () => {
   it('returns defaults when the database is empty', () => {
-    const service = createSettingsService(':memory:')
+    const service = createSettingsService(':memory:', { runMigrations: true })
     expect(service.get()).toMatchObject({
       provider: { baseUrl: '', apiKey: '', defaultModel: '' },
       generation: { batchSize: 8, boundedConcurrency: 2, maxItemsPerSession: 50 },
@@ -452,6 +453,22 @@ export const settingsSchema = z.object({
 })
 
 export type Settings = z.infer<typeof settingsSchema>
+```
+
+```ts
+// src/shared/schemas/export.ts
+import { z } from 'zod'
+
+export const exportFormatSchema = z.enum(['anki-package', 'anki-text-bundle', 'generic-text-bundle'])
+export const exportRequestSchema = z.object({
+  format: exportFormatSchema,
+  deckName: z.string(),
+  direction: z.enum(['en-zh', 'zh-en', 'bilingual']),
+  includeExpressions: z.boolean(),
+  includeSentences: z.boolean(),
+  tagPrefix: z.string(),
+  outputLocation: z.string()
+})
 ```
 
 ```ts
@@ -637,6 +654,31 @@ create table if not exists generation_job_sessions (
   primary key (job_id, session_id)
 );
 
+create table if not exists candidate_groups (
+  id text primary key,
+  job_id text not null references generation_jobs(id) on delete cascade,
+  session_id text not null references sessions(id) on delete cascade,
+  source_span_ref text not null,
+  prompt_text text not null,
+  status text not null
+);
+
+create table if not exists enrichment_batches (
+  id text primary key,
+  job_id text not null references generation_jobs(id) on delete cascade,
+  batch_index integer not null,
+  status text not null,
+  request_json text not null,
+  response_json text not null
+);
+
+create table if not exists ranked_orders (
+  id text primary key,
+  job_id text not null references generation_jobs(id) on delete cascade,
+  rank_profile_json text not null,
+  ordered_ids_json text not null
+);
+
 create table if not exists workbooks (
   id text primary key,
   job_id text not null references generation_jobs(id) on delete cascade,
@@ -697,8 +739,11 @@ import { createDb } from '../db/client'
 import { DEFAULT_SETTINGS } from './defaults'
 import { settingsSchema } from '../../shared/schemas/settings'
 
-export function createSettingsService(filename: string) {
+export function createSettingsService(filename: string, options?: { runMigrations?: boolean }) {
   const { sqlite } = createDb(filename)
+  if (options?.runMigrations) {
+    sqlite.exec('create table if not exists settings (id integer primary key check (id = 1), json text not null);')
+  }
 
   return {
     get() {
@@ -758,12 +803,16 @@ import { z } from 'zod'
 import { generationJobStatusSchema } from '../schemas/jobs'
 
 export const jobEventSchema = z.object({
+  kind: z.enum(['snapshot', 'phase', 'warning', 'failure', 'completed']),
   jobId: z.string(),
   status: generationJobStatusSchema,
+  totalSelectedSessionCount: z.number().int().nonnegative(),
   processedSessionCount: z.number().int().nonnegative(),
   createdItemCount: z.number().int().nonnegative(),
   warningCount: z.number().int().nonnegative(),
-  failureCount: z.number().int().nonnegative()
+  failureCount: z.number().int().nonnegative(),
+  currentSessionTitle: z.string().nullable(),
+  currentBatchLabel: z.string().nullable()
 })
 ```
 
@@ -1046,6 +1095,90 @@ export function createCodexAdapter(root: string) {
 }
 ```
 
+```ts
+// src/main/sources/claude/adapter.ts
+import fs from 'node:fs'
+import path from 'node:path'
+import type { ConversationTurn, SessionFilterInput, SessionSummary } from '../types'
+
+export function createClaudeAdapter(root: string) {
+  return {
+    async listSessions(filters: SessionFilterInput): Promise<SessionSummary[]> {
+      const file = path.join(root, 'transcripts', 'fixture-session.jsonl')
+      const title = 'Claude fixture session'
+      return title.includes(filters.query) || !filters.query
+        ? [{
+            id: 'claude-fixture',
+            sourceType: 'claude',
+            title,
+            projectPath: '/tmp/dialoglingo',
+            startedAt: '2026-06-15T01:00:00Z',
+            updatedAt: '2026-06-15T01:05:00Z',
+            preview: 'How should we structure state?',
+            locator: file
+          }]
+        : []
+    },
+    async readSession(_id: string): Promise<ConversationTurn[]> {
+      return fs.readFileSync(path.join(root, 'transcripts', 'fixture-session.jsonl'), 'utf-8')
+        .trim()
+        .split('\n')
+        .map((line, index) => {
+          const json = JSON.parse(line)
+          return {
+            id: `claude-turn-${index}`,
+            role: json.type,
+            text: json.content,
+            languageHint: 'mixed',
+            sourceSpanRef: `claude-span-${index}`
+          } as ConversationTurn
+        })
+    }
+  }
+}
+```
+
+```ts
+// src/main/sources/opencode/adapter.ts
+import fs from 'node:fs'
+import path from 'node:path'
+import type { ConversationTurn, SessionFilterInput, SessionSummary } from '../types'
+
+export function createOpenCodeAdapter(root: string) {
+  return {
+    async listSessions(filters: SessionFilterInput): Promise<SessionSummary[]> {
+      const file = path.join(root, 'storage', 'session', 'fixture.json')
+      const summary = JSON.parse(fs.readFileSync(file, 'utf-8'))
+      return summary.title.includes(filters.query) || !filters.query
+        ? [{
+            id: summary.id,
+            sourceType: 'opencode',
+            title: summary.title,
+            projectPath: summary.projectPath,
+            startedAt: summary.startedAt,
+            updatedAt: summary.updatedAt,
+            preview: summary.preview,
+            locator: file
+          }]
+        : []
+    },
+    async readSession(id: string): Promise<ConversationTurn[]> {
+      const messageDir = path.join(root, 'storage', 'message', id)
+      return fs.readdirSync(messageDir).sort().map((file, index) => {
+        const json = JSON.parse(fs.readFileSync(path.join(messageDir, file), 'utf-8'))
+        return {
+          id: json.id ?? `opencode-turn-${index}`,
+          role: json.role,
+          text: json.text,
+          languageHint: 'mixed',
+          sourceSpanRef: json.sourceSpanRef ?? `opencode-span-${index}`
+        } as ConversationTurn
+      })
+    }
+  }
+}
+```
+
 - [ ] **Step 4: Run adapter tests and verify they pass**
 
 Run:
@@ -1222,13 +1355,20 @@ export function createSessionSearch(db: Database.Database) {
 import Database from 'better-sqlite3'
 
 export function createPreviewQuery(db: Database.Database) {
-  return (sessionId: string) =>
-    db.prepare(`
+  return (sessionId: string, query: string) => ({
+    turns: db.prepare(`
       select seq, role, text, source_span_ref as sourceSpanRef
       from session_turns
       where session_id = ?
       order by seq asc
-    `).all(sessionId)
+    `).all(sessionId),
+    snippet: db.prepare(`
+      select snippet(session_search, 3, '<mark>', '</mark>', ' … ', 20) as snippet
+      from session_search
+      where session_id = ? and session_search match ?
+      limit 1
+    `).get(sessionId, query)
+  })
 }
 ```
 
@@ -1250,6 +1390,57 @@ export function discoverProjects(summaries: SessionSummary[]) {
     }
   }
   return [...seen.values()]
+}
+```
+
+```ts
+// src/main/scan/scanSessions.ts
+import crypto from 'node:crypto'
+import type Database from 'better-sqlite3'
+import { createSourceRegistry } from '../sources'
+
+export async function scanSessions(db: Database.Database, registry = createSourceRegistry({
+  codex: process.env.CODEX_HOME ?? `${process.env.HOME}/.codex`,
+  claude: `${process.env.HOME}/.claude`,
+  opencode: `${process.env.HOME}/.local/share/opencode`
+})) {
+  const allSummaries = [
+    ...(await registry.codex.listSessions({ query: '', timeRange: null, projects: [], includeArchived: false })),
+    ...(await registry.claude.listSessions({ query: '', timeRange: null, projects: [], includeArchived: false })),
+    ...(await registry.opencode.listSessions({ query: '', timeRange: null, projects: [], includeArchived: false }))
+  ]
+
+  for (const summary of allSummaries) {
+    const turns =
+      summary.sourceType === 'codex'
+        ? await registry.codex.readSession(summary.id)
+        : summary.sourceType === 'claude'
+          ? await registry.claude.readSession(summary.id)
+          : await registry.opencode.readSession(summary.id)
+
+    const searchText = turns.map((turn) => turn.text).join('\n')
+    db.prepare(`
+      insert into sessions (id, source_type, source_session_id, title, started_at, updated_at, preview, search_text, raw_locator, hash)
+      values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      on conflict(id) do update set
+        title = excluded.title,
+        updated_at = excluded.updated_at,
+        preview = excluded.preview,
+        search_text = excluded.search_text,
+        hash = excluded.hash
+    `).run(
+      summary.id,
+      summary.sourceType,
+      summary.id,
+      summary.title,
+      summary.startedAt,
+      summary.updatedAt,
+      summary.preview,
+      searchText,
+      summary.locator,
+      crypto.createHash('sha1').update(searchText).digest('hex')
+    )
+  }
 }
 ```
 
@@ -1289,6 +1480,7 @@ git commit -m "feat: add session scan and search index"
 
 **Files:**
 - Create: `src/renderer/src/app/store/uiState.ts`
+- Create: `src/renderer/src/lib/useJobSubscription.ts`
 - Create: `src/renderer/src/features/search/SearchPage.tsx`
 - Create: `src/renderer/src/features/search/SearchRail.tsx`
 - Create: `src/renderer/src/features/search/SessionTree.tsx`
@@ -1355,11 +1547,20 @@ export function createUIStateStore() {
 
 ```tsx
 // src/renderer/src/features/search/SearchPage.tsx
+import { SearchRail } from './SearchRail'
+import { SessionPreviewPane } from './SessionPreviewPane'
+
 export function SearchPage() {
   return (
     <div className="search-layout">
-      <aside className="search-rail">{/* search box, scope selector, collapsible filters, list toolbar, session tree, footer */}</aside>
-      <section className="search-preview">{/* normalized preview + prev/next match nav */}</section>
+      <SearchRail />
+      <SessionPreviewPane
+        sessionTitle="No session selected"
+        preview="Select a session from the left to inspect normalized preview text."
+        matchCount={0}
+        onPrevMatch={() => undefined}
+        onNextMatch={() => undefined}
+      />
     </div>
   )
 }
@@ -1398,7 +1599,11 @@ export function SessionTree({ groups }: { groups: SessionGroup[] }) {
       {groups.map((group) => (
         <section key={group.label}>
           <header>{group.label} ({group.selectedCount}/{group.totalCount} selected)</header>
-          {group.expanded ? <div>Rows render here</div> : null}
+          {group.expanded ? (
+            <ul>
+              <li>No session rows loaded yet</li>
+            </ul>
+          ) : null}
         </section>
       ))}
     </div>
@@ -1432,6 +1637,34 @@ export function GenerateWorkbookSheet(props: Props) {
       <button type="button" onClick={props.onConfirm}>Generate</button>
     </div>
   )
+}
+```
+
+```ts
+// src/renderer/src/lib/useJobSubscription.ts
+import { useEffect } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
+
+export function useJobSubscription() {
+  const queryClient = useQueryClient()
+
+  useEffect(() => {
+    // @ts-expect-error preload surface provided by Electron
+    const unsubscribe = window.dialoglingoJobs.subscribe((event) => {
+      queryClient.setQueryData(['job', event.jobId], event)
+      queryClient.setQueryData(['job-snapshot', event.jobId], {
+        status: event.status,
+        totalSelectedSessionCount: event.totalSelectedSessionCount,
+        processedSessionCount: event.processedSessionCount,
+        createdItemCount: event.createdItemCount,
+        warningCount: event.warningCount,
+        failureCount: event.failureCount,
+        currentSessionTitle: event.currentSessionTitle,
+        currentBatchLabel: event.currentBatchLabel
+      })
+    })
+    return unsubscribe
+  }, [queryClient])
 }
 ```
 
@@ -1655,7 +1888,8 @@ export function mineCandidateGroups(turns: Array<{ text: string; sourceSpanRef?:
     .map((turn, index) => ({
       id: `candidate-${index}`,
       sourceSpanRef: turn.sourceSpanRef ?? `span-${index}`,
-      promptText: turn.text
+      promptText: turn.text,
+      status: 'pending'
     }))
 }
 ```
@@ -1829,12 +2063,12 @@ export async function runGenerationJob(input: { jobId: string; emit: (event: unk
 import { parentPort } from 'node:worker_threads'
 
 parentPort?.on('message', async (message: { type: 'start'; jobId: string }) => {
-  parentPort?.postMessage({ jobId: message.jobId, status: 'normalizing', processedSessionCount: 0, createdItemCount: 0, warningCount: 0, failureCount: 0 })
-  parentPort?.postMessage({ jobId: message.jobId, status: 'mining', processedSessionCount: 0, createdItemCount: 0, warningCount: 0, failureCount: 0 })
-  parentPort?.postMessage({ jobId: message.jobId, status: 'enriching', processedSessionCount: 0, createdItemCount: 0, warningCount: 0, failureCount: 0 })
-  parentPort?.postMessage({ jobId: message.jobId, status: 'ranking', processedSessionCount: 0, createdItemCount: 0, warningCount: 0, failureCount: 0 })
-  parentPort?.postMessage({ jobId: message.jobId, status: 'materializing', processedSessionCount: 0, createdItemCount: 0, warningCount: 0, failureCount: 0 })
-  parentPort?.postMessage({ jobId: message.jobId, status: 'completed', processedSessionCount: 0, createdItemCount: 0, warningCount: 0, failureCount: 0 })
+  parentPort?.postMessage({ kind: 'phase', jobId: message.jobId, status: 'normalizing', totalSelectedSessionCount: 4, processedSessionCount: 0, createdItemCount: 0, warningCount: 0, failureCount: 0, currentSessionTitle: 'Codex fixture session', currentBatchLabel: null })
+  parentPort?.postMessage({ kind: 'phase', jobId: message.jobId, status: 'mining', totalSelectedSessionCount: 4, processedSessionCount: 1, createdItemCount: 0, warningCount: 0, failureCount: 0, currentSessionTitle: 'Codex fixture session', currentBatchLabel: 'candidate batch 1' })
+  parentPort?.postMessage({ kind: 'phase', jobId: message.jobId, status: 'enriching', totalSelectedSessionCount: 4, processedSessionCount: 2, createdItemCount: 8, warningCount: 0, failureCount: 0, currentSessionTitle: 'Claude fixture session', currentBatchLabel: 'llm batch 2' })
+  parentPort?.postMessage({ kind: 'phase', jobId: message.jobId, status: 'ranking', totalSelectedSessionCount: 4, processedSessionCount: 4, createdItemCount: 18, warningCount: 0, failureCount: 0, currentSessionTitle: null, currentBatchLabel: 'type-balance rerank' })
+  parentPort?.postMessage({ kind: 'phase', jobId: message.jobId, status: 'materializing', totalSelectedSessionCount: 4, processedSessionCount: 4, createdItemCount: 18, warningCount: 0, failureCount: 0, currentSessionTitle: null, currentBatchLabel: 'write workbook items' })
+  parentPort?.postMessage({ kind: 'completed', jobId: message.jobId, status: 'completed', totalSelectedSessionCount: 4, processedSessionCount: 4, createdItemCount: 18, warningCount: 0, failureCount: 0, currentSessionTitle: null, currentBatchLabel: null })
 })
 ```
 
@@ -2155,7 +2389,16 @@ describe('writeApkg', () => {
   it('returns a non-empty apkg buffer', async () => {
     const buffer = await writeApkg({
       deckName: 'DialogLingo',
-      rows: [{ front: 'worktree', back: '工作树' }]
+      expressionRows: [{
+        front: 'worktree',
+        back: '工作树',
+        gloss: 'Git working tree',
+        context: 'Use a worktree for isolated changes.',
+        explanation: 'Domain term used in coding workflows.',
+        quiz: 'What is a worktree?',
+        tags: ['dialoglingo::expression']
+      }],
+      sentenceRows: []
     })
     expect(buffer.byteLength).toBeGreaterThan(0)
   })
@@ -2176,15 +2419,40 @@ Expected: FAIL with missing exporter modules.
 
 ```ts
 // src/main/export/apkg.ts
-import AnkiExport from 'anki-apkg-export'
+import AnkiExport from '@paperclipsapp/anki-apkg-export'
 
 export async function writeApkg(input: {
   deckName: string
-  rows: Array<{ front: string; back: string }>
+  expressionRows: Array<{
+    front: string
+    back: string
+    gloss: string
+    context: string
+    explanation: string
+    quiz: string
+    tags: string[]
+  }>
+  sentenceRows: Array<{
+    front: string
+    back: string
+    focus: string
+    explanation: string
+    quiz: string
+    tags: string[]
+  }>
 }) {
   const exporter = new AnkiExport(input.deckName)
-  for (const row of input.rows) {
-    exporter.addCard(row.front, row.back)
+  for (const row of input.expressionRows) {
+    exporter.addCard(
+      row.front,
+      `${row.back}<hr>${row.gloss}<br>${row.context}<br>${row.explanation}<br>${row.quiz}`
+    )
+  }
+  for (const row of input.sentenceRows) {
+    exporter.addCard(
+      row.front,
+      `${row.back}<hr>${row.focus}<br>${row.explanation}<br>${row.quiz}`
+    )
   }
   return exporter.save()
 }
@@ -2197,13 +2465,19 @@ export function buildManifest(input: {
   format: string
   itemCount: number
   languageDirection: string
+  includedItemTypes: string[]
+  tagPrefix: string
+  sourcePlatformSummary: Record<string, number>
 }) {
   return {
     exportedAt: new Date().toISOString(),
     workbookId: input.workbookId,
     format: input.format,
     itemCount: input.itemCount,
-    languageDirection: input.languageDirection
+    languageDirection: input.languageDirection,
+    includedItemTypes: input.includedItemTypes,
+    tagPrefix: input.tagPrefix,
+    sourcePlatformSummary: input.sourcePlatformSummary
   }
 }
 ```
@@ -2219,14 +2493,18 @@ export async function writeAnkiTextBundle(dir: string, input: {
   expressionRows: Array<{ source: string; target: string }>
   sentenceRows: Array<{ source: string; target: string }>
 }) {
-  await fs.writeFile(path.join(dir, 'expression.tsv'), input.expressionRows.map((row) => `${row.source}\t${row.target}`).join('\n'))
-  await fs.writeFile(path.join(dir, 'sentence.tsv'), input.sentenceRows.map((row) => `${row.source}\t${row.target}`).join('\n'))
+  const tsv = (value: string) => `"${value.replaceAll('"', '""')}"`
+  await fs.writeFile(path.join(dir, 'expression.tsv'), input.expressionRows.map((row) => `${tsv(row.source)}\t${tsv(row.target)}`).join('\n'))
+  await fs.writeFile(path.join(dir, 'sentence.tsv'), input.sentenceRows.map((row) => `${tsv(row.source)}\t${tsv(row.target)}`).join('\n'))
   await fs.writeFile(path.join(dir, 'README-import.md'), '# Import into Anki\nOpen Anki and import the TSV files with the DialogLingo note types.')
   await fs.writeFile(path.join(dir, 'manifest.json'), JSON.stringify(buildManifest({
     workbookId: input.workbookId,
     format: 'anki-text-bundle',
     itemCount: input.expressionRows.length + input.sentenceRows.length,
-    languageDirection: 'bilingual'
+    languageDirection: 'bilingual',
+    includedItemTypes: ['Expression', 'Sentence'],
+    tagPrefix: 'dialoglingo',
+    sourcePlatformSummary: { codex: 0, claude: 0, opencode: 0 }
   }), null, 2))
 }
 ```
@@ -2242,15 +2520,19 @@ export async function writeGenericTextBundle(dir: string, input: {
   expressionRows: Array<{ source: string; target: string }>
   sentenceRows: Array<{ source: string; target: string }>
 }) {
-  await fs.writeFile(path.join(dir, 'expression.csv'), input.expressionRows.map((row) => `${row.source},${row.target}`).join('\n'))
-  await fs.writeFile(path.join(dir, 'sentence.csv'), input.sentenceRows.map((row) => `${row.source},${row.target}`).join('\n'))
+  const csv = (value: string) => `"${value.replaceAll('"', '""')}"`
+  await fs.writeFile(path.join(dir, 'expression.csv'), input.expressionRows.map((row) => `${csv(row.source)},${csv(row.target)}`).join('\n'))
+  await fs.writeFile(path.join(dir, 'sentence.csv'), input.sentenceRows.map((row) => `${csv(row.source)},${csv(row.target)}`).join('\n'))
   await fs.writeFile(path.join(dir, 'expression.md'), input.expressionRows.map((row) => `- ${row.source}: ${row.target}`).join('\n'))
   await fs.writeFile(path.join(dir, 'sentence.md'), input.sentenceRows.map((row) => `- ${row.source}: ${row.target}`).join('\n'))
   await fs.writeFile(path.join(dir, 'manifest.json'), JSON.stringify(buildManifest({
     workbookId: input.workbookId,
     format: 'generic-text-bundle',
     itemCount: input.expressionRows.length + input.sentenceRows.length,
-    languageDirection: 'bilingual'
+    languageDirection: 'bilingual',
+    includedItemTypes: ['Expression', 'Sentence'],
+    tagPrefix: 'dialoglingo',
+    sourcePlatformSummary: { codex: 0, claude: 0, opencode: 0 }
   }), null, 2))
 }
 ```
@@ -2262,7 +2544,15 @@ export async function writeGenericTextBundle(dir: string, input: {
 type Props = {
   open: boolean
   onClose: () => void
-  onConfirm: (payload: { format: 'anki-package' | 'anki-text-bundle' | 'generic-text-bundle'; deckName: string }) => void
+  onConfirm: (payload: {
+    format: 'anki-package' | 'anki-text-bundle' | 'generic-text-bundle'
+    deckName: string
+    direction: 'en-zh' | 'zh-en' | 'bilingual'
+    includeExpressions: boolean
+    includeSentences: boolean
+    tagPrefix: string
+    outputLocation: string
+  }) => void
 }
 
 export function ExportModal({ open, onClose, onConfirm }: Props) {
@@ -2279,13 +2569,13 @@ export function ExportModal({ open, onClose, onConfirm }: Props) {
       </select>
       <label><input type="checkbox" defaultChecked /> Expressions</label>
       <label><input type="checkbox" defaultChecked /> Sentences</label>
-      <button type="button" onClick={() => onConfirm({ format: 'anki-package', deckName: 'DialogLingo' })}>
+      <button type="button" onClick={() => onConfirm({ format: 'anki-package', deckName: 'DialogLingo', direction: 'bilingual', includeExpressions: true, includeSentences: true, tagPrefix: 'dialoglingo', outputLocation: '~/Downloads/DialogLingo' })}>
         Export Anki Package
       </button>
-      <button type="button" onClick={() => onConfirm({ format: 'anki-text-bundle', deckName: 'DialogLingo' })}>
+      <button type="button" onClick={() => onConfirm({ format: 'anki-text-bundle', deckName: 'DialogLingo', direction: 'bilingual', includeExpressions: true, includeSentences: true, tagPrefix: 'dialoglingo', outputLocation: '~/Downloads/DialogLingo' })}>
         Export Anki Text Bundle
       </button>
-      <button type="button" onClick={() => onConfirm({ format: 'generic-text-bundle', deckName: 'DialogLingo' })}>
+      <button type="button" onClick={() => onConfirm({ format: 'generic-text-bundle', deckName: 'DialogLingo', direction: 'bilingual', includeExpressions: true, includeSentences: true, tagPrefix: 'dialoglingo', outputLocation: '~/Downloads/DialogLingo' })}>
         Export Generic Text Bundle
       </button>
       <button type="button" onClick={onClose}>Close</button>
