@@ -531,6 +531,31 @@ export const generationJobSessionsTable = sqliteTable('generation_job_sessions',
   snapshotHash: text('snapshot_hash').notNull()
 })
 
+export const candidateGroupsTable = sqliteTable('candidate_groups', {
+  id: text('id').primaryKey(),
+  jobId: text('job_id').notNull(),
+  sessionId: text('session_id').notNull(),
+  sourceSpanRef: text('source_span_ref').notNull(),
+  promptText: text('prompt_text').notNull(),
+  status: text('status').notNull()
+})
+
+export const enrichmentBatchesTable = sqliteTable('enrichment_batches', {
+  id: text('id').primaryKey(),
+  jobId: text('job_id').notNull(),
+  batchIndex: integer('batch_index').notNull(),
+  status: text('status').notNull(),
+  requestJson: text('request_json').notNull(),
+  responseJson: text('response_json').notNull()
+})
+
+export const rankedOrdersTable = sqliteTable('ranked_orders', {
+  id: text('id').primaryKey(),
+  jobId: text('job_id').notNull(),
+  rankProfileJson: text('rank_profile_json').notNull(),
+  orderedIdsJson: text('ordered_ids_json').notNull()
+})
+
 export const workbooksTable = sqliteTable('workbooks', {
   id: text('id').primaryKey(),
   jobId: text('job_id').notNull(),
@@ -829,6 +854,25 @@ export function buildRouter(deps: {
   jobs: {
     getSnapshot: (jobId: string) => unknown
   }
+  sessions: {
+    search: (input: unknown) => unknown
+    preview: (input: unknown) => unknown
+    rescan: () => Promise<unknown>
+  }
+  generation: {
+    start: (input: unknown) => Promise<unknown>
+    cancel: (input: unknown) => Promise<unknown>
+  }
+  workbook: {
+    list: (input: unknown) => unknown
+    saveItem: (input: unknown) => Promise<unknown>
+    deleteItem: (input: unknown) => Promise<unknown>
+    restoreItem: (input: unknown) => Promise<unknown>
+    revertItem: (input: unknown) => Promise<unknown>
+  }
+  exportRuns: {
+    run: (input: unknown) => Promise<unknown>
+  }
 }) {
   return t.router({
     settingsGet: t.procedure.query(() => deps.settings.get()),
@@ -838,6 +882,46 @@ export function buildRouter(deps: {
     jobSnapshot: t.procedure
       .input(z.object({ jobId: z.string() }))
       .query(({ input }) => deps.jobs.getSnapshot(input.jobId)),
+sessionSearch: t.procedure
+  .input(z.object({
+    query: z.string(),
+    scope: z.enum(['all', 'titles', 'transcript']),
+    groupBy: z.enum(['platform', 'time', 'project']),
+    timeRange: z.object({ from: z.string(), to: z.string() }).nullable(),
+    projects: z.array(z.string()),
+    platforms: z.array(z.enum(['codex', 'claude', 'opencode'])),
+    includeArchived: z.boolean()
+  }))
+  .query(({ input }) => deps.sessions.search(input)),
+    sessionPreview: t.procedure
+      .input(z.object({ sessionId: z.string(), query: z.string().default('') }))
+      .query(({ input }) => deps.sessions.preview(input)),
+    sessionRescan: t.procedure
+      .mutation(() => deps.sessions.rescan()),
+    generationStart: t.procedure
+      .input(z.object({ sessionIds: z.array(z.string()) }))
+      .mutation(({ input }) => deps.generation.start(input)),
+    generationCancel: t.procedure
+      .input(z.object({ jobId: z.string() }))
+      .mutation(({ input }) => deps.generation.cancel(input)),
+    workbookList: t.procedure
+      .input(z.object({ workbookId: z.string(), tab: z.enum(['all', 'expressions', 'sentences', 'deleted']) }))
+      .query(({ input }) => deps.workbook.list(input)),
+    workbookSaveItem: t.procedure
+      .input(z.object({ itemId: z.string(), currentSnapshot: z.any() }))
+      .mutation(({ input }) => deps.workbook.saveItem(input)),
+    workbookDeleteItem: t.procedure
+      .input(z.object({ itemId: z.string() }))
+      .mutation(({ input }) => deps.workbook.deleteItem(input)),
+    workbookRestoreItem: t.procedure
+      .input(z.object({ itemId: z.string() }))
+      .mutation(({ input }) => deps.workbook.restoreItem(input)),
+    workbookRevertItem: t.procedure
+      .input(z.object({ itemId: z.string() }))
+      .mutation(({ input }) => deps.workbook.revertItem(input)),
+    exportRun: t.procedure
+      .input(z.object({ workbookId: z.string(), request: z.any() }))
+      .mutation(({ input }) => deps.exportRuns.run(input)),
     appHealth: t.procedure
       .input(z.void())
       .query(() => ({ ok: true as const }))
@@ -878,6 +962,25 @@ const router = buildRouter({
     getSnapshot(jobId: string) {
       return { id: jobId, status: 'pending', selectedSessionCount: 0, processedSessionCount: 0, createdItemCount: 0, warningCount: 0, failureCount: 0 }
     }
+  },
+  sessions: {
+    search: (input) => [],
+    preview: (input) => ({ turns: [], snippet: null }),
+    rescan: async () => ({ ok: true as const, rescannedAt: new Date().toISOString() })
+  },
+  generation: {
+    start: async (input) => ({ jobId: 'pending-job', requestedSessionIds: input.sessionIds }),
+    cancel: async (input) => ({ ok: true as const, jobId: input.jobId })
+  },
+  workbook: {
+    list: (input) => [],
+    saveItem: async (input) => ({ ok: true as const, itemId: input.itemId }),
+    deleteItem: async (input) => ({ ok: true as const, itemId: input.itemId }),
+    restoreItem: async (input) => ({ ok: true as const, itemId: input.itemId }),
+    revertItem: async (input) => ({ ok: true as const, itemId: input.itemId })
+  },
+  exportRuns: {
+    run: async (input) => ({ ok: true as const, workbookId: input.workbookId })
   }
 })
 
@@ -926,6 +1029,7 @@ git commit -m "feat: add typed ipc and settings foundation"
 **Files:**
 - Create: `src/main/sources/types.ts`
 - Create: `src/main/sources/index.ts`
+- Create: `src/main/sources/pathDiscovery.ts`
 - Create: `src/main/sources/codex/adapter.ts`
 - Create: `src/main/sources/claude/adapter.ts`
 - Create: `src/main/sources/opencode/adapter.ts`
@@ -992,7 +1096,15 @@ npm run test -- --run tests/main/sources/codex-adapter.test.ts tests/main/source
 
 Expected: FAIL with missing adapter modules and fixtures.
 
-- [ ] **Step 3: Create adapter interfaces, fixtures, and minimal implementations**
+- [ ] **Step 3: Create real directory-backed adapters and validate them with fixtures**
+
+Acceptance requirements for this task:
+
+- The production adapters must target real local roots discovered from the user machine, not test fixture paths.
+- Fixture directories are only the test harness.
+- `listSessions()` must honor `query`, `timeRange`, `projects`, `platforms`, and `includeArchived`.
+- `readSession()` must return normalized conversation turns suitable for persistence into `session_turns`.
+- The source registry must be usable both by fixture tests and by real scan-time path discovery.
 
 ```ts
 // src/main/sources/types.ts
@@ -1002,6 +1114,7 @@ export type SessionFilterInput = {
   query: string
   timeRange: { from: string; to: string } | null
   projects: string[]
+  platforms: SourceType[]
   includeArchived: boolean
 }
 
@@ -1046,12 +1159,24 @@ export const sessionSummarySchema = z.object({
 import { createCodexAdapter } from './codex/adapter'
 import { createClaudeAdapter } from './claude/adapter'
 import { createOpenCodeAdapter } from './opencode/adapter'
+import { discoverSourcePaths } from './pathDiscovery'
 
-export function createSourceRegistry(paths: { codex: string; claude: string; opencode: string }) {
+export function createSourceRegistry(paths = discoverSourcePaths()) {
   return {
     codex: createCodexAdapter(paths.codex),
     claude: createClaudeAdapter(paths.claude),
     opencode: createOpenCodeAdapter(paths.opencode)
+  }
+}
+```
+
+```ts
+// src/main/sources/pathDiscovery.ts
+export function discoverSourcePaths() {
+  return {
+    codex: process.env.CODEX_HOME ?? `${process.env.HOME}/.codex`,
+    claude: `${process.env.HOME}/.claude`,
+    opencode: `${process.env.HOME}/.local/share/opencode`
   }
 }
 ```
@@ -1064,21 +1189,37 @@ import type { ConversationTurn, SessionFilterInput, SessionSummary } from '../ty
 
 export function createCodexAdapter(root: string) {
   return {
-    async listSessions(_filters: SessionFilterInput): Promise<SessionSummary[]> {
-      const file = path.join(root, 'sessions', 'fixture-rollout.jsonl')
-      return [{
-        id: 'codex-fixture',
-        sourceType: 'codex',
-        title: 'Codex fixture session',
-        projectPath: '/tmp/dialoglingo',
-        startedAt: '2026-06-15T00:00:00Z',
-        updatedAt: '2026-06-15T00:10:00Z',
-        preview: 'Discuss workbook state transitions.',
-        locator: file
-      }]
+    async listSessions(filters: SessionFilterInput): Promise<SessionSummary[]> {
+      const sessionRoots = [path.join(root, 'sessions'), path.join(root, 'archived_sessions')].filter((dir) => fs.existsSync(dir))
+      const files = sessionRoots.flatMap((dir) => {
+        const isArchivedDir = dir.endsWith('archived_sessions')
+        if (isArchivedDir && !filters.includeArchived) return []
+        return fs.readdirSync(dir).filter((entry) => entry.endsWith('.jsonl')).map((entry) => path.join(dir, entry))
+      })
+      return files.map((file) => {
+        const firstLine = fs.readFileSync(file, 'utf-8').split('\n').find(Boolean) ?? '{}'
+        const summary = JSON.parse(firstLine)
+        return {
+          id: summary.payload?.id ?? path.basename(file, '.jsonl'),
+          sourceType: 'codex' as const,
+          title: summary.payload?.title ?? path.basename(file),
+          projectPath: summary.payload?.cwd ?? '',
+          startedAt: summary.timestamp ?? new Date().toISOString(),
+          updatedAt: summary.timestamp ?? new Date().toISOString(),
+          preview: summary.payload?.preview ?? '',
+          locator: file
+        }
+      }).filter((row) => {
+        const queryPass = !filters.query || row.title.includes(filters.query) || row.preview.includes(filters.query)
+        const projectPass = filters.projects.length === 0 || filters.projects.includes(row.projectPath)
+        const platformPass = filters.platforms.length === 0 || filters.platforms.includes('codex')
+        const timePass = !filters.timeRange || (row.updatedAt >= filters.timeRange.from && row.updatedAt <= filters.timeRange.to)
+        return queryPass && projectPass && platformPass && timePass
+      })
     },
-    async readSession(_id: string): Promise<ConversationTurn[]> {
-      const file = path.join(root, 'sessions', 'fixture-rollout.jsonl')
+    async readSession(id: string): Promise<ConversationTurn[]> {
+      const file = fs.readdirSync(path.join(root, 'sessions')).map((entry) => path.join(root, 'sessions', entry)).find((entry) => entry.includes(id))
+      if (!file) return []
       const lines = fs.readFileSync(file, 'utf-8').trim().split('\n')
       return lines.map((line, index) => {
         const json = JSON.parse(line)
@@ -1104,23 +1245,31 @@ import type { ConversationTurn, SessionFilterInput, SessionSummary } from '../ty
 export function createClaudeAdapter(root: string) {
   return {
     async listSessions(filters: SessionFilterInput): Promise<SessionSummary[]> {
-      const file = path.join(root, 'transcripts', 'fixture-session.jsonl')
-      const title = 'Claude fixture session'
-      return title.includes(filters.query) || !filters.query
-        ? [{
-            id: 'claude-fixture',
-            sourceType: 'claude',
-            title,
-            projectPath: '/tmp/dialoglingo',
-            startedAt: '2026-06-15T01:00:00Z',
-            updatedAt: '2026-06-15T01:05:00Z',
-            preview: 'How should we structure state?',
-            locator: file
-          }]
-        : []
+      const dir = path.join(root, 'transcripts')
+      const files = fs.existsSync(dir) ? fs.readdirSync(dir).filter((entry) => entry.endsWith('.jsonl')).map((entry) => path.join(dir, entry)) : []
+      return files.map((file) => {
+        const firstLine = fs.readFileSync(file, 'utf-8').split('\n').find(Boolean) ?? '{}'
+        const first = JSON.parse(firstLine)
+        return {
+          id: path.basename(file, '.jsonl'),
+          sourceType: 'claude' as const,
+          title: first.content?.slice(0, 80) ?? path.basename(file),
+          projectPath: root,
+          startedAt: first.timestamp ?? new Date().toISOString(),
+          updatedAt: first.timestamp ?? new Date().toISOString(),
+          preview: first.content ?? '',
+          locator: file
+        }
+      }).filter((row) => {
+        const queryPass = !filters.query || row.title.includes(filters.query) || row.preview.includes(filters.query)
+        const projectPass = filters.projects.length === 0 || filters.projects.includes(row.projectPath)
+        const platformPass = filters.platforms.length === 0 || filters.platforms.includes('claude')
+        const timePass = !filters.timeRange || (row.updatedAt >= filters.timeRange.from && row.updatedAt <= filters.timeRange.to)
+        return queryPass && projectPass && platformPass && timePass
+      })
     },
-    async readSession(_id: string): Promise<ConversationTurn[]> {
-      return fs.readFileSync(path.join(root, 'transcripts', 'fixture-session.jsonl'), 'utf-8')
+    async readSession(id: string): Promise<ConversationTurn[]> {
+      return fs.readFileSync(path.join(root, 'transcripts', `${id}.jsonl`), 'utf-8')
         .trim()
         .split('\n')
         .map((line, index) => {
@@ -1147,20 +1296,27 @@ import type { ConversationTurn, SessionFilterInput, SessionSummary } from '../ty
 export function createOpenCodeAdapter(root: string) {
   return {
     async listSessions(filters: SessionFilterInput): Promise<SessionSummary[]> {
-      const file = path.join(root, 'storage', 'session', 'fixture.json')
-      const summary = JSON.parse(fs.readFileSync(file, 'utf-8'))
-      return summary.title.includes(filters.query) || !filters.query
-        ? [{
-            id: summary.id,
-            sourceType: 'opencode',
-            title: summary.title,
-            projectPath: summary.projectPath,
-            startedAt: summary.startedAt,
-            updatedAt: summary.updatedAt,
-            preview: summary.preview,
-            locator: file
-          }]
-        : []
+      const dir = path.join(root, 'storage', 'session')
+      const files = fs.existsSync(dir) ? fs.readdirSync(dir).filter((entry) => entry.endsWith('.json')).map((entry) => path.join(dir, entry)) : []
+      return files.map((file) => {
+        const summary = JSON.parse(fs.readFileSync(file, 'utf-8'))
+        return {
+          id: summary.id,
+          sourceType: 'opencode' as const,
+          title: summary.title,
+          projectPath: summary.projectPath,
+          startedAt: summary.startedAt,
+          updatedAt: summary.updatedAt,
+          preview: summary.preview,
+          locator: file
+        }
+      }).filter((row) => {
+        const queryPass = !filters.query || row.title.includes(filters.query) || row.preview.includes(filters.query)
+        const projectPass = filters.projects.length === 0 || filters.projects.includes(row.projectPath)
+        const platformPass = filters.platforms.length === 0 || filters.platforms.includes('opencode')
+        const timePass = !filters.timeRange || (row.updatedAt >= filters.timeRange.from && row.updatedAt <= filters.timeRange.to)
+        return queryPass && projectPass && platformPass && timePass
+      })
     },
     async readSession(id: string): Promise<ConversationTurn[]> {
       const messageDir = path.join(root, 'storage', 'message', id)
@@ -1224,7 +1380,15 @@ describe('createSessionSearch', () => {
       values ('s1', 'codex', 's1', 'Refine workbook ranking', '2026-06-15T00:00:00Z', '2026-06-15T00:10:00Z', 'ranking', 'Use a soft type-balance rerank.', 'fixture', 'h1');
     `)
     const search = createSessionSearch(db)
-    const rows = search({ query: 'type-balance', scope: 'all', groupBy: 'platform' })
+    const rows = search({
+      query: 'type-balance',
+      scope: 'all',
+      groupBy: 'platform',
+      timeRange: null,
+      projects: [],
+      platforms: [],
+      includeArchived: false
+    })
     expect(rows.map((row) => row.sessionId)).toEqual(['s1'])
   })
 })
@@ -1328,6 +1492,10 @@ type SearchInput = {
   query: string
   scope: 'all' | 'titles' | 'transcript'
   groupBy: 'platform' | 'time' | 'project'
+  timeRange: { from: string; to: string } | null
+  projects: string[]
+  platforms: Array<'codex' | 'claude' | 'opencode'>
+  includeArchived: boolean
 }
 
 export function createSessionSearch(db: Database.Database) {
@@ -1374,6 +1542,14 @@ export function createPreviewQuery(db: Database.Database) {
 
 - [ ] **Step 4: Implement project discovery, scan orchestration, and router procedures**
 
+Acceptance requirements for this task:
+
+- `scanSessions()` must persist `projects`, `sessions`, and `session_turns`.
+- `search_text` must be derived from normalized user-facing transcript content, not arbitrary raw blobs.
+- `sessionSearch` IPC must accept the same filtering contract the renderer uses: `query`, `scope`, `groupBy`, `timeRange`, `projects`, `platforms`, `includeArchived`.
+- `queryPreview()` must return preview text plus enough snippet/highlight context to drive the Search preview pane.
+- Search semantics must remain aligned with the spec’s normalized-preview-first rule.
+
 ```ts
 // src/main/scan/discoverProjects.ts
 import type { SessionSummary } from '../sources/types'
@@ -1398,6 +1574,7 @@ export function discoverProjects(summaries: SessionSummary[]) {
 import crypto from 'node:crypto'
 import type Database from 'better-sqlite3'
 import { createSourceRegistry } from '../sources'
+import { discoverProjects } from './discoverProjects'
 
 export async function scanSessions(db: Database.Database, registry = createSourceRegistry({
   codex: process.env.CODEX_HOME ?? `${process.env.HOME}/.codex`,
@@ -1405,10 +1582,28 @@ export async function scanSessions(db: Database.Database, registry = createSourc
   opencode: `${process.env.HOME}/.local/share/opencode`
 })) {
   const allSummaries = [
-    ...(await registry.codex.listSessions({ query: '', timeRange: null, projects: [], includeArchived: false })),
-    ...(await registry.claude.listSessions({ query: '', timeRange: null, projects: [], includeArchived: false })),
-    ...(await registry.opencode.listSessions({ query: '', timeRange: null, projects: [], includeArchived: false }))
+    ...(await registry.codex.listSessions({ query: '', timeRange: null, projects: [], platforms: [], includeArchived: false })),
+    ...(await registry.claude.listSessions({ query: '', timeRange: null, projects: [], platforms: [], includeArchived: false })),
+    ...(await registry.opencode.listSessions({ query: '', timeRange: null, projects: [], platforms: [], includeArchived: false }))
   ]
+
+  for (const project of discoverProjects(allSummaries)) {
+    const projectPlatforms = [...new Set(allSummaries.filter((summary) => summary.projectPath === project.localPath).map((summary) => summary.sourceType))]
+    db.prepare(`
+      insert into projects (id, name, local_path, source_platforms_json, discovered_at, user_pinned, is_active)
+      values (?, ?, ?, ?, ?, 0, 1)
+      on conflict(id) do update set
+        name = excluded.name,
+        source_platforms_json = excluded.source_platforms_json,
+        discovered_at = excluded.discovered_at
+    `).run(
+      project.localPath,
+      project.name,
+      project.localPath,
+      JSON.stringify(projectPlatforms),
+      new Date().toISOString()
+    )
+  }
 
   for (const summary of allSummaries) {
     const turns =
@@ -1420,9 +1615,10 @@ export async function scanSessions(db: Database.Database, registry = createSourc
 
     const searchText = turns.map((turn) => turn.text).join('\n')
     db.prepare(`
-      insert into sessions (id, source_type, source_session_id, title, started_at, updated_at, preview, search_text, raw_locator, hash)
-      values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      insert into sessions (id, source_type, source_session_id, project_id, title, started_at, updated_at, preview, search_text, raw_locator, hash)
+      values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       on conflict(id) do update set
+        project_id = excluded.project_id,
         title = excluded.title,
         updated_at = excluded.updated_at,
         preview = excluded.preview,
@@ -1432,6 +1628,7 @@ export async function scanSessions(db: Database.Database, registry = createSourc
       summary.id,
       summary.sourceType,
       summary.id,
+      summary.projectPath,
       summary.title,
       summary.startedAt,
       summary.updatedAt,
@@ -1440,19 +1637,16 @@ export async function scanSessions(db: Database.Database, registry = createSourc
       summary.locator,
       crypto.createHash('sha1').update(searchText).digest('hex')
     )
+
+    db.prepare(`delete from session_turns where session_id = ?`).run(summary.id)
+    for (const turn of turns) {
+      db.prepare(`
+        insert into session_turns (id, session_id, seq, role, language_hint, text, source_span_ref, is_tool_noise)
+        values (?, ?, ?, ?, ?, ?, ?, ?)
+      `).run(turn.id, summary.id, Number.parseInt(turn.id.replace(/\D/g, ''), 10) || 0, turn.role, turn.languageHint, turn.text, turn.sourceSpanRef, 0)
+    }
   }
 }
-```
-
-```ts
-// src/shared/ipc/router.ts (delta)
-sessionSearch: t.procedure
-  .input(z.object({
-    query: z.string(),
-    scope: z.enum(['all', 'titles', 'transcript']),
-    groupBy: z.enum(['platform', 'time', 'project'])
-  }))
-  .query(({ input }) => deps.search.sessions(input)),
 ```
 
 - [ ] **Step 5: Run the FTS test and a full typecheck**
@@ -1497,10 +1691,24 @@ import { describe, expect, it } from 'vitest'
 import { createUIStateStore } from '../../src/renderer/src/app/store/uiState'
 
 describe('createUIStateStore', () => {
-  it('starts with search selected and no sessions selected', () => {
+  it('starts with search selected, last-7-days, platform grouping, and no sessions selected', () => {
     const store = createUIStateStore()
     expect(store.getState().activeSection).toBe('search')
+    expect(store.getState().timeRange).toBe('last-7-days')
+    expect(store.getState().groupBy).toBe('platform')
     expect(store.getState().selectedSessionIds.size).toBe(0)
+  })
+
+  it('hydrates discovered projects and focuses the first session after scan', () => {
+    const store = createUIStateStore()
+    store.getState().hydrateFromScan({
+      projectIds: ['p1', 'p2'],
+      groupIds: ['codex', 'claude'],
+      firstSessionId: 's1'
+    })
+    expect([...store.getState().selectedProjectIds]).toEqual(['p1', 'p2'])
+    expect([...store.getState().collapsedGroupIds]).toEqual(['codex', 'claude'])
+    expect(store.getState().focusedSessionId).toBe('s1')
   })
 })
 ```
@@ -1526,10 +1734,15 @@ type UIState = {
   activeSection: NavSectionId
   focusedSessionId: string | null
   selectedSessionIds: Set<string>
+  selectedProjectIds: Set<string>
+  collapsedGroupIds: Set<string>
   query: string
   queryScope: 'all' | 'titles' | 'transcript'
+  timeRange: 'last-7-days' | 'last-30-days' | 'all-time'
+  platformFilter: Array<'codex' | 'claude' | 'opencode'>
   groupBy: 'platform' | 'time' | 'project'
   setActiveSection: (value: NavSectionId) => void
+  hydrateFromScan: (input: { projectIds: string[]; groupIds: string[]; firstSessionId: string | null }) => void
 }
 
 export function createUIStateStore() {
@@ -1537,10 +1750,19 @@ export function createUIStateStore() {
     activeSection: 'search',
     focusedSessionId: null,
     selectedSessionIds: new Set<string>(),
+    selectedProjectIds: new Set<string>(),
+    collapsedGroupIds: new Set<string>(),
     query: '',
     queryScope: 'all',
+    timeRange: 'last-7-days',
+    platformFilter: ['codex', 'claude', 'opencode'],
     groupBy: 'platform',
-    setActiveSection: (value) => set({ activeSection: value })
+    setActiveSection: (value) => set({ activeSection: value }),
+    hydrateFromScan: ({ projectIds, groupIds, firstSessionId }) => set({
+      selectedProjectIds: new Set(projectIds),
+      collapsedGroupIds: new Set(groupIds),
+      focusedSessionId: firstSessionId
+    })
   }))
 }
 ```
@@ -1577,8 +1799,30 @@ export function SearchRail() {
         <option value="titles">Titles</option>
         <option value="transcript">Transcript</option>
       </select>
+      <select aria-label="Time range" defaultValue="last-7-days">
+        <option value="last-7-days">Last 7 days</option>
+        <option value="last-30-days">Last 30 days</option>
+        <option value="all-time">All time</option>
+      </select>
+      <fieldset>
+        <legend>Platform</legend>
+        <label><input type="checkbox" defaultChecked /> Codex</label>
+        <label><input type="checkbox" defaultChecked /> Claude Code</label>
+        <label><input type="checkbox" defaultChecked /> OpenCode</label>
+      </fieldset>
+      <fieldset>
+        <legend>Projects</legend>
+        <label><input type="checkbox" /> dialoglingo</label>
+      </fieldset>
+      <select aria-label="Group by" defaultValue="platform">
+        <option value="platform">Platform</option>
+        <option value="time">Time range</option>
+        <option value="project">Project</option>
+      </select>
       <button type="button">Select All in View</button>
       <button type="button">Clear Selection</button>
+      <button type="button">Rescan</button>
+      <button type="button">Settings</button>
     </aside>
   )
 }
@@ -1612,6 +1856,14 @@ export function SessionTree({ groups }: { groups: SessionGroup[] }) {
 ```
 
 - [ ] **Step 4: Implement the rail footer, preview rules, and confirmation sheet**
+
+Acceptance requirements for this task:
+
+- The store must represent the real default state from the spec: `last-7-days`, `groupBy=platform`, no sessions selected, all discovered projects selected after scan hydration, groups collapsed, first available session focused.
+- The launch path must explicitly orchestrate: `scan on launch -> hydrate defaults from scan results -> focus first session -> render Search page`.
+- `SearchRail` must expose `Time range`, `Platform`, `Projects`, `Group by`, `Rescan`, and `Settings`.
+- The confirmation sheet must show selected session count, platform distribution, project distribution, and the generated item types `Expression + Sentence`.
+- Search results with matches must auto-expand matching groups and surface preview match navigation.
 
 ```tsx
 // src/renderer/src/features/search/GenerateWorkbookSheet.tsx
@@ -1736,6 +1988,7 @@ git commit -m "feat: add search and selection workflow"
 - Test: `tests/main/generation/preclean.test.ts`
 - Test: `tests/main/generation/ranking.test.ts`
 - Test: `tests/main/generation/type-balance-rerank.test.ts`
+- Test: `tests/main/generation/redaction.test.ts`
 
 - [ ] **Step 1: Write failing generation tests**
 
@@ -1803,6 +2056,21 @@ describe('applyTypeBalanceRerank', () => {
       lambda: 0.1
     })
     expect(output.map((item) => item.id)).toEqual(['e1', 's1', 'e2', 's2'])
+  })
+})
+```
+
+```ts
+// tests/main/generation/redaction.test.ts
+import { describe, expect, it } from 'vitest'
+import { precleanTurns } from '../../../src/main/generation/preclean'
+
+describe('precleanTurns redaction', () => {
+  it('redacts obvious secret-like strings before remote generation', () => {
+    const output = precleanTurns([
+      { role: 'assistant', text: 'API_KEY=sk-live-abcdef123456', isToolNoise: false }
+    ])
+    expect(output[0].text).not.toContain('sk-live-abcdef123456')
   })
 })
 ```
@@ -1875,7 +2143,7 @@ export function precleanTurns(turns: Array<{ role: string; text: string; isToolN
     if (turn.text.includes('```')) {
       return { ...turn, text: '[collapsed code block]' }
     }
-    return turn
+    return { ...turn, text: turn.text.replace(/sk-[A-Za-z0-9_-]+/g, '[redacted-secret]') }
   }).filter((turn) => !turn.isToolNoise)
 }
 ```
@@ -1976,6 +2244,15 @@ export function applyTypeBalanceRerank(input: {
 
 - [ ] **Step 4: Implement the LiteLLM client and job runner**
 
+Acceptance requirements for this task:
+
+- The generation worker must execute the real job pipeline shape from the spec, not just emit placeholder phases.
+- Progress events must be backed by durable writes to `generation_jobs`, `candidate_groups`, `enrichment_batches`, `ranked_orders`, and workbook draft/ready state where applicable.
+- `cancel` must move the job to `cancelled` and preserve partial artifacts per the spec.
+- Resume/restart must be defined around real checkpoint tables, not just described in prose.
+- `enrichCandidateBatch()` must participate in bounded batch orchestration with retry/provider-ready checks before remote execution.
+- Source-level and job-level failures must be surfaced as typed warnings/failures, with failed-batch counters and restartable diagnostics.
+
 ```ts
 // src/main/generation/litellmClient.ts
 import { z } from 'zod'
@@ -2035,6 +2312,40 @@ export function buildWorkbookDrafts(input: {
 ```
 
 ```ts
+// src/main/generation/materializeWorkbook.ts (continued)
+export function writeWorkbookDraft(db: { prepare: (sql: string) => { run: (...args: unknown[]) => void } }, input: {
+  workbookId: string
+  jobId: string
+  items: Array<{
+    id: string
+    itemType: 'Expression' | 'Sentence'
+    generatedSnapshot: unknown
+    currentSnapshot: unknown
+    sourceRefs: Array<{ sessionId: string; sourceSpanRef: string; excerpt: string }>
+  }>
+}) {
+  db.prepare(`insert into workbooks (id, job_id, created_at, status) values (?, ?, ?, 'draft')`)
+    .run(input.workbookId, input.jobId, new Date().toISOString())
+
+  for (const item of input.items) {
+    db.prepare(`
+      insert into workbook_items (id, workbook_id, item_type, generated_snapshot_json, current_snapshot_json, source_refs_json, state)
+      values (?, ?, ?, ?, ?, ?, 'active')
+    `).run(
+      item.id,
+      input.workbookId,
+      item.itemType,
+      JSON.stringify(item.generatedSnapshot),
+      JSON.stringify(item.currentSnapshot),
+      JSON.stringify(item.sourceRefs)
+    )
+  }
+
+  db.prepare(`update workbooks set status = 'ready' where id = ?`).run(input.workbookId)
+}
+```
+
+```ts
 // src/main/generation/spawnGenerationWorker.ts
 import { Worker } from 'node:worker_threads'
 import path from 'node:path'
@@ -2051,9 +2362,19 @@ export function spawnGenerationWorker(onEvent: (event: unknown) => void) {
 import { spawnGenerationWorker } from './spawnGenerationWorker'
 import { jobEventSchema } from '../../shared/ipc/events'
 
-export async function runGenerationJob(input: { jobId: string; emit: (event: unknown) => void }) {
+export async function runGenerationJob(input: {
+  jobId: string
+  sessionIds: string[]
+  settings: { provider: { baseUrl: string; apiKey: string; defaultModel: string } }
+  emit: (event: unknown) => void
+}) {
   const worker = spawnGenerationWorker((event) => input.emit(jobEventSchema.parse(event)))
-  worker.postMessage({ type: 'start', jobId: input.jobId })
+  worker.postMessage({
+    type: 'start',
+    jobId: input.jobId,
+    sessionIds: input.sessionIds,
+    provider: input.settings.provider
+  })
   return worker
 }
 ```
@@ -2062,13 +2383,29 @@ export async function runGenerationJob(input: { jobId: string; emit: (event: unk
 // src/main/generation/worker.ts
 import { parentPort } from 'node:worker_threads'
 
-parentPort?.on('message', async (message: { type: 'start'; jobId: string }) => {
-  parentPort?.postMessage({ kind: 'phase', jobId: message.jobId, status: 'normalizing', totalSelectedSessionCount: 4, processedSessionCount: 0, createdItemCount: 0, warningCount: 0, failureCount: 0, currentSessionTitle: 'Codex fixture session', currentBatchLabel: null })
-  parentPort?.postMessage({ kind: 'phase', jobId: message.jobId, status: 'mining', totalSelectedSessionCount: 4, processedSessionCount: 1, createdItemCount: 0, warningCount: 0, failureCount: 0, currentSessionTitle: 'Codex fixture session', currentBatchLabel: 'candidate batch 1' })
-  parentPort?.postMessage({ kind: 'phase', jobId: message.jobId, status: 'enriching', totalSelectedSessionCount: 4, processedSessionCount: 2, createdItemCount: 8, warningCount: 0, failureCount: 0, currentSessionTitle: 'Claude fixture session', currentBatchLabel: 'llm batch 2' })
-  parentPort?.postMessage({ kind: 'phase', jobId: message.jobId, status: 'ranking', totalSelectedSessionCount: 4, processedSessionCount: 4, createdItemCount: 18, warningCount: 0, failureCount: 0, currentSessionTitle: null, currentBatchLabel: 'type-balance rerank' })
-  parentPort?.postMessage({ kind: 'phase', jobId: message.jobId, status: 'materializing', totalSelectedSessionCount: 4, processedSessionCount: 4, createdItemCount: 18, warningCount: 0, failureCount: 0, currentSessionTitle: null, currentBatchLabel: 'write workbook items' })
-  parentPort?.postMessage({ kind: 'completed', jobId: message.jobId, status: 'completed', totalSelectedSessionCount: 4, processedSessionCount: 4, createdItemCount: 18, warningCount: 0, failureCount: 0, currentSessionTitle: null, currentBatchLabel: null })
+let cancelled = false
+
+parentPort?.on('message', async (message: { type: 'start'; jobId: string; sessionIds: string[] } | { type: 'cancel'; jobId: string }) => {
+  if (message.type === 'cancel') {
+    cancelled = true
+    return
+  }
+
+  for (let index = 0; index < message.sessionIds.length; index += 1) {
+    const sessionId = message.sessionIds[index]
+    if (cancelled) {
+      parentPort?.postMessage({ kind: 'snapshot', jobId: message.jobId, status: 'cancelled', totalSelectedSessionCount: message.sessionIds.length, processedSessionCount: index, createdItemCount: 0, warningCount: 0, failureCount: 0, currentSessionTitle: sessionId, currentBatchLabel: null })
+      return
+    }
+
+    parentPort?.postMessage({ kind: 'phase', jobId: message.jobId, status: 'normalizing', totalSelectedSessionCount: message.sessionIds.length, processedSessionCount: index, createdItemCount: 0, warningCount: 0, failureCount: 0, currentSessionTitle: sessionId, currentBatchLabel: null })
+    parentPort?.postMessage({ kind: 'phase', jobId: message.jobId, status: 'mining', totalSelectedSessionCount: message.sessionIds.length, processedSessionCount: index + 1, createdItemCount: 0, warningCount: 0, failureCount: 0, currentSessionTitle: sessionId, currentBatchLabel: `candidate batch ${index + 1}` })
+    parentPort?.postMessage({ kind: 'phase', jobId: message.jobId, status: 'enriching', totalSelectedSessionCount: message.sessionIds.length, processedSessionCount: index + 1, createdItemCount: (index + 1) * 4, warningCount: 0, failureCount: 0, currentSessionTitle: sessionId, currentBatchLabel: `llm batch ${index + 1}` })
+  }
+
+  parentPort?.postMessage({ kind: 'phase', jobId: message.jobId, status: 'ranking', totalSelectedSessionCount: message.sessionIds.length, processedSessionCount: message.sessionIds.length, createdItemCount: message.sessionIds.length * 4, warningCount: 0, failureCount: 0, currentSessionTitle: null, currentBatchLabel: 'type-balance rerank' })
+  parentPort?.postMessage({ kind: 'phase', jobId: message.jobId, status: 'materializing', totalSelectedSessionCount: message.sessionIds.length, processedSessionCount: message.sessionIds.length, createdItemCount: message.sessionIds.length * 4, warningCount: 0, failureCount: 0, currentSessionTitle: null, currentBatchLabel: 'write workbook items' })
+  parentPort?.postMessage({ kind: 'completed', jobId: message.jobId, status: 'completed', totalSelectedSessionCount: message.sessionIds.length, processedSessionCount: message.sessionIds.length, createdItemCount: message.sessionIds.length * 4, warningCount: 0, failureCount: 0, currentSessionTitle: null, currentBatchLabel: null })
 })
 ```
 
@@ -2126,7 +2463,8 @@ describe('createWorkbookService', () => {
       workbookId: 'w1',
       itemType: 'Expression',
       generatedSnapshot: { sourceText: 'worktree', targetText: '工作树' },
-      currentSnapshot: { sourceText: 'worktree', targetText: '工作树' }
+      currentSnapshot: { sourceText: 'worktree', targetText: '工作树' },
+      sourceRefs: [{ sessionId: 's1', sourceSpanRef: 'span-1', excerpt: 'Use a worktree for isolated changes.' }]
     })
     service.saveCurrentSnapshot(item.id, { sourceText: 'worktree', targetText: '工作区' })
     expect(service.listEdited('w1')).toHaveLength(1)
@@ -2187,12 +2525,13 @@ export function createWorkbookService(filename: string, options?: { runMigration
       itemType: 'Expression' | 'Sentence'
       generatedSnapshot: unknown
       currentSnapshot: unknown
+      sourceRefs: unknown
     }) {
       const id = crypto.randomUUID()
       db.prepare(`
         insert into workbook_items (id, workbook_id, item_type, generated_snapshot_json, current_snapshot_json, source_refs_json, state)
-        values (?, ?, ?, ?, ?, '[]', 'active')
-      `).run(id, input.workbookId, input.itemType, JSON.stringify(input.generatedSnapshot), JSON.stringify(input.currentSnapshot))
+        values (?, ?, ?, ?, ?, ?, 'active')
+      `).run(id, input.workbookId, input.itemType, JSON.stringify(input.generatedSnapshot), JSON.stringify(input.currentSnapshot), JSON.stringify(input.sourceRefs))
       return { id }
     },
     saveCurrentSnapshot(id: string, nextSnapshot: unknown) {
@@ -2234,6 +2573,39 @@ export function createWorkbookService(filename: string, options?: { runMigration
 
 - [ ] **Step 4: Implement the workbook renderer shell and keyboard interaction**
 
+Acceptance requirements for this task:
+
+- `WorkbookPage` must model two real modes: `progress` and `review`, not render both as a placeholder shell.
+- The review surface must use `TanStack Query` for workbook item loading and `TanStack Virtual` for the card stream.
+- Card interactions must match the spec: select first, explicit edit second, `Cmd/Ctrl+Enter` save-and-advance, `Delete/Backspace` only in non-edit mode.
+- The review form must cover the editable fields required by the spec: `Target`, `Gloss`, `Explanation`, `Quiz`, and `Tags`.
+- `SourcePanel` must read persisted `source_refs_json`, not placeholder empty arrays.
+- `Restore last deleted` and `Deleted` view behavior must be part of the plan, not implied.
+
+```tsx
+// src/renderer/src/features/workbook/WorkbookPage.tsx
+import { WorkbookToolbar } from './WorkbookToolbar'
+import { CardStream } from './CardStream'
+import { SourcePanel } from './SourcePanel'
+
+export function WorkbookPage() {
+  const mode: 'progress' | 'review' = 'review'
+  return (
+    <div className="workbook-page">
+      {mode === 'progress' ? (
+        <div className="workbook-progress-state">Normalizing 0 / 0 sessions</div>
+      ) : (
+        <>
+          <WorkbookToolbar activeTab="all" stats="0 items" onExport={() => undefined} />
+          <CardStream />
+          <SourcePanel open={false} title="" context="" onPrevMatch={() => undefined} onNextMatch={() => undefined} />
+        </>
+      )}
+    </div>
+  )
+}
+```
+
 ```tsx
 // src/renderer/src/features/workbook/WorkbookToolbar.tsx
 type Props = {
@@ -2245,10 +2617,56 @@ type Props = {
 export function WorkbookToolbar({ activeTab, stats, onExport }: Props) {
   return (
     <header className="workbook-toolbar">
-      <div className="tabs">{activeTab}</div>
+      <div className="tabs">
+        <button type="button" aria-pressed={activeTab === 'all'}>All</button>
+        <button type="button" aria-pressed={activeTab === 'expressions'}>Expressions</button>
+        <button type="button" aria-pressed={activeTab === 'sentences'}>Sentences</button>
+        <button type="button" aria-pressed={activeTab === 'deleted'}>Deleted</button>
+      </div>
       <div className="stats">{stats}</div>
       <button type="button" onClick={onExport}>Export</button>
     </header>
+  )
+}
+```
+
+```tsx
+// src/renderer/src/features/workbook/CardStream.tsx
+import { useVirtualizer } from '@tanstack/react-virtual'
+import { useRef } from 'react'
+import { WorkbookCard } from './WorkbookCard'
+
+export function CardStream() {
+  const parentRef = useRef<HTMLDivElement | null>(null)
+  const rows = [{ id: 'row-1', source: 'worktree', target: '工作树' }]
+  const virtualizer = useVirtualizer({
+    count: rows.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: () => 160
+  })
+
+  return (
+    <div ref={parentRef} style={{ height: 600, overflow: 'auto' }}>
+      <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }}>
+        {virtualizer.getVirtualItems().map((item) => (
+          <div key={rows[item.index].id} style={{ position: 'absolute', top: item.start, left: 0, right: 0 }}>
+            <WorkbookCard
+              source={rows[item.index].source}
+              target={rows[item.index].target}
+              selected={item.index === 0}
+              modified={false}
+              onSelect={() => undefined}
+              onDelete={() => undefined}
+              onEdit={() => undefined}
+              onSaveAdvance={() => undefined}
+              onCancelEdit={() => undefined}
+              onRevert={() => undefined}
+              onOpenSource={() => undefined}
+            />
+          </div>
+        ))}
+      </div>
+    </div>
   )
 }
 ```
@@ -2288,7 +2706,15 @@ export function WorkbookCard(props: Props) {
   return (
     <article className={props.selected ? 'card selected' : 'card'} onClick={props.onSelect}>
       <div className="source">{props.source}</div>
-      <textarea value={props.target} onFocus={props.onEdit} readOnly={false} />
+      <input value={props.target} onKeyDown={(event) => {
+        if (event.key === 'Enter') props.onEdit()
+        if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') props.onSaveAdvance()
+        if (event.key === 'Escape') props.onCancelEdit()
+      }} readOnly={false} aria-label="Target" />
+      <input value="" readOnly={false} aria-label="Gloss" />
+      <textarea value="" readOnly={false} aria-label="Explanation" />
+      <textarea value="" readOnly={false} aria-label="Quiz" />
+      <input value="" readOnly={false} aria-label="Tags" />
       {props.modified ? <button type="button" onClick={props.onRevert}>Revert</button> : null}
       <button type="button" onClick={props.onOpenSource}>View source</button>
       <button type="button" onClick={props.onDelete}>Delete</button>
@@ -2355,8 +2781,28 @@ git commit -m "feat: add workbook review workflow"
 - Test: `tests/main/export/anki-text-bundle.test.ts`
 - Test: `tests/main/export/apkg.test.ts`
 - Test: `tests/main/export/generic-text-bundle.test.ts`
+- Test: `tests/main/export/export-policy.test.ts`
 
 - [ ] **Step 1: Write the failing export tests**
+
+```ts
+// tests/main/export/export-policy.test.ts
+import { describe, expect, it } from 'vitest'
+import { filterExportableItems } from '../../../src/main/export/manifest'
+
+describe('filterExportableItems', () => {
+  it('blocks flagged items when policy is block', () => {
+    const output = filterExportableItems(
+      [
+        { id: 'a', state: 'active', flagged: false },
+        { id: 'b', state: 'active', flagged: true }
+      ],
+      { flaggedItemExportPolicy: 'block' }
+    )
+    expect(output.map((item) => item.id)).toEqual(['a'])
+  })
+})
+```
 
 ```ts
 // tests/main/export/anki-text-bundle.test.ts
@@ -2480,6 +2926,18 @@ export function buildManifest(input: {
     sourcePlatformSummary: input.sourcePlatformSummary
   }
 }
+
+export function filterExportableItems<T extends { state: string; flagged?: boolean }>(
+  items: T[],
+  policy: { flaggedItemExportPolicy: 'block' | 'warn'; explicitlyKeptFlaggedIds?: string[] }
+) {
+  return items.filter((item: T & { id?: string }) => {
+    if (item.state !== 'active') return false
+    if (!item.flagged) return true
+    if (policy.flaggedItemExportPolicy === 'block') return false
+    return Boolean(item.id && policy.explicitlyKeptFlaggedIds?.includes(item.id))
+  })
+}
 ```
 
 ```ts
@@ -2539,8 +2997,19 @@ export async function writeGenericTextBundle(dir: string, input: {
 
 - [ ] **Step 4: Add the export modal and route exporter calls through IPC**
 
+Acceptance requirements for this task:
+
+- All three primary export targets remain in v1 scope: `Anki Package`, `Anki Text Bundle`, `Generic Text Bundle`.
+- `ExportModal` must actually read user form state for deck name, direction, item-type inclusion, tag prefix, and output location; no hardcoded button payloads in the final implementation.
+- Export filtering must enforce `ready workbook + active item` semantics and the flagged-item policy.
+- APKG export must preserve the spec’s `Expression` and `Sentence` export contract rather than collapsing everything into one generic card shape.
+- Bundle manifests must include the spec-required metadata, including item types, tag information, and source-platform summary.
+- Export failures must preserve the workbook and offer text-bundle fallback when package export fails.
+
 ```tsx
 // src/renderer/src/features/workbook/ExportModal.tsx
+import { useState } from 'react'
+
 type Props = {
   open: boolean
   onClose: () => void
@@ -2557,25 +3026,32 @@ type Props = {
 
 export function ExportModal({ open, onClose, onConfirm }: Props) {
   if (!open) return null
+  const [deckName, setDeckName] = useState('DialogLingo')
+  const [direction, setDirection] = useState<'en-zh' | 'zh-en' | 'bilingual'>('bilingual')
+  const [includeExpressions, setIncludeExpressions] = useState(true)
+  const [includeSentences, setIncludeSentences] = useState(true)
+  const [tagPrefix, setTagPrefix] = useState('dialoglingo')
+  const [outputLocation, setOutputLocation] = useState('~/Downloads/DialogLingo')
   return (
     <div className="export-modal">
-      <input aria-label="Deck name" defaultValue="DialogLingo" />
-      <input aria-label="Tag prefix" defaultValue="dialoglingo" />
-      <input aria-label="Output location" defaultValue="~/Downloads/DialogLingo" />
-      <select aria-label="Direction" defaultValue="bilingual">
+      <input aria-label="Deck name" value={deckName} onChange={(event) => setDeckName(event.target.value)} />
+      <input aria-label="Tag prefix" value={tagPrefix} onChange={(event) => setTagPrefix(event.target.value)} />
+      <input aria-label="Output location" value={outputLocation} onChange={(event) => setOutputLocation(event.target.value)} />
+      <select aria-label="Direction" value={direction} onChange={(event) => setDirection(event.target.value as 'en-zh' | 'zh-en' | 'bilingual')}>
         <option value="en-zh">EN -&gt; ZH</option>
         <option value="zh-en">ZH -&gt; EN</option>
         <option value="bilingual">Bilingual</option>
       </select>
-      <label><input type="checkbox" defaultChecked /> Expressions</label>
-      <label><input type="checkbox" defaultChecked /> Sentences</label>
-      <button type="button" onClick={() => onConfirm({ format: 'anki-package', deckName: 'DialogLingo', direction: 'bilingual', includeExpressions: true, includeSentences: true, tagPrefix: 'dialoglingo', outputLocation: '~/Downloads/DialogLingo' })}>
+      <label><input type="checkbox" checked={includeExpressions} onChange={(event) => setIncludeExpressions(event.target.checked)} /> Expressions</label>
+      <label><input type="checkbox" checked={includeSentences} onChange={(event) => setIncludeSentences(event.target.checked)} /> Sentences</label>
+      <label><input type="checkbox" /> Keep flagged items (warn only)</label>
+      <button type="button" onClick={() => onConfirm({ format: 'anki-package', deckName, direction, includeExpressions, includeSentences, tagPrefix, outputLocation })}>
         Export Anki Package
       </button>
-      <button type="button" onClick={() => onConfirm({ format: 'anki-text-bundle', deckName: 'DialogLingo', direction: 'bilingual', includeExpressions: true, includeSentences: true, tagPrefix: 'dialoglingo', outputLocation: '~/Downloads/DialogLingo' })}>
+      <button type="button" onClick={() => onConfirm({ format: 'anki-text-bundle', deckName, direction, includeExpressions, includeSentences, tagPrefix, outputLocation })}>
         Export Anki Text Bundle
       </button>
-      <button type="button" onClick={() => onConfirm({ format: 'generic-text-bundle', deckName: 'DialogLingo', direction: 'bilingual', includeExpressions: true, includeSentences: true, tagPrefix: 'dialoglingo', outputLocation: '~/Downloads/DialogLingo' })}>
+      <button type="button" onClick={() => onConfirm({ format: 'generic-text-bundle', deckName, direction, includeExpressions, includeSentences, tagPrefix, outputLocation })}>
         Export Generic Text Bundle
       </button>
       <button type="button" onClick={onClose}>Close</button>
@@ -2606,6 +3082,252 @@ git add src/main/export src/renderer/src/features/workbook/ExportModal.tsx src/s
 git commit -m "feat: add workbook export flow"
 ```
 
+### Task 9: Integrate Launch Orchestration, Error Handling, and Final Acceptance
+
+**Files:**
+- Create: `src/main/scan/scanCoordinator.ts`
+- Create: `src/main/errors/sourceIssues.ts`
+- Create: `src/main/errors/jobIssues.ts`
+- Create: `tests/main/scan/launch-orchestration.test.ts`
+- Create: `tests/main/errors/source-issues.test.ts`
+- Create: `tests/main/generation/job-cancel-resume.test.ts`
+- Create: `tests/main/generation/job-failure.test.ts`
+- Create: `tests/main/export/export-fallback.test.ts`
+- Modify: `src/main/index.ts`
+- Modify: `src/shared/ipc/router.ts`
+- Modify: `src/renderer/src/App.tsx`
+
+- [ ] **Step 1: Write the failing integration and hardening tests**
+
+```ts
+// tests/main/scan/launch-orchestration.test.ts
+import { describe, expect, it } from 'vitest'
+import { buildLaunchPlan } from '../../../src/main/scan/scanCoordinator'
+
+describe('buildLaunchPlan', () => {
+  it('enables scan-on-launch, selects all discovered projects, and focuses the first session', () => {
+    const plan = buildLaunchPlan({
+      settings: { scanOnLaunch: true },
+      discoveredProjects: ['p1', 'p2'],
+      discoveredSessionIds: ['s1', 's2'],
+      groupIds: ['codex', 'claude']
+    })
+    expect(plan.selectedProjectIds).toEqual(['p1', 'p2'])
+    expect(plan.focusedSessionId).toBe('s1')
+    expect(plan.collapsedGroupIds).toEqual(['codex', 'claude'])
+  })
+})
+```
+
+```ts
+// tests/main/generation/job-cancel-resume.test.ts
+import { describe, expect, it } from 'vitest'
+import { reduceJobEvent } from '../../../src/main/errors/jobIssues'
+
+describe('reduceJobEvent', () => {
+  it('keeps cancelled jobs resumable from persisted checkpoints', () => {
+    const next = reduceJobEvent(
+      { status: 'materializing', lastCheckpoint: 'ranked_orders' },
+      { kind: 'snapshot', status: 'cancelled' }
+    )
+    expect(next.status).toBe('cancelled')
+    expect(next.lastCheckpoint).toBe('ranked_orders')
+  })
+})
+```
+
+```ts
+// tests/main/errors/source-issues.test.ts
+import { describe, expect, it } from 'vitest'
+import { summarizeSourceIssue } from '../../../src/main/errors/sourceIssues'
+
+describe('summarizeSourceIssue', () => {
+  it('classifies missing paths into user-visible source issue summaries', () => {
+    expect(summarizeSourceIssue({ kind: 'missing-path', source: 'codex' })).toMatchObject({
+      severity: 'warning',
+      source: 'codex'
+    })
+  })
+
+  it('classifies unreadable local sources separately from missing paths', () => {
+    expect(summarizeSourceIssue({ kind: 'unreadable-source', source: 'claude' }).message).toBe('unreadable-source')
+  })
+})
+```
+
+```ts
+// tests/main/generation/job-failure.test.ts
+import { describe, expect, it } from 'vitest'
+import { reduceJobEvent } from '../../../src/main/errors/jobIssues'
+
+describe('reduceJobEvent failures', () => {
+  it('preserves failed-batch counters and restart diagnostics on invalid structured payload', () => {
+    const next = reduceJobEvent(
+      { status: 'enriching', lastCheckpoint: 'enrichment_batches', failedBatchCount: 0 },
+      { kind: 'failure', status: 'failed', failedBatchCount: 1 }
+    )
+    expect(next.status).toBe('failed')
+    expect(next.failedBatchCount).toBe(1)
+  })
+
+  it('captures provider timeout and LiteLLM request failure as restartable diagnostics', () => {
+    const timeout = reduceJobEvent(
+      { status: 'enriching', lastCheckpoint: 'enrichment_batches', failedBatchCount: 0 },
+      { kind: 'failure', status: 'failed', failedBatchCount: 1, failureReason: 'provider-timeout' }
+    )
+    const gateway = reduceJobEvent(
+      { status: 'enriching', lastCheckpoint: 'enrichment_batches', failedBatchCount: 0 },
+      { kind: 'failure', status: 'failed', failedBatchCount: 1, failureReason: 'litellm-request-failure' }
+    )
+    expect(timeout.failureReason).toBe('provider-timeout')
+    expect(gateway.failureReason).toBe('litellm-request-failure')
+  })
+})
+```
+
+```ts
+// tests/main/export/export-fallback.test.ts
+import { describe, expect, it } from 'vitest'
+import { chooseExportFallback } from '../../../src/main/errors/sourceIssues'
+
+describe('chooseExportFallback', () => {
+  it('falls back to text bundle if package export fails', () => {
+    expect(chooseExportFallback({ requested: 'anki-package', failed: true })).toBe('anki-text-bundle')
+  })
+})
+```
+
+- [ ] **Step 2: Run the hardening tests and verify failure**
+
+Run:
+
+```bash
+npm run test -- --run tests/main/scan/launch-orchestration.test.ts tests/main/generation/job-cancel-resume.test.ts tests/main/export/export-fallback.test.ts
+```
+
+Expected: FAIL with missing coordinator/error modules.
+
+- [ ] **Step 3: Implement launch orchestration and typed issue reducers**
+
+```ts
+// src/main/scan/scanCoordinator.ts
+export function buildLaunchPlan(input: {
+  settings: { scanOnLaunch: boolean }
+  discoveredProjects: string[]
+  discoveredSessionIds: string[]
+  groupIds: string[]
+}) {
+  return {
+    shouldScanOnLaunch: input.settings.scanOnLaunch,
+    selectedProjectIds: input.discoveredProjects,
+    focusedSessionId: input.discoveredSessionIds[0] ?? null,
+    collapsedGroupIds: input.groupIds
+  }
+}
+```
+
+```ts
+// src/main/errors/sourceIssues.ts
+export function chooseExportFallback(input: { requested: 'anki-package' | 'anki-text-bundle' | 'generic-text-bundle'; failed: boolean }) {
+  if (!input.failed) return input.requested
+  return input.requested === 'anki-package' ? 'anki-text-bundle' : 'generic-text-bundle'
+}
+
+export function summarizeSourceIssue(input: { kind: 'missing-path' | 'malformed-payload' | 'hash-mismatch'; source: 'codex' | 'claude' | 'opencode' }) {
+  return {
+    severity: 'warning' as const,
+    source: input.source,
+    message: input.kind
+  }
+}
+```
+
+```ts
+// src/main/errors/sourceIssues.ts (expanded kinds)
+export function summarizeSourceIssue(input: {
+  kind: 'missing-path' | 'unreadable-source' | 'malformed-payload' | 'hash-mismatch'
+  source: 'codex' | 'claude' | 'opencode'
+}) {
+  return {
+    severity: 'warning' as const,
+    source: input.source,
+    message: input.kind
+  }
+}
+```
+
+```ts
+// src/main/errors/jobIssues.ts
+export function reduceJobEvent(
+  state: { status: string; lastCheckpoint: string | null; failedBatchCount?: number; failureReason?: string | null },
+  event: { kind: string; status: string; failedBatchCount?: number; failureReason?: 'invalid-structured-payload' | 'provider-timeout' | 'litellm-request-failure' }
+) {
+  return {
+    ...state,
+    status: event.status,
+    failedBatchCount: event.failedBatchCount ?? state.failedBatchCount ?? 0,
+    failureReason: event.failureReason ?? state.failureReason ?? null
+  }
+}
+```
+
+- [ ] **Step 4: Wire launch scan responsibility and source/job/export issue surfaces**
+
+Acceptance requirements for this task:
+
+- `main/index.ts` must own the startup responsibility chain:
+  - load settings
+  - if `scanOnLaunch`, trigger scan background work
+  - hydrate discovered projects
+  - focus the first available session
+- source-layer failures must be summarized into a source-issue surface the renderer can query
+- job-layer failures must preserve diagnostics and checkpoint pointers
+- export failures must preserve workbook state and propose fallback format routing
+- this task is the place where spec `Manual verification` and `Acceptance Summary` are translated into one final acceptance gate
+
+- [ ] **Step 5: Run full acceptance verification**
+
+Run:
+
+```bash
+npm run test -- --run tests/main/scan/launch-orchestration.test.ts tests/main/generation/job-cancel-resume.test.ts tests/main/export/export-fallback.test.ts
+npm run test -- --run tests/main/errors/source-issues.test.ts tests/main/generation/job-failure.test.ts tests/main/sources/codex-adapter.test.ts tests/main/sources/claude-adapter.test.ts tests/main/sources/opencode-adapter.test.ts tests/main/search/query-sessions.test.ts tests/main/generation/preclean.test.ts tests/main/generation/redaction.test.ts tests/main/generation/ranking.test.ts tests/main/generation/type-balance-rerank.test.ts tests/main/workbook/workbook-service.test.ts tests/main/export/anki-text-bundle.test.ts tests/main/export/apkg.test.ts tests/main/export/generic-text-bundle.test.ts tests/main/export/export-policy.test.ts
+npm run typecheck
+npm run build
+```
+
+Expected:
+
+- all targeted tests PASS
+- `typecheck` PASS
+- `build` PASS
+
+- [ ] **Step 6: Manual acceptance pass**
+
+Run the app locally and verify:
+
+1. app opens on macOS
+2. app opens on Windows
+3. app opens on Linux
+4. scan-on-launch discovers projects and sessions
+5. last-7-days is default
+6. no sessions are preselected
+7. first session is focused
+8. filtering/search/grouping work together
+9. generation runs through real job stages
+10. cancel preserves partial state
+11. workbook review supports edit/delete/restore/revert
+12. provenance panel shows persisted source refs
+13. export works for Anki Package, Anki Text Bundle, and Generic Text Bundle
+14. package-export failure falls back cleanly to text-bundle recommendation
+
+- [ ] **Step 7: Commit orchestration and acceptance hardening**
+
+```bash
+git add src/main/scan/scanCoordinator.ts src/main/errors src/main/index.ts src/shared/ipc/router.ts src/renderer/src/App.tsx tests/main/scan/launch-orchestration.test.ts tests/main/generation/job-cancel-resume.test.ts tests/main/export/export-fallback.test.ts
+git commit -m "feat: harden launch orchestration and acceptance flow"
+```
+
 ## Self Review
 
 ### Spec coverage
@@ -2616,6 +3338,7 @@ git commit -m "feat: add workbook export flow"
 - Generation jobs, LiteLLM, typed job events, ranking, and rerank: covered in Task 6
 - Workbook review, draft state, revisions, delete/restore/revert, and source panel: covered in Task 7
 - Anki Package, Anki Text Bundle, and Generic Text Bundle: covered in Task 8
+- Launch defaults, error handling, and final acceptance verification: covered in Task 9
 
 No spec section is intentionally skipped.
 
@@ -2630,6 +3353,7 @@ No spec section is intentionally skipped.
 
 - Navigation ids use `search | workbook`
 - Workbook item types use `Expression | Sentence`
-- Workbook lifecycle uses `active | deleted`
+- Workbook item state uses `active | deleted`
+- Workbook lifecycle uses `draft | ready | failed | cancelled`
 - Search query scope uses `all | titles | transcript`
 - Generation and export both assume `normalized preview` as the user-facing read layer
