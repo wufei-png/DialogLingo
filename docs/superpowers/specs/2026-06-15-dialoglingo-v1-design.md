@@ -118,19 +118,31 @@ The left side behaves like a Codex-Desktop-style rail plus session tree. The mai
   - `Search & Select`
   - `Workbook`
 - Filter header:
+  - search box
   - `Time range`
   - `Platform`
   - `Projects`
+- List toolbar:
   - `Group by`
+  - `Select All in View`
+  - `Clear Selection`
 - Session tree:
   - grouped session rows
   - group-level bulk actions
   - session-level checkboxes
 - Footer:
+  - selected session count
+  - `Generate Workbook`
   - `Rescan`
   - `Settings`
 
-Do not render six separate visual blocks. The filter controls should feel like a compact header above the session tree, not a dashboard of panels.
+Do not render six separate visual blocks. The left rail should feel like one compact search-and-selection surface:
+
+- search box
+- collapsible filter controls
+- list toolbar
+- session tree
+- footer actions
 
 #### Search & Select defaults
 
@@ -139,10 +151,13 @@ On launch:
 - auto-scan local sources
 - auto-discover projects from indexed sessions
 - default-select all discovered projects
-- default-select all sessions
+- default `Time range = Last 7 days`
+- default-select no sessions
 - default `Group by = Platform`
 - groups default to collapsed
 - the first available session is focused in the main pane
+
+The app must not silently default to generating against the full local corpus.
 
 #### Project behavior
 
@@ -176,6 +191,13 @@ The UI should use FTS-backed snippets/highlights in:
 
 Search is against the local index only. The preview pane displays the result context; it is not its own search target.
 
+When search is active:
+
+- matching groups auto-expand
+- matching sessions surface FTS snippets in the session tree
+- the preview pane auto-scrolls to the first visible match
+- if the first match is inside a collapsed code/log block, that local block expands before scrolling
+
 #### Grouping behavior
 
 Only one grouping mode may be active at a time:
@@ -189,6 +211,12 @@ Default grouping is `Platform`.
 When grouped by `Time range`, groups are day-granularity and sessions inside a group sort from earlier to later.
 
 Group-by changes should use restrained Motion layout animation on group containers and visible rows only. Session rows must use stable `session.id` keys, never array indexes. If the list is large, animate group headers and visible rows only; do not attempt full-list FLIP animation across thousands of virtualized rows.
+
+Session rows should dynamically compensate for the active grouping mode, but remain compact. In v1, keep each row to:
+
+- primary title
+- one secondary text slot
+- at most one compact badge
 
 #### Session row interaction
 
@@ -205,13 +233,19 @@ The main pane displays the focused session:
 - source platform
 - project/workspace path
 - timestamps
-- normalized or raw conversation preview
+- normalized conversation preview
 - highlighted snippets when relevant
 
-Bottom sticky bar:
+The preview pane is for relevance checking before generation, not full transcript inspection. Code/log blocks should be collapsed by default in preview. Raw transcript excerpts should remain available only as a fallback drill-down, not as the primary reading layer.
+
+The `Generate Workbook` action lives in the left-rail footer because selection happens there. Triggering generation opens a lightweight confirmation sheet that shows:
 
 - selected session count
-- `Generate workbook`
+- platform distribution
+- project distribution
+- generated item types: `Expression + Sentence`
+
+That confirmation sheet should confirm scope only. It should not expose generation-parameter editing.
 
 Large transcript text surfaces should not receive heavy motion treatment. Avoid transcript-scroll animation, heavy table-sort animation, and fake token-stream activity in the preview surface.
 
@@ -237,20 +271,66 @@ Do not show half-built review tables during active generation.
 
 After completion, expand into the workbook review surface:
 
-- tabs or filters such as:
+- keep only the global app chrome / section switcher from the Search page
+- use a single-line sticky top bar inside the main workbook surface
+- left side of the sticky bar:
   - `All`
-  - `Expression`
-  - `Sentence`
-  - `Edited`
+  - `Expressions`
+  - `Sentences`
   - `Deleted`
-- review table powered by `TanStack Table`
-- long workbook lists virtualized with `TanStack Virtual`
-- item detail drawer or inline expansion
-- export button in top-right
+- center of the sticky bar:
+  - workbook statistics
+- right side of the sticky bar:
+  - `Export`
+- main body:
+  - virtualized card stream
+- auxiliary source view:
+  - on-demand right-side provenance panel
+  - not a permanent 40% split
 
 Export opens a modal. Export is not its own page.
 
 Workbook items should be loaded through `TanStack Query`, not through ad hoc component-level fetch logic.
+
+The workbook should not reuse the Search page’s heavy left rail. Workbook local controls belong in the sticky top bar above the card stream.
+
+#### Workbook card interaction model
+
+- single click on a card: select it
+- `Enter` or explicit field action: begin editing
+- `Cmd/Ctrl+Enter`: save and advance to the next item
+- `Esc` / `Cancel`: discard the current unsaved edit buffer
+
+Do not use hover-to-edit. Do not let the provenance panel track hover churn.
+
+#### Editable versus read-only fields
+
+`Source` is read-only in v1.
+
+Editable fields may include:
+
+- `Target`
+- `Gloss`
+- `Explanation`
+- `Quiz`
+- `Tags`
+
+This preserves stable provenance anchors for source highlighting and source-position jumps.
+
+#### Provenance panel
+
+The provenance panel opens on demand from the selected card through a control such as `View source` or `Context`.
+
+It should show:
+
+- source platform
+- project/workspace
+- timestamp
+- source turn/span metadata
+- normalized context snippet with highlight
+- optional raw excerpt fallback
+
+It should not be a permanently reserved peer column in the default workbook layout.
 
 ## Settings
 
