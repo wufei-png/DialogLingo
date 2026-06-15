@@ -23,6 +23,7 @@ create table if not exists sessions (
   updated_at text not null,
   preview text not null,
   search_text text not null,
+  is_archived integer not null default 0,
   raw_locator text not null,
   hash text not null
 );

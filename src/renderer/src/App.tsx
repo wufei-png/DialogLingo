@@ -8,6 +8,8 @@ const queryClient = new QueryClient()
 
 export default function App() {
   const [activeSection, setActiveSection] = useState<NavSectionId>('search')
+  const [activeJobId, setActiveJobId] = useState<string | null>(null)
+  const [activeWorkbookId, setActiveWorkbookId] = useState<string | null>(null)
 
   return (
     <QueryClientProvider client={queryClient}>
@@ -31,7 +33,20 @@ export default function App() {
           </div>
         </aside>
         <main className="app-content">
-          {activeSection === 'search' ? <SearchPage /> : <WorkbookPage />}
+          {activeSection === 'search' ? (
+            <SearchPage
+              onWorkbookReady={(payload) => {
+                setActiveJobId(payload.jobId)
+                setActiveWorkbookId(payload.workbookId)
+                setActiveSection('workbook')
+              }}
+            />
+          ) : (
+            <WorkbookPage
+              jobId={activeJobId}
+              workbookId={activeWorkbookId}
+            />
+          )}
         </main>
       </div>
     </QueryClientProvider>

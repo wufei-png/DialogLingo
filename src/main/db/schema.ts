@@ -25,6 +25,7 @@ export const sessionsTable = sqliteTable('sessions', {
   updatedAt: text('updated_at').notNull(),
   preview: text('preview').notNull(),
   searchText: text('search_text').notNull(),
+  isArchived: integer('is_archived', { mode: 'boolean' }).notNull(),
   rawLocator: text('raw_locator').notNull(),
   hash: text('hash').notNull()
 })

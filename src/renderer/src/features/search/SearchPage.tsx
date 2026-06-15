@@ -18,7 +18,9 @@ type SessionPreview = {
   snippet: { snippet?: string } | null
 }
 
-export function SearchPage() {
+export function SearchPage(props: {
+  onWorkbookReady: (payload: { jobId: string; workbookId: string }) => void
+}) {
   const [sessions, setSessions] = useState<SearchSession[]>([])
   const [focusedSessionId, setFocusedSessionId] = useState<string | null>(null)
   const [selectedSessionIds, setSelectedSessionIds] = useState<Set<string>>(new Set())
@@ -96,6 +98,16 @@ export function SearchPage() {
             await trpc.sessionRescan.mutate()
             await loadSessions()
           })()
+        }}
+        onGenerate={async (sessionIds) => {
+          const response = (await trpc.generationStart.mutate({
+            sessionIds
+          })) as {
+            jobId: string
+            workbookId: string
+          }
+
+          props.onWorkbookReady(response)
         }}
       />
       <SessionPreviewPane

@@ -285,6 +285,20 @@ button {
   padding: 24px;
 }
 
+.export-modal {
+  display: grid;
+  gap: 12px;
+}
+
+.export-modal input,
+.export-modal select {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid rgba(17, 24, 39, 0.12);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.92);
+}
+
 .sheet-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -294,6 +308,125 @@ button {
 .sheet-actions {
   display: flex;
   justify-content: flex-end;
+  gap: 12px;
+}
+
+.workbook-page {
+  display: grid;
+  gap: 16px;
+}
+
+.workbook-toolbar {
+  position: sticky;
+  top: 0;
+  z-index: 5;
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 16px;
+  align-items: center;
+  padding: 16px 20px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.78);
+  backdrop-filter: blur(16px);
+}
+
+.workbook-tabs {
+  display: flex;
+  gap: 10px;
+}
+
+.workbook-tabs button,
+.workbook-toolbar > button,
+.workbook-card-actions button,
+.source-panel-actions button {
+  padding: 10px 14px;
+  border: 0;
+  border-radius: 14px;
+  background: #e5e7eb;
+  color: #111827;
+}
+
+.workbook-tabs button[aria-pressed='true'] {
+  background: #111827;
+  color: white;
+}
+
+.workbook-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(280px, 360px);
+  gap: 16px;
+  align-items: start;
+}
+
+.workbook-stream {
+  min-height: 60vh;
+  max-height: 72vh;
+  overflow: auto;
+  padding-right: 8px;
+}
+
+.workbook-card {
+  display: grid;
+  gap: 10px;
+  padding: 18px;
+  border-radius: 22px;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 12px 36px rgba(17, 24, 39, 0.08);
+}
+
+.workbook-card.is-selected {
+  outline: 2px solid rgba(17, 24, 39, 0.14);
+}
+
+.workbook-card-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.workbook-card-kicker {
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #6b7280;
+}
+
+.workbook-card input,
+.workbook-card textarea {
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid rgba(17, 24, 39, 0.12);
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.92);
+  font: inherit;
+}
+
+.workbook-card textarea {
+  min-height: 88px;
+  resize: vertical;
+}
+
+.workbook-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.source-panel {
+  padding: 18px;
+  border-radius: 24px;
+  background: rgba(255, 255, 255, 0.78);
+  box-shadow: 0 12px 36px rgba(17, 24, 39, 0.08);
+}
+
+.source-panel-actions {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.workbook-progress-state {
+  display: grid;
   gap: 12px;
 }
 

@@ -17,6 +17,7 @@ export function SearchRail(props: {
   onToggleSession: (sessionId: string) => void
   onFocusSession: (sessionId: string) => void
   onRescan: () => void
+  onGenerate: (sessionIds: string[]) => Promise<void>
 }) {
   const [sheetOpen, setSheetOpen] = useState(false)
   const groups = ['codex', 'claude', 'opencode'].map((sourceType) => {
@@ -112,8 +113,30 @@ export function SearchRail(props: {
             <option value="time">Time range</option>
             <option value="project">Project</option>
           </select>
-          <button type="button">Select All in View</button>
-          <button type="button">Clear Selection</button>
+          <button
+            type="button"
+            onClick={() => {
+              groups.flatMap((group) => group.rows).forEach((row) => {
+                if (!props.selectedSessionIds.has(row.sessionId)) {
+                  props.onToggleSession(row.sessionId)
+                }
+              })
+            }}
+          >
+            Select All in View
+          </button>
+          <button
+            type="button"
+            onClick={() => {
+              groups.flatMap((group) => group.rows).forEach((row) => {
+                if (props.selectedSessionIds.has(row.sessionId)) {
+                  props.onToggleSession(row.sessionId)
+                }
+              })
+            }}
+          >
+            Clear Selection
+          </button>
         </div>
 
         <SessionTree
@@ -145,7 +168,10 @@ export function SearchRail(props: {
         platformSummary={platformSummary}
         projectSummary={projectSummary}
         onCancel={() => setSheetOpen(false)}
-        onConfirm={() => setSheetOpen(false)}
+        onConfirm={() => {
+          void props.onGenerate([...props.selectedSessionIds])
+          setSheetOpen(false)
+        }}
       />
     </aside>
   )
