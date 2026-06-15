@@ -8,6 +8,8 @@
 
 **Tech Stack:** Electron, electron-vite, React, TypeScript strict, Zustand, TanStack Query/Table/Virtual, better-sqlite3, Drizzle ORM, SQLite FTS5, electron-trpc, Zod, Motion for React, Vitest
 
+Exact dependency versions, Node runtime version, and native `better-sqlite3` rebuild policy are governed by [Electron stack version decision](../../architecture/2026-06-15-electron-stack-version-decision.md).
+
 ---
 
 ## File Structure
@@ -187,43 +189,52 @@ Expected: FAIL with `Cannot find module '../../src/shared/navigation'` or missin
   "version": "0.1.0",
   "type": "module",
   "main": "dist-electron/main/index.js",
+  "engines": {
+    "node": "24.15.0"
+  },
   "scripts": {
-    "dev": "electron-vite dev",
-    "build": "electron-vite build",
+    "rebuild:native:node": "npm rebuild better-sqlite3",
+    "capture:native:node": "node scripts/capture-node-better-sqlite3.mjs",
+    "prepare:native:electron": "node scripts/prepare-electron-better-sqlite3.mjs",
+    "dev": "npm run prepare:native:electron && node scripts/run-electron-vite-dev.mjs",
+    "build": "npm run prepare:native:electron && electron-vite build",
     "preview": "electron-vite preview",
+    "postinstall": "npm run rebuild:native:node && npm run capture:native:node",
     "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
     "test": "vitest run",
     "test:watch": "vitest",
     "db:migrate": "tsx src/main/db/migrate.ts"
   },
   "dependencies": {
-    "@tanstack/react-query": "^5.0.0",
-    "@tanstack/react-table": "^8.0.0",
-    "@tanstack/react-virtual": "^3.0.0",
-    "@trpc/client": "^10.0.0",
-    "@trpc/server": "^10.0.0",
     "@paperclipsapp/anki-apkg-export": "^5.0.0",
-    "better-sqlite3": "^11.0.0",
-    "drizzle-orm": "^0.33.0",
-    "electron": "^34.0.0",
-    "electron-trpc": "^0.7.1",
-    "motion": "^11.0.0",
-    "react": "^19.0.0",
-    "react-dom": "^19.0.0",
-    "zod": "^3.23.0",
-    "zustand": "^5.0.0"
+    "@tanstack/react-query": "^5.81.2",
+    "@tanstack/react-table": "^8.21.3",
+    "@tanstack/react-virtual": "^3.13.12",
+    "@trpc/client": "^10.45.2",
+    "@trpc/server": "^10.45.2",
+    "better-sqlite3": "12.10.1",
+    "drizzle-orm": "^0.45.2",
+    "electron-trpc": "0.7.1",
+    "motion": "^12.23.12",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "zod": "^3.25.76",
+    "zustand": "^5.0.6"
   },
   "devDependencies": {
-    "@types/node": "^22.0.0",
-    "@types/react": "^19.0.0",
-    "@types/react-dom": "^19.0.0",
-    "@vitejs/plugin-react": "^4.0.0",
-    "drizzle-kit": "^0.24.0",
-    "electron-vite": "^3.0.0",
-    "tsx": "^4.0.0",
-    "typescript": "^5.7.0",
-    "vite": "^6.0.0",
-    "vitest": "^2.0.0"
+    "@electron/rebuild": "4.0.4",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "24.13.2",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@vitejs/plugin-react": "^4.7.0",
+    "drizzle-kit": "^0.31.4",
+    "electron": "41.7.2",
+    "electron-vite": "5.0.0",
+    "tsx": "^4.20.3",
+    "typescript": "^5.8.3",
+    "vite": "^7.0.0",
+    "vitest": "^2.1.9"
   }
 }
 ```

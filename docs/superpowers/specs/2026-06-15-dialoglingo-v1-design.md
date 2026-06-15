@@ -57,6 +57,8 @@ Recommend:
 - Animation: `Motion for React` layout animations + `AnimatePresence`
 - Testing: `Vitest` + fixture-driven adapter/ranking/workbook/export tests
 
+Exact dependency versions and native-module rebuild policy are governed by [Electron stack version decision](../../architecture/2026-06-15-electron-stack-version-decision.md).
+
 Rationale:
 
 - `Electron + electron-vite` prioritize engineering speed plus the Node/TypeScript ecosystem needed for local files, SQLite, transcript ingestion, and export.

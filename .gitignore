@@ -6,3 +6,4 @@ out
 coverage
 dialoglingo.db
 *.tsbuildinfo
+.superpowers/

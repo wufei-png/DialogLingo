@@ -1,6 +1,11 @@
+import { createRequire } from 'node:module'
 import { contextBridge, ipcRenderer } from 'electron'
-import { exposeElectronTRPC } from 'electron-trpc/main'
 import { jobEventSchema } from '../shared/ipc/events'
+
+const require = createRequire(import.meta.url)
+const { exposeElectronTRPC } = require('electron-trpc/main') as {
+  exposeElectronTRPC: () => void
+}
 
 process.once('loaded', () => {
   exposeElectronTRPC()
