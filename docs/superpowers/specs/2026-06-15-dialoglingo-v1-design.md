@@ -485,7 +485,14 @@ The model should enrich candidate groups, not discover everything from scratch o
 
 Ranking should not be a pure black-box model decision.
 
-Use three stages:
+Ranking should remain interpretable in v1. Use a two-stage approach:
+
+1. `base ranking`
+   - score each candidate independently
+   - compute scores separately for `Expression` and `Sentence`
+2. `diversity rerank`
+   - optimize the default presented ordering for type balance only
+   - prevent one item type from dominating the top of the workbook
 
 ### 1. Hard filter
 
@@ -497,7 +504,26 @@ Remove obvious bad candidates:
 - generic boilerplate
 - near-duplicate junk
 
+Sensitive content should not be handled mainly as a ranking penalty.
+
+- obvious sensitive or unsafe content should be removed in `hard filter`
+- borderline sensitive content should be flagged for manual review
+- export may block flagged items unless the user explicitly keeps them
+
 ### 2. Heuristic scoring
+
+All positive scores and penalties must be normalized to `[0,1]` before combination.
+
+Do not rely on unstable per-job min-max scaling as the main normalization mechanism. Prefer bounded transforms and fixed semantic output ranges where practical.
+
+`recurrence_score` should use log compression instead of raw linear counts:
+
+```text
+recurrence_score =
+  log(1 + occurrence_count) / log(1 + max_occurrence_count)
+```
+
+This prevents highly frequent items from dominating too aggressively.
 
 Compute local interpretable scores:
 
@@ -505,8 +531,16 @@ Compute local interpretable scores:
 - `context_score`
 - `domain_score`
 - `language_gap_score`
+- `source_quality_score`
 - `noise_penalty`
 - `dup_penalty`
+
+`source_quality_score` should reflect source cleanliness and confidence, for example:
+
+- provenance completeness
+- non-fragmented context
+- non-truncated usable turns
+- generally clean transcript extraction context
 
 ### 3. LLM enrichment signals
 
@@ -518,22 +552,88 @@ Ask the model for bounded structured hints:
 - `concise_rationale`
 - `preferred_context`
 
-### Final ranking
+### Base ranking: Expression
 
-Start with a simple weighted score:
+`Expression` items should emphasize recurrence and domain relevance.
 
 ```text
-final_score =
-  0.30 * recurrence_score +
+base_score_expression =
+  0.25 * recurrence_score +
+  0.25 * domain_score +
   0.20 * context_score +
-  0.20 * domain_score +
   0.15 * language_gap_score +
-  0.15 * usefulness_score
-  - noise_penalty
-  - dup_penalty
+  0.10 * usefulness_score +
+  0.05 * source_quality_score
+  - 0.15 * noise_penalty
+  - 0.10 * dup_penalty
 ```
 
-This is intentionally explainable and easy to tune.
+### Base ranking: Sentence
+
+`Sentence` items should emphasize context richness and bilingual learning value.
+
+```text
+base_score_sentence =
+  0.10 * recurrence_score +
+  0.15 * domain_score +
+  0.30 * context_score +
+  0.25 * language_gap_score +
+  0.15 * usefulness_score +
+  0.05 * source_quality_score
+  - 0.15 * noise_penalty
+  - 0.10 * dup_penalty
+```
+
+### Base score handling
+
+Preserve a high-resolution internal base score for ordering, and clamp only for display if needed.
+
+- `raw_base_score`
+- `display_score = clamp(raw_base_score, 0, 1)`
+
+### Diversity rerank
+
+v1 does not need full MMR, session caps, project caps, or hard quotas.
+
+The rerank stage should only support a soft target balance between item types, for example:
+
+- `Expression = 60%`
+- `Sentence = 40%`
+
+This balance is not a hard constraint. It is a recommendation-order preference only.
+
+Implementation recommendation:
+
+- rank `Expression` items by `base_score_expression`
+- rank `Sentence` items by `base_score_sentence`
+- greedily merge the two ordered queues
+- at each step, apply a small bonus to the type that is currently below its target ratio
+- keep original base scores unchanged
+
+This improves the workbook as an ordered set while preserving the full reviewed candidate set.
+
+Store rerank outputs separately from base scores, for example:
+
+- `raw_base_score`
+- `recommended_rank_profile`
+- `recommended_order_index`
+
+Suggested default rerank profile:
+
+```json
+{
+  "mode": "type_balance",
+  "target_expression": 0.6,
+  "target_sentence": 0.4,
+  "lambda": 0.1
+}
+```
+
+The user may later adjust the type-balance target without rerunning the full generation pipeline.
+
+### Final ranking note
+
+In v1, the workbook should retain the full reviewed candidate set. Ranking primarily affects default ordering and recommendation emphasis, not hard candidate elimination after review.
 
 ## Provider and Model Strategy
 
