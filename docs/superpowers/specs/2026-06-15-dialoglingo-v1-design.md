@@ -2,7 +2,7 @@
 
 ## Objective
 
-Build `DialogLingo` as a local-first cross-platform desktop app that turns agent chat sessions into reviewed English-learning workbooks, then exports them primarily to Anki and secondarily to simple text bundle formats.
+Build `DialogLingo` as a local-first cross-platform desktop app that turns agent chat sessions into English-learning workbooks for review and export, then exports them primarily to Anki and secondarily to simple text bundle formats.
 
 This v1 is not a general transcript browser, not a provider router, and not a long-term learning tracker. Its job is:
 
@@ -12,7 +12,7 @@ This v1 is not a general transcript browser, not a provider router, and not a lo
 
 DialogLingo is a standalone desktop app for macOS, Windows, and Linux. It should feel visually adjacent to Codex Desktop: light white/gray surfaces, restrained motion, and selective glass/translucent treatment on chrome and modal surfaces rather than dense list content.
 
-The product is a review-and-export console for learning material derived from daily AI conversations. Users do not study inside DialogLingo long-term. They generate and clean up a workbook, then export it to Anki or text formats for downstream learning tools.
+The product is a review-and-export console for learning material derived from daily AI conversations. Users do not study inside DialogLingo long-term. They generate a workbook, optionally clean it up, then export it to Anki or text formats for downstream learning tools.
 
 ## Goals
 
@@ -363,8 +363,12 @@ This freezes the selected input set for reproducibility.
 `state` values:
 
 - `active`
-- `edited`
 - `deleted`
+
+Edited status is derived, not persisted as a lifecycle state. It should be computed from:
+
+- `generated_snapshot_json != current_snapshot_json`
+- or equivalent edit-revision metadata
 
 #### `workbook_item_revisions`
 
@@ -466,7 +470,7 @@ Every generation stage runs as a background job, not in the renderer and not as 
 9. `review`
    - edit/delete/restore/revert
 10. `export`
-   - only reviewed current-state active items are exported
+   - all current-state active items are exportable by default
    - execute as a background job
 
 ### Candidate mining
@@ -610,7 +614,7 @@ Implementation recommendation:
 - at each step, apply a small bonus to the type that is currently below its target ratio
 - keep original base scores unchanged
 
-This improves the workbook as an ordered set while preserving the full reviewed candidate set.
+This improves the workbook as an ordered set while preserving the full candidate set.
 
 Store rerank outputs separately from base scores, for example:
 
@@ -633,7 +637,7 @@ The user may later adjust the type-balance target without rerunning the full gen
 
 ### Final ranking note
 
-In v1, the workbook should retain the full reviewed candidate set. Ranking primarily affects default ordering and recommendation emphasis, not hard candidate elimination after review.
+In v1, the workbook should retain the full candidate set. Ranking primarily affects default ordering and recommendation emphasis, not hard candidate elimination after generation.
 
 ## Provider and Model Strategy
 
@@ -707,10 +711,18 @@ The user requested a simpler alternative to a global undo system. Use this model
   - autosave confirmed workbook draft state
   - do not silently commit unsaved edit-buffer changes
 
+`Edited` is a workbook view filter, not a persisted lifecycle state.
+
 ### Edit semantics
 
 - `Cancel`: discard current unsaved edit buffer
 - `Revert`: reset the item to its original generated snapshot
+
+### Export semantics
+
+- export all `state = active` items by default
+- this includes both untouched generated items and edited items
+- never export `state = deleted` items unless they are restored first
 
 This avoids the complexity of a universal Ctrl+Z stack while preserving user trust.
 
@@ -834,7 +846,9 @@ Transcript privacy is a first-order requirement.
 - visible provenance from workbook item back to source session span
 - transcript pre-cleaning before provider calls
 - redaction and filtering policy for obvious sensitive noise
-- no silent export of deleted or unreviewed workbook items
+- deleted items must not silently reappear in export
+- flagged items may require explicit keep/confirm before export
+- export defaults should be visible to the user, including that active generated items are exportable by default
 
 ### Risk note
 
