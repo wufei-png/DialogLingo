@@ -42,19 +42,64 @@ The product is a review-and-export console for learning material derived from da
 Recommend:
 
 - Desktop shell: `Electron`
-- UI: `React + TypeScript`
-- Local database: `SQLite` with `FTS5`
-- IPC/background work: Electron main process + typed job events
-- Model call layer: TypeScript-side structured generation client
-- Remote model gateway: `LiteLLM`
+- Scaffold/build: `electron-vite`
+- UI: `React + TypeScript` with strict mode
+- UI state: `Zustand`
+- Async data/job state: `TanStack Query` + typed job event subscription
+- Tables/lists: `TanStack Table` + `TanStack Virtual`
+- Local database: `SQLite`
+- DB driver: `better-sqlite3`, running in Electron `main`, `utilityProcess`, or `worker_threads`, never in `renderer`
+- DB schema/migrations: `Drizzle ORM` + checked-in migrations
+- Full-text search: `SQLite FTS5`, implemented through raw SQL migrations and query helpers
+- IPC: `electron-trpc + Zod`
+- Background work: Electron `utilityProcess` / `worker_threads` + typed job events
+- Model layer: `LiteLLM` as the OpenAI-compatible gateway + TypeScript structured generation client + `Zod` validation
+- Animation: `Motion for React` layout animations + `AnimatePresence`
+- Testing: `Vitest` + fixture-driven adapter/ranking/workbook/export tests
 
 Rationale:
 
-- The reuse surface we want most is currently strongest in the Node/TypeScript ecosystem: provider SDKs, OpenAI-compatible clients, existing transcript tooling, and export helpers.
-- Electron is heavier than Tauri, but it reduces integration complexity for transcript ingestion, background jobs, and structured model workflows.
-- The app’s core differentiation is not native-shell minimalism. It is the transcript-to-workbook pipeline. Optimize for engineering speed and ecosystem leverage first.
+- `Electron + electron-vite` prioritize engineering speed plus the Node/TypeScript ecosystem needed for local files, SQLite, transcript ingestion, and export.
+- `Zustand` manages local UI intent only: active section, focused session, selected ids, filters, and drawer/modal state.
+- `TanStack Query` manages async state only: sessions, session previews, workbook items, and generation-job snapshots.
+- `SQLite + better-sqlite3 + Drizzle` are complementary, not substitutes: SQLite is the database, `better-sqlite3` is the Node driver, and `Drizzle` manages schema, normal queries, and checked-in migrations.
+- `FTS5` should stay in raw SQL. Full-text search, snippets, highlighting, and ranking should not be forced into the ORM abstraction.
+- `electron-trpc + Zod` keep IPC from sprawling into ad hoc channels and give end-to-end type plus runtime validation.
+- `utilityProcess / worker_threads` keep scan, normalize, generation, and export work off the renderer and out of the main event loop hot path.
+- `Motion` is for explaining state changes, not decorating everything. Use it for section transitions, group-by reorders, and delete/restore transitions only.
+- `Vitest` fixture-driven tests are critical because adapters, ranking, workbook behavior, and export mappings are easy for later AI-driven edits to regress.
 
 This recommendation does not prevent a later Tauri migration, but v1 should not split effort across two app-shell strategies.
+
+If `electron-trpc` becomes a concrete packaging or preload blocker, the only acceptable fallback is a small `Zod` schema-driven typed IPC layer. Do not keep both IPC systems in parallel.
+
+## IPC and Background Work
+
+DialogLingo should have one typed desktop boundary:
+
+- renderer calls typed IPC procedures
+- typed IPC procedures live behind `electron-trpc + Zod`
+- long-running work executes in `utilityProcess` or `worker_threads`
+- progress flows back through typed job-event subscription
+
+Do not let renderer code access the database directly. Do not let background work invent a second IPC contract.
+
+Recommended division:
+
+- `renderer`
+  - view state
+  - query subscriptions
+  - job progress display
+- `main`
+  - window lifecycle
+  - IPC router bootstrap
+  - orchestration and worker spawning
+- `utilityProcess` / `worker_threads`
+  - scan
+  - normalize
+  - candidate mining
+  - LLM batches
+  - export
 
 ## Information Architecture
 
@@ -121,6 +166,8 @@ Default grouping is `Platform`.
 
 When grouped by `Time range`, groups are day-granularity and sessions inside a group sort from earlier to later.
 
+Group-by changes should use restrained Motion layout animation on group containers and visible rows only. Session rows must use stable `session.id` keys, never array indexes. If the list is large, animate group headers and visible rows only; do not attempt full-list FLIP animation across thousands of virtualized rows.
+
 #### Session row interaction
 
 - Clicking a session row focuses preview only.
@@ -143,6 +190,8 @@ Bottom sticky bar:
 
 - selected session count
 - `Generate workbook`
+
+Large transcript text surfaces should not receive heavy motion treatment. Avoid transcript-scroll animation, heavy table-sort animation, and fake token-stream activity in the preview surface.
 
 ### Workbook
 
@@ -172,11 +221,41 @@ After completion, expand into the workbook review surface:
   - `Sentence`
   - `Edited`
   - `Deleted`
-- review table
+- review table powered by `TanStack Table`
+- long workbook lists virtualized with `TanStack Virtual`
 - item detail drawer or inline expansion
 - export button in top-right
 
 Export opens a modal. Export is not its own page.
+
+Workbook items should be loaded through `TanStack Query`, not through ad hoc component-level fetch logic.
+
+## UI Motion Policy
+
+Use Motion to explain state transitions, not to decorate static content.
+
+### Good motion targets
+
+- group-by changes that reorder group containers
+- session rows moving between groups when the active grouping changes
+- selected-count bar updates after bulk selection changes
+- `Search & Select` to `Workbook` section transition
+- progress state switching into workbook review state
+- item delete slide-out / collapse
+- item restore reinsertion
+
+### Bad motion targets
+
+- large transcript text scrolling
+- continuous layout animation for every row in a large virtualized list
+- heavy animation for table column resize or sort
+- fake token-stream-style progress animation
+
+### Implementation constraints
+
+- session rows must use stable `session.id` keys, never array indexes
+- if a list becomes large, animate group headers and visible rows only
+- do not attempt full-list FLIP animation over thousands of virtualized rows
 
 ## Source Adapters
 
@@ -206,6 +285,10 @@ Do not build a fake universal parser that assumes one shared raw format.
 ## Local Data Model
 
 DialogLingo persists both indexing state and workbook state locally.
+
+`Drizzle ORM` should manage the regular table schema, checked-in migrations, and ordinary typed queries.
+
+`FTS5` virtual tables, supporting triggers, snippets, highlights, and ranking queries should be created and maintained through raw SQL migrations plus small query helpers. Do not force FTS primitives through the ORM if it hurts clarity.
 
 ### Tables
 
@@ -348,33 +431,43 @@ Every workbook item should normalize to:
 
 The generation pipeline must not operate at the naive whole-session-to-LLM granularity.
 
+Every generation stage runs as a background job, not in the renderer and not as one giant synchronous main-process task.
+
 ### Flow
 
 1. `scan`
    - discover sessions and projects
    - update local index
+   - execute as a background job
 2. `select`
    - user filters and selects sessions
    - create `generation_job`
 3. `normalize`
    - read selected sessions
    - normalize into conversation turns
+   - execute as a background job
 4. `pre-clean`
    - remove tool noise
    - trim oversized code/log blobs
    - preserve useful mixed-language natural-language turns
+   - execute as a background job
 5. `candidate mining`
    - local heuristics first
+   - execute as a background job
 6. `LLM enrichment`
    - small bounded batches only
+   - execute as a background job
 7. `global dedup + ranking`
    - merge near-duplicates across sessions
+   - execute as a background job
 8. `workbook materialization`
    - create workbook items
+   - execute as a background job
 9. `review`
    - edit/delete/restore/revert
 10. `export`
    - only reviewed current-state active items are exported
+   - execute as a background job
 
 ### Candidate mining
 
@@ -535,6 +628,15 @@ Emit typed events such as:
 - `job.completed`
 - `job.failed`
 
+The renderer should subscribe to job events and feed those events into `TanStack Query` cache updates for:
+
+- current job snapshot
+- per-job counters
+- workbook availability
+- error summaries
+
+The query cache remains the source of truth for async view state; the event stream is the incremental transport.
+
 The UI should show:
 
 - total session count
@@ -691,6 +793,7 @@ Handle by:
 
 ### Must-have tests
 
+- `Vitest` as the default test runner
 - per-source adapter fixture tests
 - normalization tests across mixed-language turns
 - denoising tests for code/log/path-heavy content
@@ -698,6 +801,8 @@ Handle by:
 - ranking tests with deterministic fixtures
 - workbook edit/delete/restore/revert tests
 - export mapping tests
+
+These should be fixture-driven wherever practical so adapter shape, ranking behavior, and export structure are pinned early.
 
 ### Manual verification
 
@@ -732,4 +837,3 @@ DialogLingo v1 is successful if a user can:
 5. review, edit, delete, restore, and revert workbook items
 6. export to Anki-first formats
 7. trust that the app preserved provenance and did not force them into an opaque black-box pipeline
-
