@@ -154,6 +154,28 @@ Projects are a filter scope, not a second-stage selection system and not a stand
 - selecting a project is itself the confirmation of filtering
 - no second checkbox layer inside projects
 
+#### Search UX
+
+Search should query the local indexed corpus, not the currently rendered preview pane.
+
+v1 should support:
+
+- session-title search
+- transcript-content search over normalized indexed turns
+- a single query box with a small scope selector:
+  - `All`
+  - `Titles`
+  - `Transcript`
+
+Default behavior should search both indexed session metadata and indexed transcript content.
+
+The UI should use FTS-backed snippets/highlights in:
+
+- session-row previews
+- the focused session preview pane
+
+Search is against the local index only. The preview pane displays the result context; it is not its own search target.
+
 #### Grouping behavior
 
 Only one grouping mode may be active at a time:
@@ -229,6 +251,39 @@ After completion, expand into the workbook review surface:
 Export opens a modal. Export is not its own page.
 
 Workbook items should be loaded through `TanStack Query`, not through ad hoc component-level fetch logic.
+
+## Settings
+
+`Settings` should stay intentionally small in v1.
+
+### Provider
+
+- `LiteLLM base URL`
+- `LiteLLM API key`
+- `default model`
+
+### Generation
+
+- `default language direction`
+- `batch size`
+- `bounded concurrency`
+- `max items per session`
+- `default type-balance profile` for workbook ordering
+
+### Privacy
+
+- `redaction before remote send` on/off
+- `flagged item export policy`
+  - block
+  - warn and require explicit keep
+
+### Scan
+
+- per-platform path overrides
+- `scan on launch` on/off
+- `include archived sessions` on/off
+
+Do not add background periodic scan scheduling to v1 by default. Launch-time scan plus manual `Rescan` is enough.
 
 ## UI Motion Policy
 
@@ -335,6 +390,18 @@ DialogLingo persists both indexing state and workbook state locally.
 - `selected_session_count`
 - `progress_json`
 
+`status` values:
+
+- `pending`
+- `normalizing`
+- `mining`
+- `enriching`
+- `ranking`
+- `materializing`
+- `completed`
+- `failed`
+- `cancelled`
+
 #### `generation_job_sessions`
 
 - `job_id`
@@ -350,6 +417,13 @@ This freezes the selected input set for reproducibility.
 - `job_id`
 - `created_at`
 - `status`
+
+`status` values:
+
+- `draft`
+- `ready`
+- `failed`
+- `cancelled`
 
 #### `workbook_items`
 
@@ -470,8 +544,50 @@ Every generation stage runs as a background job, not in the renderer and not as 
 9. `review`
    - edit/delete/restore/revert
 10. `export`
-   - all current-state active items are exportable by default
+   - all current-state active items from a `ready` workbook are exportable by default
    - execute as a background job
+
+### Job state machine
+
+Recommended generation-job state flow:
+
+```text
+pending
+  -> normalizing
+  -> mining
+  -> enriching
+  -> ranking
+  -> materializing
+  -> completed
+
+any non-completed state -> failed
+any non-completed state -> cancelled
+```
+
+### Checkpoints
+
+Checkpoint at practical stage boundaries:
+
+- normalized turns persisted per session
+- mined candidate groups persisted per job
+- enrichment results persisted per batch
+- ranked candidate ordering persisted per job
+- workbook item writes persisted incrementally during materialization
+
+This allows retry or resume from the last completed checkpoint instead of restarting the full pipeline every time.
+
+### Cancel and partial results
+
+- if a job is cancelled before materialization starts:
+  - mark the job `cancelled`
+  - preserve intermediate job artifacts
+  - do not promote a workbook
+- if a job is cancelled during or after materialization starts:
+  - mark the job `cancelled`
+  - preserve a `workbooks.status = draft` workbook
+  - do not treat that draft as export-ready by default
+
+`failed` and `cancelled` jobs should be resumable from the last durable checkpoint where practical; otherwise they should be restartable from scratch with preserved diagnostics.
 
 ### Candidate mining
 
@@ -720,7 +836,7 @@ The user requested a simpler alternative to a global undo system. Use this model
 
 ### Export semantics
 
-- export all `state = active` items by default
+- export all `state = active` items from a `workbooks.status = ready` workbook by default
 - this includes both untouched generated items and edited items
 - never export `state = deleted` items unless they are restored first
 
