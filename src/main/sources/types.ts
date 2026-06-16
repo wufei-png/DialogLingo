@@ -18,6 +18,9 @@ export type SessionSummary = {
   preview: string
   locator: string
   archived?: boolean
+  // scanSessions reuses these when listSessions already parsed a transcript,
+  // avoiding a second large file read for the same session.
+  turns?: ConversationTurn[]
 }
 
 export type ConversationTurn = {

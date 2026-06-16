@@ -63,12 +63,15 @@ export async function scanSessions(
 
     const persistedSessionId = `${summary.sourceType}:${summary.id}`
     const readOptions = { locator: summary.locator }
+    // Some adapters fully parse transcript files while listing sessions. Reuse
+    // those turns here so large JSONL files are not read twice during scans.
     const turns =
-      summary.sourceType === 'codex'
+      summary.turns ??
+      (summary.sourceType === 'codex'
         ? await registry.codex.readSession(summary.id, readOptions)
         : summary.sourceType === 'claude'
           ? await registry.claude.readSession(summary.id, readOptions)
-          : await registry.opencode.readSession(summary.id, readOptions)
+          : await registry.opencode.readSession(summary.id, readOptions))
 
     const searchText = turns.map((turn) => turn.text).join('\n')
     const sessionHash = crypto.createHash('sha1').update(searchText).digest('hex')

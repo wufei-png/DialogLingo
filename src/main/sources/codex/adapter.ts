@@ -10,6 +10,7 @@ import {
 } from '../types'
 
 type JsonMap = Record<string, unknown>
+type ParsedCodexTurn = ConversationTurn & { timestamp: string }
 
 function walkJsonlFiles(dir: string): string[] {
   if (!fs.existsSync(dir)) {
@@ -79,6 +80,48 @@ function loadSessionIndex(root: string) {
   return titles
 }
 
+function extractRolloutTurns(filePath: string, rows: JsonMap[]): ParsedCodexTurn[] {
+  return rows
+    .flatMap((row, index) => {
+      if (row.type !== 'response_item') {
+        return []
+      }
+
+      const message = row.payload as JsonMap | undefined
+      if (!message || message.type !== 'message') {
+        return []
+      }
+
+      const role = String(message.role ?? '')
+      if (role !== 'user' && role !== 'assistant') {
+        return []
+      }
+
+      const text = extractMessageText(message.content)
+      if (!text) {
+        return []
+      }
+
+      return [
+        {
+          id: `codex-turn-${index}`,
+          role,
+          text,
+          languageHint: detectLanguageHint(text),
+          sourceSpanRef: `${filePath}:${index + 1}`,
+          timestamp: String(row.timestamp ?? '')
+        }
+      ]
+    })
+}
+
+function toConversationTurn({
+  timestamp: _timestamp,
+  ...turn
+}: ParsedCodexTurn): ConversationTurn {
+  return turn
+}
+
 function summarizeRollout(
   filePath: string,
   titleIndex: Map<string, string>
@@ -86,26 +129,7 @@ function summarizeRollout(
   const rows = readJsonl(filePath)
   const meta = rows.find((row) => row.type === 'session_meta') as JsonMap | undefined
   const payload = (meta?.payload as JsonMap | undefined) ?? {}
-
-  const turns = rows
-    .filter(
-      (row) =>
-        row.type === 'response_item' &&
-        (row.payload as JsonMap | undefined)?.type === 'message' &&
-        ['user', 'assistant'].includes(
-          String((row.payload as JsonMap | undefined)?.role ?? '')
-        )
-    )
-    .map((row) => {
-      const message = row.payload as JsonMap
-      const text = extractMessageText(message.content)
-      return {
-        role: String(message.role),
-        text,
-        timestamp: String(row.timestamp ?? '')
-      }
-    })
-    .filter((turn) => turn.text)
+  const turns = extractRolloutTurns(filePath, rows)
 
   const sessionId =
     String(payload.id ?? '').trim() || path.basename(filePath, '.jsonl')
@@ -129,7 +153,8 @@ function summarizeRollout(
     updatedAt,
     preview: turns[0]?.text ?? '',
     locator: filePath,
-    archived: filePath.includes(`${path.sep}archived_sessions${path.sep}`)
+    archived: filePath.includes(`${path.sep}archived_sessions${path.sep}`),
+    turns: turns.map(toConversationTurn)
   }
 }
 
@@ -181,37 +206,7 @@ export function createCodexAdapter(root: string): SourceAdapter {
         return []
       }
 
-      return readJsonl(filePath)
-        .flatMap((row, index) => {
-          if (row.type !== 'response_item') {
-            return []
-          }
-
-          const message = row.payload as JsonMap | undefined
-          if (!message || message.type !== 'message') {
-            return []
-          }
-
-          const role = String(message.role ?? '')
-          if (role !== 'user' && role !== 'assistant') {
-            return []
-          }
-
-          const text = extractMessageText(message.content)
-          if (!text) {
-            return []
-          }
-
-          return [
-            {
-              id: `codex-turn-${index}`,
-              role,
-              text,
-              languageHint: detectLanguageHint(text),
-              sourceSpanRef: `${filePath}:${index + 1}`
-            } satisfies ConversationTurn
-          ]
-        })
+      return extractRolloutTurns(filePath, readJsonl(filePath)).map(toConversationTurn)
     }
   }
 }

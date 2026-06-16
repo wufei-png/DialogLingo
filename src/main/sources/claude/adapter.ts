@@ -10,6 +10,7 @@ import {
 } from '../types'
 
 type JsonMap = Record<string, unknown>
+type ParsedClaudeTurn = ConversationTurn & { row: JsonMap; timestamp: string }
 
 function walkProjectLogs(root: string) {
   const projectsRoot = path.join(root, 'projects')
@@ -80,6 +81,41 @@ function isClaudeNoise(row: JsonMap, text: string) {
   )
 }
 
+function extractClaudeTurns(filePath: string, rows: JsonMap[]): ParsedClaudeTurn[] {
+  return rows
+    .flatMap((row, index) => {
+      const role = String(row.type ?? '')
+      if (role !== 'user' && role !== 'assistant') {
+        return []
+      }
+
+      const text = extractClaudeText(row)
+      if (!text || isClaudeNoise(row, text)) {
+        return []
+      }
+
+      return [
+        {
+          id: `claude-turn-${index}`,
+          role,
+          text,
+          languageHint: detectLanguageHint(text),
+          sourceSpanRef: `${filePath}:${index + 1}`,
+          row,
+          timestamp: String(row.timestamp ?? '')
+        }
+      ]
+    })
+}
+
+function toConversationTurn({
+  row: _row,
+  timestamp: _timestamp,
+  ...turn
+}: ParsedClaudeTurn): ConversationTurn {
+  return turn
+}
+
 function findSessionFile(root: string, sessionId: string) {
   return walkProjectLogs(root).find((filePath) => {
     if (path.basename(filePath, '.jsonl') === sessionId) {
@@ -102,19 +138,13 @@ export function createClaudeAdapter(root: string): SourceAdapter {
       return walkProjectLogs(root)
         .map((filePath) => {
           const rows = readJsonl(filePath)
-          const turns = rows
-            .filter((row) => row.type === 'user' || row.type === 'assistant')
-            .map((row) => ({
-              row,
-              text: extractClaudeText(row)
-            }))
-            .filter(({ row, text }) => text && !isClaudeNoise(row, text))
+          const turns = extractClaudeTurns(filePath, rows)
 
           const firstTurn = turns[0]
           const firstRow = turns[0]?.row ?? rows[0] ?? {}
           const startedAt = String(firstRow.timestamp ?? '')
           const updatedAt =
-            String(turns.at(-1)?.row.timestamp ?? '') ||
+            turns.at(-1)?.timestamp ||
             startedAt ||
             new Date(fs.statSync(filePath).mtimeMs).toISOString()
 
@@ -129,7 +159,8 @@ export function createClaudeAdapter(root: string): SourceAdapter {
             updatedAt,
             preview: firstTurn?.text ?? '',
             locator: filePath,
-            archived: false
+            archived: false,
+            turns: turns.map(toConversationTurn)
           }
         })
         .filter((summary) => matchesSessionFilters(summary, filters))
@@ -142,28 +173,7 @@ export function createClaudeAdapter(root: string): SourceAdapter {
         return []
       }
 
-      return readJsonl(filePath)
-        .flatMap((row, index) => {
-          const role = String(row.type ?? '')
-          if (role !== 'user' && role !== 'assistant') {
-            return []
-          }
-
-          const text = extractClaudeText(row)
-          if (!text || isClaudeNoise(row, text)) {
-            return []
-          }
-
-          return [
-            {
-              id: `claude-turn-${index}`,
-              role,
-              text,
-              languageHint: detectLanguageHint(text),
-              sourceSpanRef: `${filePath}:${index + 1}`
-            } satisfies ConversationTurn
-          ]
-        })
+      return extractClaudeTurns(filePath, readJsonl(filePath)).map(toConversationTurn)
     }
   }
 }
