@@ -15,3 +15,15 @@ export const jobEventSchema = z.object({
 })
 
 export type JobEvent = z.infer<typeof jobEventSchema>
+
+export const scanPhaseSchema = z.enum(['idle', 'scanning', 'completed', 'failed'])
+
+export const scanEventSchema = z.object({
+  phase: scanPhaseSchema,
+  source: z.enum(['launch', 'manual']).optional(),
+  sessionCount: z.number().int().nonnegative().optional(),
+  projectCount: z.number().int().nonnegative().optional(),
+  message: z.string().optional()
+})
+
+export type ScanEvent = z.infer<typeof scanEventSchema>

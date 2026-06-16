@@ -1,10 +1,12 @@
 import crypto from 'node:crypto'
+import { existsSync } from 'node:fs'
 import { mkdir, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { app, BrowserWindow } from 'electron'
 import { buildRouter } from '../shared/ipc/router'
+import type { ScanEvent } from '../shared/ipc/events'
 import { createDb } from './db/client'
 import { runMigrations } from './db/migrate'
 import { chooseExportFallback } from './errors/sourceIssues'
@@ -26,6 +28,7 @@ import { buildLaunchPlan } from './scan/scanCoordinator'
 import { scanSessions } from './scan/scanSessions'
 import { createSettingsService } from './settings/service'
 import { createWorkbookService } from './workbook/service'
+import { logger } from './logging'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
@@ -39,9 +42,11 @@ const { createIPCHandler } = require('electron-trpc/main') as {
 }
 
 const dbPath = 'dialoglingo.db'
+logger.info('startup', `initializing database at ${dbPath}`)
 const { sqlite } = createDb(dbPath)
 
 runMigrations(sqlite)
+logger.debug('startup', 'database migrations complete')
 
 const settings = createSettingsService(dbPath, {
   runMigrations: true
@@ -100,6 +105,72 @@ type WorkbookListItem = {
 const jobSnapshots = new Map<string, JobSnapshot>()
 const jobWorkers = new Map<string, Awaited<ReturnType<typeof runGenerationJob>>>()
 const sourceGroupIds = ['codex', 'claude', 'opencode']
+
+type ScanPhase = ScanEvent['phase']
+let launchScanPhase: ScanPhase = 'idle'
+let activeSessionScan: Promise<{ projectCount: number; sessionCount: number }> | null = null
+
+function emitScanEvent(event: ScanEvent) {
+  launchScanPhase = event.phase
+
+  for (const win of BrowserWindow.getAllWindows()) {
+    win.webContents.send('dialoglingo:scan-event', event)
+  }
+}
+
+async function runSessionScan(source: 'launch' | 'manual') {
+  if (activeSessionScan) {
+    return activeSessionScan
+  }
+
+  emitScanEvent({ phase: 'scanning', source })
+  logger.info('session-scan', `starting ${source} scan`)
+
+  activeSessionScan = (async () => {
+    const startedAt = Date.now()
+    try {
+      const result = await scanSessions(sqlite, undefined, {
+        includeArchived: settings.get().scan.includeArchivedSessions
+      })
+
+      const discoveredProjects = sqlite
+        .prepare('select id from projects order by name asc')
+        .all() as Array<{ id: string }>
+      const discoveredSessionIds = sqlite
+        .prepare('select id from sessions order by updated_at desc')
+        .all() as Array<{ id: string }>
+
+      buildLaunchPlan({
+        settings: { scanOnLaunch: true },
+        discoveredProjects: discoveredProjects.map((row) => row.id),
+        discoveredSessionIds: discoveredSessionIds.map((row) => row.id),
+        groupIds: sourceGroupIds
+      })
+
+      emitScanEvent({
+        phase: 'completed',
+        source,
+        sessionCount: result.sessionCount,
+        projectCount: result.projectCount
+      })
+      logger.info('session-scan', `${source} scan complete`, {
+        ...result,
+        durationMs: Date.now() - startedAt
+      })
+
+      return result
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      emitScanEvent({ phase: 'failed', source, message })
+      logger.error('session-scan', `${source} scan failed`, error)
+      throw error
+    } finally {
+      activeSessionScan = null
+    }
+  })()
+
+  return activeSessionScan
+}
 
 function emitJobEvent(event: {
   kind: 'snapshot' | 'phase' | 'warning' | 'failure' | 'completed'
@@ -443,15 +514,19 @@ function createRouter() {
       preview: (input: { sessionId: string; query: string }) =>
         previewSession(input.sessionId, input.query),
       rescan: async () => {
-        const result = await scanSessions(sqlite, undefined, {
-          includeArchived: settings.get().scan.includeArchivedSessions
-        })
+        const result = await runSessionScan('manual')
         return {
           ok: true as const,
           rescannedAt: new Date().toISOString(),
           ...result
         }
       }
+    },
+    scan: {
+      getLaunchStatus: () => ({
+        phase: launchScanPhase,
+        scanOnLaunch: settings.get().scan.scanOnLaunch
+      })
     },
     generation: {
       start: async (input: { sessionIds: string[] }) => {
@@ -748,7 +823,31 @@ let ipcHandler:
     }
   | null = null
 
+function resolvePreloadPath() {
+  const preloadDir = path.join(__dirname, '../preload')
+  const jsPath = path.join(preloadDir, 'index.js')
+  const mjsPath = path.join(preloadDir, 'index.mjs')
+
+  if (existsSync(jsPath)) {
+    return jsPath
+  }
+
+  if (existsSync(mjsPath)) {
+    logger.warn(
+      'window',
+      'preload index.js missing; falling back to index.mjs which may fail in Electron sandbox'
+    )
+    return mjsPath
+  }
+
+  logger.error('window', 'preload script not found', { preloadDir, jsPath, mjsPath })
+  return jsPath
+}
+
 function createWindow() {
+  const preloadPath = resolvePreloadPath()
+  logger.info('window', 'creating browser window', { preloadPath })
+
   const win = new BrowserWindow({
     width: 1440,
     height: 960,
@@ -757,9 +856,26 @@ function createWindow() {
     title: 'DialogLingo',
     webPreferences: {
       contextIsolation: true,
-      preload: path.join(__dirname, '../preload/index.js')
+      preload: preloadPath
     }
   })
+
+  win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
+    logger.error('window', 'renderer failed to load', {
+      errorCode,
+      errorDescription,
+      validatedURL
+    })
+  })
+
+  win.webContents.on('did-finish-load', () => {
+    logger.info('window', 'renderer finished loading')
+  })
+
+  if (process.env.DIALOGLINGO_OPEN_DEVTOOLS === '1') {
+    win.webContents.openDevTools({ mode: 'detach' })
+    logger.debug('window', 'opened devtools')
+  }
 
   if (!ipcHandler) {
     ipcHandler = createIPCHandler({
@@ -771,40 +887,38 @@ function createWindow() {
   }
 
   if (process.env.ELECTRON_RENDERER_URL) {
+    logger.info('window', `loading renderer url ${process.env.ELECTRON_RENDERER_URL}`)
     void win.loadURL(process.env.ELECTRON_RENDERER_URL)
   } else {
-    void win.loadFile(path.join(__dirname, '../renderer/index.html'))
+    const rendererPath = path.join(__dirname, '../renderer/index.html')
+    logger.info('window', `loading renderer file ${rendererPath}`)
+    void win.loadFile(rendererPath)
   }
 
   return win
 }
 
-app.whenReady().then(async () => {
+function scheduleLaunchScan(win: BrowserWindow) {
+  win.webContents.once('did-finish-load', () => {
+    setImmediate(() => {
+      void runLaunchScan()
+    })
+  })
+}
+
+async function runLaunchScan() {
+  await runSessionScan('launch')
+}
+
+app.whenReady().then(() => {
+  logger.info('startup', 'electron app ready')
+  const win = createWindow()
+
   if (settings.get().scan.scanOnLaunch) {
-    try {
-      await scanSessions(sqlite, undefined, {
-        includeArchived: settings.get().scan.includeArchivedSessions
-      })
-
-      const discoveredProjects = sqlite
-        .prepare('select id from projects order by name asc')
-        .all() as Array<{ id: string }>
-      const discoveredSessionIds = sqlite
-        .prepare('select id from sessions order by updated_at desc')
-        .all() as Array<{ id: string }>
-
-      buildLaunchPlan({
-        settings: { scanOnLaunch: true },
-        discoveredProjects: discoveredProjects.map((row) => row.id),
-        discoveredSessionIds: discoveredSessionIds.map((row) => row.id),
-        groupIds: sourceGroupIds
-      })
-    } catch {
-      // Source issues are summarized separately through the reducers.
-    }
+    scheduleLaunchScan(win)
+  } else {
+    logger.debug('startup', 'scanOnLaunch disabled')
   }
-
-  createWindow()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) {

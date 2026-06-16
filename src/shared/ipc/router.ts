@@ -18,6 +18,12 @@ export type RouterDeps = {
     preview: (input: any) => unknown
     rescan: () => Promise<unknown>
   }
+  scan: {
+    getLaunchStatus: () => {
+      phase: 'idle' | 'scanning' | 'completed' | 'failed'
+      scanOnLaunch: boolean
+    }
+  }
   generation: {
     start: (input: any) => Promise<unknown>
     cancel: (input: any) => Promise<unknown>
@@ -60,6 +66,7 @@ export function buildRouter(deps: RouterDeps) {
       .input(z.object({ sessionId: z.string(), query: z.string().default('') }))
       .query(({ input }) => deps.sessions.preview(input)),
     sessionRescan: t.procedure.mutation(() => deps.sessions.rescan()),
+    launchScanStatus: t.procedure.query(() => deps.scan.getLaunchStatus()),
     generationStart: t.procedure
       .input(z.object({ sessionIds: z.array(z.string()) }))
       .mutation(({ input }) => deps.generation.start(input)),
