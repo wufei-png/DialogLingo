@@ -15,6 +15,7 @@
 
 body {
   margin: 0;
+  overflow: hidden;
   min-height: 100vh;
 }
 
@@ -23,6 +24,7 @@ button {
 }
 
 #root {
+  height: 100vh;
   min-height: 100vh;
 }
 
@@ -77,6 +79,8 @@ button {
 }
 
 .app-content {
+  height: 100vh;
+  overflow: hidden;
   padding: 24px;
 }
 
@@ -84,6 +88,7 @@ button {
   display: grid;
   grid-template-columns: minmax(320px, 420px) minmax(0, 1fr);
   gap: 20px;
+  height: calc(100vh - 48px);
   min-height: calc(100vh - 48px);
 }
 
@@ -316,6 +321,17 @@ button {
   gap: 10px;
 }
 
+.search-selection-actions,
+.group-by-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.group-by-options {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .search-toolbar button,
 .search-footer-actions button,
 .match-nav button,
@@ -336,6 +352,7 @@ button {
 .pane-utility-footer button:hover,
 .settings-sheet button:hover,
 .session-row-button:hover,
+.group-by-option:hover,
 .session-group-header:hover,
 .collapsible-section-header:hover,
 .search-filters label:hover {
@@ -350,6 +367,7 @@ button {
 .pane-utility-footer button:active,
 .settings-sheet button:active,
 .session-row-button:active,
+.group-by-option:active,
 .session-group-header:active,
 .collapsible-section-header:active {
   transform: translateY(1px);
@@ -401,8 +419,10 @@ button {
 }
 
 .session-row-button.is-focused {
-  background: #111827;
-  color: white;
+  background: rgba(209, 213, 219, 0.88);
+  box-shadow: inset 0 0 0 1px rgba(17, 24, 39, 0.14);
+  color: #111827;
+  font-weight: 600;
 }
 
 .session-row-button small {
@@ -440,7 +460,9 @@ button {
 }
 
 .search-preview {
+  height: 100%;
   min-height: 0;
+  overscroll-behavior: contain;
   overflow: auto;
   padding: 24px;
 }
@@ -741,10 +763,14 @@ button {
 
 .app-shell {
   display: block;
+  height: 100vh;
+  overflow: hidden;
   min-height: 100vh;
 }
 
 .app-content {
+  height: 100vh;
+  overflow: hidden;
   min-height: 100vh;
   padding: 16px;
 }
@@ -752,12 +778,15 @@ button {
 .resizable-split-pane {
   display: grid;
   gap: 0;
-  min-height: calc(100vh - 32px);
+  height: calc(100vh - 32px);
+  min-height: 0;
+  overflow: hidden;
 }
 
 .split-pane {
   min-width: 0;
   min-height: 0;
+  overflow: hidden;
 }
 
 .split-divider {
@@ -810,8 +839,15 @@ button {
 
 .search-layout,
 .workbook-layout {
-  --split-left-min: 220px;
   --split-right-min: 420px;
+}
+
+.search-layout {
+  --split-left-min: 300px;
+}
+
+.workbook-layout {
+  --split-left-min: 220px;
 }
 
 .search-rail,
@@ -827,18 +863,39 @@ button {
 .search-rail {
   grid-template-rows: auto minmax(0, 1fr) auto;
   gap: 12px;
+  height: 100%;
+  min-height: 0;
   overflow: hidden;
   padding: 14px;
 }
 
 .search-stack {
   min-height: 0;
+  overscroll-behavior: contain;
   overflow: auto;
   padding-right: 2px;
 }
 
 .search-footer {
   border-top: 1px solid rgba(17, 24, 39, 0.08);
+}
+
+.group-by-option {
+  min-width: 0;
+  font-size: 13px;
+  padding-inline: 8px;
+  white-space: nowrap;
+}
+
+.search-selection-actions button {
+  font-size: 13px;
+  padding-inline: 8px;
+}
+
+.group-by-option.is-active {
+  background: rgba(209, 213, 219, 0.92);
+  box-shadow: inset 0 0 0 1px rgba(17, 24, 39, 0.16);
+  font-weight: 600;
 }
 
 .settings-utility-button,

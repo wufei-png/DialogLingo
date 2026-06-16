@@ -119,4 +119,28 @@ describe('searchModel', () => {
     expect(groups[0].id).toBe('2026-06-15')
     expect(groups[0].rows.map((row) => row.sessionId)).toEqual(['s3', 's1'])
   })
+
+  it('keeps selection actions scoped to expanded visible rows', () => {
+    const groups = groupSessions({
+      groupBy: 'platform',
+      projects,
+      focusedSessionId: null,
+      selectedSessionIds: new Set(['s2']),
+      collapsedGroupIds: new Set(['codex']),
+      queryActive: false,
+      sessions
+    })
+
+    const visibleRows = groups
+      .filter((group) => group.expanded)
+      .flatMap((group) => group.rows)
+    const selectAllResult = new Set(['s2'])
+    visibleRows.forEach((row) => selectAllResult.add(row.sessionId))
+
+    expect(groups.map((group) => [group.id, group.expanded])).toEqual([
+      ['claude', true],
+      ['codex', false]
+    ])
+    expect([...selectAllResult].sort()).toEqual(['s2'])
+  })
 })

@@ -26,9 +26,10 @@ type SearchSession = {
 function CollapsibleFilterSection(props: {
   title: string
   summary: string
+  defaultExpanded?: boolean
   children: ReactNode
 }) {
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(props.defaultExpanded ?? false)
   const bodyId = useId()
 
   return (
@@ -113,7 +114,9 @@ export function SearchRail(props: {
     }))
     .filter((row) => row.count > 0)
 
-  const visibleRows = props.groups.flatMap((group) => group.rows)
+  const visibleRows = props.groups
+    .filter((group) => group.expanded)
+    .flatMap((group) => group.rows)
 
   function toggleProject(projectId: string) {
     const next = new Set(props.selectedProjectIds)
@@ -131,6 +134,13 @@ export function SearchRail(props: {
     label: group.label,
     count: group.rows.filter((row) => row.selected).length
   }))
+  const groupByOptions: Array<{ value: SearchGroupBy; label: string }> = [
+    { value: 'platform', label: 'Platform' },
+    { value: 'time', label: 'Time range' },
+    { value: 'project', label: 'Project' }
+  ]
+  const activeGroupByLabel =
+    groupByOptions.find((option) => option.value === props.groupBy)?.label ?? 'Platform'
 
   return (
     <aside className="search-rail">
@@ -217,41 +227,55 @@ export function SearchRail(props: {
         </div>
 
         <div className="search-toolbar">
-          <select
-            aria-label="Group by"
-            value={props.groupBy}
-            onChange={(event) =>
-              props.onGroupByChange(event.currentTarget.value as SearchGroupBy)
-            }
+          <CollapsibleFilterSection
+            title="Group by"
+            summary={activeGroupByLabel}
+            defaultExpanded
           >
-            <option value="platform">Platform</option>
-            <option value="time">Time range</option>
-            <option value="project">Project</option>
-          </select>
-          <button
-            type="button"
-            onClick={() => {
-              visibleRows.forEach((row) => {
-                if (!props.selectedSessionIds.has(row.sessionId)) {
-                  props.onToggleSession(row.sessionId)
-                }
-              })
-            }}
-          >
-            Select All in View
-          </button>
-          <button
-            type="button"
-            onClick={() => {
-              visibleRows.forEach((row) => {
-                if (props.selectedSessionIds.has(row.sessionId)) {
-                  props.onToggleSession(row.sessionId)
-                }
-              })
-            }}
-          >
-            Clear Selection
-          </button>
+            <div className="group-by-options" role="group" aria-label="Group by">
+              {groupByOptions.map((option) => (
+                <button
+                  key={option.value}
+                  type="button"
+                  className={
+                    props.groupBy === option.value
+                      ? 'group-by-option is-active'
+                      : 'group-by-option'
+                  }
+                  aria-pressed={props.groupBy === option.value}
+                  onClick={() => props.onGroupByChange(option.value)}
+                >
+                  {option.label}
+                </button>
+              ))}
+            </div>
+          </CollapsibleFilterSection>
+          <div className="search-selection-actions">
+            <button
+              type="button"
+              onClick={() => {
+                visibleRows.forEach((row) => {
+                  if (!props.selectedSessionIds.has(row.sessionId)) {
+                    props.onToggleSession(row.sessionId)
+                  }
+                })
+              }}
+            >
+              Select All in View
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                visibleRows.forEach((row) => {
+                  if (props.selectedSessionIds.has(row.sessionId)) {
+                    props.onToggleSession(row.sessionId)
+                  }
+                })
+              }}
+            >
+              Clear Selection
+            </button>
+          </div>
         </div>
 
         <SessionTree
