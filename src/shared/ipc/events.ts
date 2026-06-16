@@ -18,12 +18,31 @@ export type JobEvent = z.infer<typeof jobEventSchema>
 
 export const scanPhaseSchema = z.enum(['idle', 'scanning', 'completed', 'failed'])
 
+export const launchPlanSchema = z.object({
+  shouldScanOnLaunch: z.boolean(),
+  selectedProjectIds: z.array(z.string()),
+  focusedSessionId: z.string().nullable(),
+  collapsedGroupIds: z.array(z.string())
+})
+
+export type LaunchPlan = z.infer<typeof launchPlanSchema>
+
 export const scanEventSchema = z.object({
   phase: scanPhaseSchema,
   source: z.enum(['launch', 'manual']).optional(),
   sessionCount: z.number().int().nonnegative().optional(),
   projectCount: z.number().int().nonnegative().optional(),
-  message: z.string().optional()
+  message: z.string().optional(),
+  launchPlan: launchPlanSchema.optional()
 })
 
 export type ScanEvent = z.infer<typeof scanEventSchema>
+
+export const launchScanStatusSchema = z.object({
+  phase: scanPhaseSchema,
+  scanOnLaunch: z.boolean(),
+  failureMessage: z.string().nullable(),
+  launchPlan: launchPlanSchema.nullable()
+})
+
+export type LaunchScanStatus = z.infer<typeof launchScanStatusSchema>

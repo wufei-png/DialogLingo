@@ -24,7 +24,7 @@ import { writeWorkbookDraft } from './generation/materializeWorkbook'
 import { precleanTurns } from './generation/preclean'
 import { createPreviewQuery } from './search/queryPreview'
 import { createSessionSearch, type SearchInput } from './search/querySessions'
-import { buildLaunchPlan } from './scan/scanCoordinator'
+import { buildLaunchPlan, type LaunchPlan } from './scan/scanCoordinator'
 import { scanSessions } from './scan/scanSessions'
 import { createSettingsService } from './settings/service'
 import { createWorkbookService } from './workbook/service'
@@ -108,6 +108,8 @@ const sourceGroupIds = ['codex', 'claude', 'opencode']
 
 type ScanPhase = ScanEvent['phase']
 let launchScanPhase: ScanPhase = 'idle'
+let lastScanFailureMessage: string | null = null
+let lastLaunchPlan: LaunchPlan | null = null
 let activeSessionScan: Promise<{ projectCount: number; sessionCount: number }> | null = null
 
 function emitScanEvent(event: ScanEvent) {
@@ -140,18 +142,24 @@ async function runSessionScan(source: 'launch' | 'manual') {
         .prepare('select id from sessions order by updated_at desc')
         .all() as Array<{ id: string }>
 
-      buildLaunchPlan({
-        settings: { scanOnLaunch: true },
+      const launchPlan = buildLaunchPlan({
+        settings: { scanOnLaunch: settings.get().scan.scanOnLaunch },
         discoveredProjects: discoveredProjects.map((row) => row.id),
         discoveredSessionIds: discoveredSessionIds.map((row) => row.id),
         groupIds: sourceGroupIds
       })
 
+      if (source === 'launch') {
+        lastLaunchPlan = launchPlan
+      }
+
+      lastScanFailureMessage = null
       emitScanEvent({
         phase: 'completed',
         source,
         sessionCount: result.sessionCount,
-        projectCount: result.projectCount
+        projectCount: result.projectCount,
+        launchPlan: source === 'launch' ? launchPlan : undefined
       })
       logger.info('session-scan', `${source} scan complete`, {
         ...result,
@@ -161,6 +169,7 @@ async function runSessionScan(source: 'launch' | 'manual') {
       return result
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
+      lastScanFailureMessage = message
       emitScanEvent({ phase: 'failed', source, message })
       logger.error('session-scan', `${source} scan failed`, error)
       throw error
@@ -525,7 +534,9 @@ function createRouter() {
     scan: {
       getLaunchStatus: () => ({
         phase: launchScanPhase,
-        scanOnLaunch: settings.get().scan.scanOnLaunch
+        scanOnLaunch: settings.get().scan.scanOnLaunch,
+        failureMessage: lastScanFailureMessage,
+        launchPlan: lastLaunchPlan
       })
     },
     generation: {
@@ -898,10 +909,10 @@ function createWindow() {
   return win
 }
 
-function scheduleLaunchScan(win: BrowserWindow) {
-  win.webContents.once('did-finish-load', () => {
-    setImmediate(() => {
-      void runLaunchScan()
+function startLaunchScan() {
+  setImmediate(() => {
+    void runLaunchScan().catch((error) => {
+      logger.error('session-scan', 'launch scan failed', error)
     })
   })
 }
@@ -912,10 +923,10 @@ async function runLaunchScan() {
 
 app.whenReady().then(() => {
   logger.info('startup', 'electron app ready')
-  const win = createWindow()
+  createWindow()
 
   if (settings.get().scan.scanOnLaunch) {
-    scheduleLaunchScan(win)
+    startLaunchScan()
   } else {
     logger.debug('startup', 'scanOnLaunch disabled')
   }

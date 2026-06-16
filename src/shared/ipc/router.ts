@@ -22,6 +22,13 @@ export type RouterDeps = {
     getLaunchStatus: () => {
       phase: 'idle' | 'scanning' | 'completed' | 'failed'
       scanOnLaunch: boolean
+      failureMessage: string | null
+      launchPlan: {
+        shouldScanOnLaunch: boolean
+        selectedProjectIds: string[]
+        focusedSessionId: string | null
+        collapsedGroupIds: string[]
+      } | null
     }
   }
   generation: {
