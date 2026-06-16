@@ -18,6 +18,9 @@ export type RouterDeps = {
     preview: (input: any) => unknown
     rescan: () => Promise<unknown>
   }
+  projects: {
+    list: () => unknown
+  }
   scan: {
     getLaunchStatus: () => {
       phase: 'idle' | 'scanning' | 'completed' | 'failed'
@@ -70,9 +73,16 @@ export function buildRouter(deps: RouterDeps) {
       )
       .query(({ input }) => deps.sessions.search(input)),
     sessionPreview: t.procedure
-      .input(z.object({ sessionId: z.string(), query: z.string().default('') }))
+      .input(
+        z.object({
+          sessionId: z.string(),
+          query: z.string().default(''),
+          scope: z.enum(['all', 'titles', 'transcript']).default('all')
+        })
+      )
       .query(({ input }) => deps.sessions.preview(input)),
     sessionRescan: t.procedure.mutation(() => deps.sessions.rescan()),
+    projectsList: t.procedure.query(() => deps.projects.list()),
     launchScanStatus: t.procedure.query(() => deps.scan.getLaunchStatus()),
     generationStart: t.procedure
       .input(z.object({ sessionIds: z.array(z.string()) }))

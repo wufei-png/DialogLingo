@@ -49,7 +49,11 @@ export function GenerateWorkbookSheet(props: Props) {
           <button type="button" onClick={props.onCancel}>
             Cancel
           </button>
-          <button type="button" onClick={props.onConfirm}>
+          <button
+            type="button"
+            disabled={props.selectedCount === 0}
+            onClick={props.onConfirm}
+          >
             Generate
           </button>
         </div>

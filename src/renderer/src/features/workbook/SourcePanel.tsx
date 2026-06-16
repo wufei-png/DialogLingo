@@ -9,7 +9,11 @@ type Props = {
 
 export function SourcePanel(props: Props) {
   if (!props.open) {
-    return null
+    return (
+      <aside className="source-panel source-panel--empty">
+        <h3>No source selected</h3>
+      </aside>
+    )
   }
 
   return (

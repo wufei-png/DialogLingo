@@ -18,12 +18,12 @@ import {
   type ExportDirection,
   type ExportFormat
 } from './export/manifest'
-import { mineCandidateGroups } from './generation/candidates'
 import { runGenerationJob } from './generation/jobRunner'
 import { writeWorkbookDraft } from './generation/materializeWorkbook'
-import { precleanTurns } from './generation/preclean'
+import { validateGenerationRequest } from './generation/validateGeneration'
 import { createPreviewQuery } from './search/queryPreview'
 import { createSessionSearch, type SearchInput } from './search/querySessions'
+import { listActiveProjects } from './projects/listProjects'
 import { buildLaunchPlan, type LaunchPlan } from './scan/scanCoordinator'
 import { scanSessions } from './scan/scanSessions'
 import { createSettingsService } from './settings/service'
@@ -73,18 +73,6 @@ type JobSnapshot = {
   warningCount: number
   failureCount: number
   workbookId: string | null
-}
-
-type LearningSnapshot = {
-  sourceText: string
-  targetText: string
-  gloss: string
-  contextText: string
-  explanation: string
-  quizPrompt: string
-  quizAnswer: string
-  tags: string[]
-  flagged?: boolean
 }
 
 type WorkbookListItem = {
@@ -192,6 +180,12 @@ function emitJobEvent(event: {
   failureCount: number
   currentSessionTitle: string | null
   currentBatchLabel: string | null
+  failedBatchCount?: number
+  failureReason?:
+    | 'missing-provider-config'
+    | 'provider-timeout'
+    | 'litellm-request-failure'
+    | 'invalid-structured-payload'
 }) {
   jobSnapshots.set(event.jobId, {
     id: event.jobId,
@@ -237,6 +231,12 @@ function querySessionRows(sessionIds: string[]) {
 
   return sessionIds.map((sessionId) => ({
     sessionId,
+    title:
+      (
+        sqlite
+          .prepare('select title from sessions where id = ?')
+          .get(sessionId) as { title?: string } | undefined
+      )?.title ?? sessionId,
     turns: query.all(sessionId) as Array<{
       title: string
       role: 'user' | 'assistant'
@@ -244,110 +244,6 @@ function querySessionRows(sessionIds: string[]) {
       sourceSpanRef: string
     }>
   }))
-}
-
-function buildFallbackSnapshot(text: string, sessionTitle: string): LearningSnapshot {
-  const trimmed = text.trim()
-  return {
-    sourceText: trimmed,
-    targetText: trimmed,
-    gloss: sessionTitle,
-    contextText: trimmed,
-    explanation:
-      'Generated locally from the transcript. Configure LiteLLM settings for richer bilingual enrichment.',
-    quizPrompt: `Review this item from ${sessionTitle}.`,
-    quizAnswer: trimmed,
-    tags: ['auto-generated']
-  }
-}
-
-function buildDraftItemsForSessions(sessionIds: string[]) {
-  const expressionItems: Array<{
-    itemType: 'Expression'
-    generatedSnapshot: LearningSnapshot
-    currentSnapshot: LearningSnapshot
-    sourceRefs: Array<{ sessionId: string; sourceSpanRef: string; excerpt: string }>
-  }> = []
-  const sentenceItems: Array<{
-    itemType: 'Sentence'
-    generatedSnapshot: LearningSnapshot
-    currentSnapshot: LearningSnapshot
-    sourceRefs: Array<{ sessionId: string; sourceSpanRef: string; excerpt: string }>
-  }> = []
-
-  for (const session of querySessionRows(sessionIds)) {
-    const cleanedTurns = precleanTurns(session.turns)
-    const candidateGroups = mineCandidateGroups(cleanedTurns)
-
-    for (const group of candidateGroups) {
-      sqlite
-        .prepare(
-          `
-            insert or ignore into candidate_groups (
-              id,
-              job_id,
-              session_id,
-              source_span_ref,
-              prompt_text,
-              status
-            )
-            values (?, ?, ?, ?, ?, ?)
-          `
-        )
-        .run(
-          `${session.sessionId}:${group.id}`,
-          'pending',
-          session.sessionId,
-          group.sourceSpanRef,
-          group.promptText,
-          'pending'
-        )
-    }
-
-    const userTurn = cleanedTurns.find((turn) => turn.role === 'user') ?? cleanedTurns[0]
-    const assistantTurn =
-      cleanedTurns.find((turn) => turn.role === 'assistant') ?? cleanedTurns[1] ?? cleanedTurns[0]
-
-    if (userTurn) {
-      const snapshot = buildFallbackSnapshot(userTurn.text, session.turns[0]?.title ?? 'Session')
-      expressionItems.push({
-        itemType: 'Expression',
-        generatedSnapshot: snapshot,
-        currentSnapshot: snapshot,
-        sourceRefs: [
-          {
-            sessionId: session.sessionId,
-            sourceSpanRef: userTurn.sourceSpanRef,
-            excerpt: userTurn.text
-          }
-        ]
-      })
-    }
-
-    if (assistantTurn) {
-      const snapshot = buildFallbackSnapshot(
-        assistantTurn.text,
-        session.turns[0]?.title ?? 'Session'
-      )
-      sentenceItems.push({
-        itemType: 'Sentence',
-        generatedSnapshot: snapshot,
-        currentSnapshot: snapshot,
-        sourceRefs: [
-          {
-            sessionId: session.sessionId,
-            sourceSpanRef: assistantTurn.sourceSpanRef,
-            excerpt: assistantTurn.text
-          }
-        ]
-      })
-    }
-  }
-
-  return {
-    expressionItems,
-    sentenceItems
-  }
 }
 
 function listWorkbookItems(input: {
@@ -520,8 +416,11 @@ function createRouter() {
     },
     sessions: {
       search: (input: SearchInput) => searchSessions(input),
-      preview: (input: { sessionId: string; query: string }) =>
-        previewSession(input.sessionId, input.query),
+      preview: (input: {
+        sessionId: string
+        query: string
+        scope?: 'all' | 'titles' | 'transcript'
+      }) => previewSession(input.sessionId, input.query, input.scope ?? 'all'),
       rescan: async () => {
         const result = await runSessionScan('manual')
         return {
@@ -530,6 +429,9 @@ function createRouter() {
           ...result
         }
       }
+    },
+    projects: {
+      list: () => listActiveProjects(sqlite)
     },
     scan: {
       getLaunchStatus: () => ({
@@ -541,6 +443,22 @@ function createRouter() {
     },
     generation: {
       start: async (input: { sessionIds: string[] }) => {
+        const currentSettings = settings.get() as {
+          provider: {
+            baseUrl: string
+            apiKey: string
+            defaultModel: string
+          }
+          generation: {
+            batchSize: number
+            maxItemsPerSession: number
+          }
+        }
+        validateGenerationRequest({
+          sessionIds: input.sessionIds,
+          settings: currentSettings
+        })
+
         const jobId = crypto.randomUUID()
         const workbookId = `workbook-${jobId}`
 
@@ -577,55 +495,50 @@ function createRouter() {
           workbookId
         })
 
-        const drafts = buildDraftItemsForSessions(input.sessionIds)
-        const items = [
-          ...drafts.expressionItems.map((item, index) => ({
-            id: `expr-${index + 1}`,
-            itemType: item.itemType,
-            generatedSnapshot: item.generatedSnapshot,
-            currentSnapshot: item.currentSnapshot,
-            sourceRefs: item.sourceRefs
-          })),
-          ...drafts.sentenceItems.map((item, index) => ({
-            id: `sent-${index + 1}`,
-            itemType: item.itemType,
-            generatedSnapshot: item.generatedSnapshot,
-            currentSnapshot: item.currentSnapshot,
-            sourceRefs: item.sourceRefs
-          }))
-        ]
+        const sessionsForGeneration = querySessionRows(input.sessionIds)
+        let completedItems: Array<{
+          id: string
+          itemType: 'Expression' | 'Sentence'
+          generatedSnapshot: unknown
+          currentSnapshot: unknown
+          sourceRefs: Array<{
+            sessionId: string
+            sourceSpanRef: string
+            excerpt: string
+          }>
+        }> = []
+        let workbookWritten = false
 
         const worker = await runGenerationJob({
           jobId,
-          sessionIds: input.sessionIds,
-          settings: settings.get() as {
-            provider: {
-              baseUrl: string
-              apiKey: string
-              defaultModel: string
-            }
+          sessions: sessionsForGeneration,
+          settings: currentSettings,
+          onCompletedItems: (items) => {
+            completedItems = items
           },
           emit: (event) => {
             const typedEvent = event as Parameters<typeof emitJobEvent>[0]
-            emitJobEvent(typedEvent)
 
-            if (typedEvent.status === 'completed') {
+            if (typedEvent.status === 'completed' && !workbookWritten) {
               writeWorkbookDraft(sqlite, {
                 workbookId,
                 jobId,
-                items
+                items: completedItems
               })
+              workbookWritten = true
 
               const current = jobSnapshots.get(jobId)
               if (current) {
                 jobSnapshots.set(jobId, {
                   ...current,
                   status: 'completed',
-                  createdItemCount: items.length,
+                  createdItemCount: completedItems.length,
                   workbookId
                 })
               }
             }
+
+            emitJobEvent(typedEvent)
           }
         })
 

@@ -1,7 +1,7 @@
-import type { Settings } from '../../shared/schemas/settings'
-import { DEFAULT_SPLIT_RATIO } from '../../shared/schemas/settings'
+import { describe, expect, it } from 'vitest'
+import { DEFAULT_SPLIT_RATIO, settingsSchema } from '../../src/shared/schemas/settings'
 
-export const DEFAULT_SETTINGS: Settings = {
+const LEGACY_SETTINGS = {
   provider: {
     baseUrl: '',
     apiKey: '',
@@ -26,8 +26,14 @@ export const DEFAULT_SETTINGS: Settings = {
     pathOverrides: [],
     scanOnLaunch: true,
     includeArchivedSessions: false
-  },
-  ui: {
-    splitRatio: DEFAULT_SPLIT_RATIO
   }
-}
+} as const
+
+describe('settingsSchema', () => {
+  it('adds a compact 1:4 split ratio default to legacy settings', () => {
+    const parsed = settingsSchema.parse(LEGACY_SETTINGS)
+
+    expect(DEFAULT_SPLIT_RATIO).toBe(0.2)
+    expect(parsed.ui.splitRatio).toBe(DEFAULT_SPLIT_RATIO)
+  })
+})

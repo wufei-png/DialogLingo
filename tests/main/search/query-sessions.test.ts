@@ -160,4 +160,98 @@ describe('createSessionSearch', () => {
     expect(titleRows.map((row) => row.sessionId)).toEqual(['s1'])
     expect(transcriptRows).toEqual([])
   })
+
+  it('honors project, platform, and time filters together', () => {
+    const db = createTestDb()
+
+    db.exec(`
+      insert into sessions (
+        id,
+        source_type,
+        source_session_id,
+        project_id,
+        title,
+        started_at,
+        updated_at,
+        preview,
+        search_text,
+        is_archived,
+        raw_locator,
+        hash
+      )
+      values
+      (
+        's1',
+        'codex',
+        's1',
+        '/workspace/dialoglingo',
+        'Recent Codex',
+        '2026-06-15T00:00:00Z',
+        '2026-06-15T00:10:00Z',
+        'preview',
+        'body',
+        0,
+        'fixture',
+        'h1'
+      ),
+      (
+        's2',
+        'codex',
+        's2',
+        '/workspace/other',
+        'Wrong project',
+        '2026-06-15T00:00:00Z',
+        '2026-06-15T00:10:00Z',
+        'preview',
+        'body',
+        0,
+        'fixture',
+        'h2'
+      ),
+      (
+        's3',
+        'claude',
+        's3',
+        '/workspace/dialoglingo',
+        'Wrong platform',
+        '2026-06-15T00:00:00Z',
+        '2026-06-15T00:10:00Z',
+        'preview',
+        'body',
+        0,
+        'fixture',
+        'h3'
+      ),
+      (
+        's4',
+        'codex',
+        's4',
+        '/workspace/dialoglingo',
+        'Too old',
+        '2026-05-01T00:00:00Z',
+        '2026-05-01T00:10:00Z',
+        'preview',
+        'body',
+        0,
+        'fixture',
+        'h4'
+      );
+    `)
+
+    const search = createSessionSearch(db)
+    const rows = search({
+      query: '',
+      scope: 'all',
+      groupBy: 'platform',
+      timeRange: {
+        from: '2026-06-01T00:00:00Z',
+        to: '2026-06-30T23:59:59Z'
+      },
+      projects: ['/workspace/dialoglingo'],
+      platforms: ['codex'],
+      includeArchived: false
+    })
+
+    expect(rows.map((row) => row.sessionId)).toEqual(['s1'])
+  })
 })

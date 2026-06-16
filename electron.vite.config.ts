@@ -8,7 +8,16 @@ const rootDir = path.dirname(fileURLToPath(import.meta.url))
 export default defineConfig({
   main: {
     build: {
-      outDir: 'dist-electron/main'
+      outDir: 'dist-electron/main',
+      rollupOptions: {
+        input: {
+          index: path.resolve(rootDir, 'src/main/index.ts'),
+          worker: path.resolve(rootDir, 'src/main/generation/worker.ts')
+        },
+        output: {
+          entryFileNames: '[name].js'
+        }
+      }
     }
   },
   preload: {

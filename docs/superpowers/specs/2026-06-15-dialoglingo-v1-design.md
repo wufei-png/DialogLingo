@@ -110,6 +110,19 @@ DialogLingo has two top-level sections only:
 1. `Search & Select`
 2. `Workbook`
 
+### 2026-06-16 UI repair implementation notes
+
+The current implementation intentionally differs from a few earlier layout notes in this spec.
+Use these notes as the latest UI contract when maintaining the renderer:
+
+- The section switcher is not a permanent app-wide left sidebar. `Search & Select` and `Workbook` tabs live inside the left pane header and stop at the pane divider.
+- The launch intro copy `Local chat to workbook` appears only on the scan/loading screen. It should not reserve space in the main Search or Workbook surfaces.
+- Search and Workbook both use the same persisted split-pane ratio. The default is compact left / wide right, `1:4` (`ui.splitRatio = 0.2`), with a draggable divider on both sections.
+- Settings is a compact utility reachable from the bottom of the left pane. Its layout control resets the shared split ratio back to `1:4`.
+- The Workbook section is now a persistent two-pane review surface: left card stream and left-local tabs, right source/provenance plus export action. Do not revert to a global toolbar that crosses the right pane.
+- Search session navigation rows show titles only. Preview/snippet content belongs in the main preview pane, not in the navigation list.
+- Platform filtering is a live data filter. Toggling platform checkboxes updates the rendered session groups and removes hidden sessions from the selected set.
+
 ### Search & Select
 
 The left side behaves like a Codex-Desktop-style rail plus session tree. The main pane shows the focused session content preview.

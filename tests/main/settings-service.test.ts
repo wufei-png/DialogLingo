@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { DEFAULT_SPLIT_RATIO } from '../../src/shared/schemas/settings'
 import { createSettingsService } from '../../src/main/settings/service'
 
 describe('createSettingsService', () => {
@@ -19,6 +20,9 @@ describe('createSettingsService', () => {
       scan: {
         scanOnLaunch: true,
         includeArchivedSessions: false
+      },
+      ui: {
+        splitRatio: DEFAULT_SPLIT_RATIO
       }
     })
   })

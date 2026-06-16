@@ -11,7 +11,16 @@ export const jobEventSchema = z.object({
   warningCount: z.number().int().nonnegative(),
   failureCount: z.number().int().nonnegative(),
   currentSessionTitle: z.string().nullable(),
-  currentBatchLabel: z.string().nullable()
+  currentBatchLabel: z.string().nullable(),
+  failedBatchCount: z.number().int().nonnegative().optional(),
+  failureReason: z
+    .enum([
+      'missing-provider-config',
+      'provider-timeout',
+      'litellm-request-failure',
+      'invalid-structured-payload'
+    ])
+    .optional()
 })
 
 export type JobEvent = z.infer<typeof jobEventSchema>

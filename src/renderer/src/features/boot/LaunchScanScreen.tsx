@@ -20,7 +20,7 @@ export function LaunchScanScreen(props: LaunchScanScreenProps) {
           </>
         ) : (
           <>
-            <h2>Scanning local sessions</h2>
+            <h2>Local chat to workbook</h2>
             <div className="boot-spinner" aria-hidden="true" />
             <p className="boot-caption">
               Discovering Codex, Claude, and OpenCode transcripts…

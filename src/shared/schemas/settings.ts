@@ -1,5 +1,9 @@
 import { z } from 'zod'
 
+export const DEFAULT_SPLIT_RATIO = 0.2
+export const MIN_SPLIT_RATIO = 0.16
+export const MAX_SPLIT_RATIO = 0.7
+
 export const settingsSchema = z.object({
   provider: z.object({
     baseUrl: z.string(),
@@ -30,6 +34,15 @@ export const settingsSchema = z.object({
     ),
     scanOnLaunch: z.boolean(),
     includeArchivedSessions: z.boolean()
+  }),
+  ui: z.object({
+    splitRatio: z
+      .number()
+      .min(MIN_SPLIT_RATIO)
+      .max(MAX_SPLIT_RATIO)
+      .default(DEFAULT_SPLIT_RATIO)
+  }).default({
+    splitRatio: DEFAULT_SPLIT_RATIO
   })
 })
 
