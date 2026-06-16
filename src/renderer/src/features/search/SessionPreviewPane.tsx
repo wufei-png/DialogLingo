@@ -90,21 +90,21 @@ export function SessionPreviewPane(props: PreviewProps) {
 
   return (
     <section className="search-preview">
+      {props.matchCount > 1 ? (
+        <div className="match-nav" aria-label="Search matches">
+          <button type="button" aria-label="Previous match" onClick={props.onPrevMatch}>
+            <span className="match-nav-icon is-prev" aria-hidden="true" />
+          </button>
+          <button type="button" aria-label="Next match" onClick={props.onNextMatch}>
+            <span className="match-nav-icon is-next" aria-hidden="true" />
+          </button>
+        </div>
+      ) : null}
       <header className="search-preview-header">
         <div>
           <p className="search-preview-kicker">Normalized Preview</p>
           <h2>{props.sessionTitle}</h2>
         </div>
-        {props.matchCount > 1 ? (
-          <div className="match-nav">
-            <button type="button" onClick={props.onPrevMatch}>
-              Prev
-            </button>
-            <button type="button" onClick={props.onNextMatch}>
-              Next
-            </button>
-          </div>
-        ) : null}
       </header>
       <article className="search-preview-body" ref={bodyRef}>
         {renderedPreview}
