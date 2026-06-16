@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 import {
   PLATFORM_OPTIONS,
+  applySessionSelection,
+  areAllSessionIdsSelected,
   groupSessions,
   togglePlatformFilter
 } from '../../src/renderer/src/features/search/searchModel'
@@ -55,7 +57,6 @@ describe('searchModel', () => {
       focusedSessionId: 's1',
       selectedSessionIds: new Set(['s2']),
       collapsedGroupIds: new Set(['codex']),
-      queryActive: false,
       sessions: [sessions[0]]
     })
 
@@ -79,20 +80,19 @@ describe('searchModel', () => {
     expect('snippet' in groups[0].rows[0]).toBe(false)
   })
 
-  it('groups by project and expands matching groups while search is active', () => {
+  it('groups by project without overriding collapsed groups', () => {
     const groups = groupSessions({
       groupBy: 'project',
       projects,
       focusedSessionId: null,
       selectedSessionIds: new Set(['s2']),
       collapsedGroupIds: new Set(['/workspace/dialoglingo', '/workspace/other']),
-      queryActive: true,
       sessions
     })
 
     expect(groups.map((group) => [group.id, group.label, group.expanded])).toEqual([
-      ['/workspace/dialoglingo', 'dialoglingo', true],
-      ['/workspace/other', 'other', true]
+      ['/workspace/dialoglingo', 'dialoglingo', false],
+      ['/workspace/other', 'other', false]
     ])
     expect(groups[1].selectedCount).toBe(1)
   })
@@ -104,7 +104,6 @@ describe('searchModel', () => {
       focusedSessionId: null,
       selectedSessionIds: new Set(),
       collapsedGroupIds: new Set(),
-      queryActive: false,
       sessions: [
         sessions[0],
         {
@@ -120,27 +119,68 @@ describe('searchModel', () => {
     expect(groups[0].rows.map((row) => row.sessionId)).toEqual(['s3', 's1'])
   })
 
-  it('keeps selection actions scoped to expanded visible rows', () => {
+  it('selects all filtered sessions even when their groups are collapsed', () => {
     const groups = groupSessions({
       groupBy: 'platform',
       projects,
       focusedSessionId: null,
       selectedSessionIds: new Set(['s2']),
       collapsedGroupIds: new Set(['codex']),
-      queryActive: false,
       sessions
     })
 
-    const visibleRows = groups
-      .filter((group) => group.expanded)
-      .flatMap((group) => group.rows)
-    const selectAllResult = new Set(['s2'])
-    visibleRows.forEach((row) => selectAllResult.add(row.sessionId))
+    const selectAllResult = applySessionSelection(
+      new Set(['s2']),
+      sessions.map((session) => session.sessionId),
+      true
+    )
 
     expect(groups.map((group) => [group.id, group.expanded])).toEqual([
       ['claude', true],
       ['codex', false]
     ])
-    expect([...selectAllResult].sort()).toEqual(['s2'])
+    expect([...selectAllResult].sort()).toEqual(['s1', 's2'])
+  })
+
+  it('detects filter-level all selected state and clears only current results', () => {
+    const currentResultIds = sessions.map((session) => session.sessionId)
+
+    expect(areAllSessionIdsSelected([], new Set())).toBe(false)
+    expect(areAllSessionIdsSelected(currentResultIds, new Set(['s1']))).toBe(false)
+    expect(
+      areAllSessionIdsSelected(currentResultIds, new Set(['s1', 's2', 'outside']))
+    ).toBe(true)
+
+    const cleared = applySessionSelection(
+      new Set(['s1', 's2', 'outside']),
+      currentResultIds,
+      false
+    )
+
+    expect([...cleared].sort()).toEqual(['outside'])
+  })
+
+  it('applies group-level selection only to the target group rows', () => {
+    const groups = groupSessions({
+      groupBy: 'platform',
+      projects,
+      focusedSessionId: null,
+      selectedSessionIds: new Set(['s2', 'outside']),
+      collapsedGroupIds: new Set(['codex']),
+      sessions
+    })
+    const codexGroup = groups.find((group) => group.id === 'codex')
+    const codexSessionIds = codexGroup?.rows.map((row) => row.sessionId) ?? []
+
+    const selected = applySessionSelection(
+      new Set(['s2', 'outside']),
+      codexSessionIds,
+      true
+    )
+    const cleared = applySessionSelection(selected, codexSessionIds, false)
+
+    expect(codexSessionIds).toEqual(['s1'])
+    expect([...selected].sort()).toEqual(['outside', 's1', 's2'])
+    expect([...cleared].sort()).toEqual(['outside', 's2'])
   })
 })

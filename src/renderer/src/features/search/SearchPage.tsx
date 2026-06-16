@@ -5,6 +5,7 @@ import { ResizableSplitPane } from '../../components/ResizableSplitPane'
 import { trpc } from '../../lib/trpc'
 import {
   PLATFORM_OPTIONS,
+  applySessionSelection,
   groupSessions,
   type ProjectOption,
   type SearchGroupBy,
@@ -92,7 +93,6 @@ export function SearchPage(props: {
     [focusedSessionId, sessions]
   )
 
-  const queryActive = query.trim().length > 0
   const selectedProjectSignature = useMemo(
     () => [...selectedProjectIds].sort().join('|'),
     [selectedProjectIds]
@@ -106,8 +106,7 @@ export function SearchPage(props: {
         groupBy,
         selectedSessionIds,
         focusedSessionId,
-        collapsedGroupIds,
-        queryActive
+        collapsedGroupIds
       }),
     [
       sessions,
@@ -115,8 +114,7 @@ export function SearchPage(props: {
       groupBy,
       selectedSessionIds,
       focusedSessionId,
-      collapsedGroupIds,
-      queryActive
+      collapsedGroupIds
     ]
   )
 
@@ -229,10 +227,10 @@ export function SearchPage(props: {
   }, [focusedSessionId, query, queryScope])
 
   const previewText =
-    preview?.snippet?.snippet ||
     preview?.turns
       ?.map((turn) => `${turn.role}: ${turn.text}`)
       .join('\n\n') ||
+    preview?.snippet?.snippet ||
     'Select a session from the left to inspect normalized preview text.'
   const matchCount = countHighlights(previewText)
 
@@ -248,8 +246,7 @@ export function SearchPage(props: {
       groupBy: nextGroupBy,
       selectedSessionIds,
       focusedSessionId,
-      collapsedGroupIds: new Set(),
-      queryActive: false
+      collapsedGroupIds: new Set()
     })
     setCollapsedGroupIds(new Set(nextGroups.map((group) => group.id)))
   }
@@ -325,6 +322,11 @@ export function SearchPage(props: {
               }
               return next
             })
+          }
+          onSetSessionSelection={(sessionIds, selected) =>
+            setSelectedSessionIds((current) =>
+              applySessionSelection(current, sessionIds, selected)
+            )
           }
           onFocusSession={setFocusedSessionId}
           onToggleGroup={(groupId) =>

@@ -139,4 +139,21 @@ describe('createPreviewQuery', () => {
 
     expect(preview.snippet?.snippet).toContain('<mark>日志</mark>')
   })
+
+  it('keeps full preview turns while highlighting matching transcript text', () => {
+    const db = createTestDb()
+    insertPreviewSession(db, {
+      id: 's1',
+      title: 'plain title',
+      searchText: 'first line before workbook\nsecond line after workbook'
+    })
+
+    const preview = createPreviewQuery(db)('s1', 'workbook', 'transcript')
+
+    expect(preview.turns[0].text).toBe(
+      'first line before <mark>workbook</mark>\nsecond line after <mark>workbook</mark>'
+    )
+    expect(preview.turns[0].text).toContain('first line before')
+    expect(preview.turns[0].text).toContain('second line after')
+  })
 })

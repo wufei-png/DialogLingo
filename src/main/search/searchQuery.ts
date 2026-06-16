@@ -109,3 +109,47 @@ export function buildHighlightedSnippet(
 
   return `${prefix}${before}<mark>${highlighted}</mark>${after}${suffix}`
 }
+
+function findNextVariantMatch(
+  loweredValue: string,
+  variants: string[],
+  startIndex: number
+) {
+  return variants
+    .map((variant) => ({
+      variant,
+      index: loweredValue.indexOf(variant.toLocaleLowerCase(), startIndex)
+    }))
+    .filter((candidate) => candidate.index >= 0)
+    .sort((left, right) => {
+      if (left.index !== right.index) {
+        return left.index - right.index
+      }
+      return right.variant.length - left.variant.length
+    })[0]
+}
+
+export function buildHighlightedText(value: string, variants: string[]) {
+  const usableVariants = uniqueNonEmpty(variants)
+  if (usableVariants.length === 0) {
+    return value
+  }
+
+  const loweredValue = value.toLocaleLowerCase()
+  let cursor = 0
+  let highlighted = ''
+
+  while (cursor < value.length) {
+    const match = findNextVariantMatch(loweredValue, usableVariants, cursor)
+    if (!match) {
+      highlighted += value.slice(cursor)
+      break
+    }
+
+    highlighted += value.slice(cursor, match.index)
+    highlighted += `<mark>${value.slice(match.index, match.index + match.variant.length)}</mark>`
+    cursor = match.index + match.variant.length
+  }
+
+  return highlighted
+}

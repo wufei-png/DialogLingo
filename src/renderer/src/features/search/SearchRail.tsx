@@ -6,6 +6,7 @@ import { GenerateWorkbookSheet } from './GenerateWorkbookSheet'
 import {
   PLATFORM_LABELS,
   PLATFORM_OPTIONS,
+  areAllSessionIdsSelected,
   togglePlatformFilter,
   type ProjectOption,
   type SearchGroupBy,
@@ -22,6 +23,15 @@ type SearchSession = {
   projectPath: string | null
   updatedAt: string
 }
+
+const SEARCH_SCOPE_OPTIONS: Array<{
+  value: 'all' | 'titles' | 'transcript'
+  label: string
+}> = [
+  { value: 'all', label: 'Search in all' },
+  { value: 'titles', label: 'Search in titles' },
+  { value: 'transcript', label: 'Search in transcripts' }
+]
 
 function CollapsibleFilterSection(props: {
   title: string
@@ -88,6 +98,7 @@ export function SearchRail(props: {
   onPlatformFilterChange: (platforms: SearchPlatform[]) => void
   onProjectFilterChange: (projectIds: Set<string>) => void
   onToggleSession: (sessionId: string) => void
+  onSetSessionSelection: (sessionIds: string[], selected: boolean) => void
   onFocusSession: (sessionId: string) => void
   onToggleGroup: (groupId: string) => void
   onRescan: () => void
@@ -114,10 +125,6 @@ export function SearchRail(props: {
     }))
     .filter((row) => row.count > 0)
 
-  const visibleRows = props.groups
-    .filter((group) => group.expanded)
-    .flatMap((group) => group.rows)
-
   function toggleProject(projectId: string) {
     const next = new Set(props.selectedProjectIds)
     if (next.has(projectId)) {
@@ -141,6 +148,12 @@ export function SearchRail(props: {
   ]
   const activeGroupByLabel =
     groupByOptions.find((option) => option.value === props.groupBy)?.label ?? 'Platform'
+  const filteredSessionIds = props.sessions.map((session) => session.sessionId)
+  const allFilteredSessionsSelected = areAllSessionIdsSelected(
+    filteredSessionIds,
+    props.selectedSessionIds
+  )
+  const filterSelectionDisabled = filteredSessionIds.length === 0
 
   return (
     <aside className="search-rail">
@@ -149,138 +162,132 @@ export function SearchRail(props: {
         onChangeSection={props.onChangeSection}
       />
       <div className="search-stack">
-        <div className="search-box">
-          <input
-            placeholder="Search in titles, transcripts..."
-            value={props.query}
-            onChange={(event) => props.onQueryChange(event.currentTarget.value)}
-          />
-          <select
-            aria-label="Search scope"
-            value={props.queryScope}
-            onChange={(event) =>
-              props.onQueryScopeChange(
-                event.currentTarget.value as 'all' | 'titles' | 'transcript'
-              )
-            }
-          >
-            <option value="all">All</option>
-            <option value="titles">Titles</option>
-            <option value="transcript">Transcript</option>
-          </select>
-        </div>
-
-        <div className="search-filters">
-          <select
-            aria-label="Time range"
-            value={props.timeRange}
-            onChange={(event) =>
-              props.onTimeRangeChange(
-                event.currentTarget.value as 'last-7-days' | 'last-30-days' | 'all-time'
-              )
-            }
-          >
-            <option value="last-7-days">Last 7 days</option>
-            <option value="last-30-days">Last 30 days</option>
-            <option value="all-time">All time</option>
-          </select>
-
-          <CollapsibleFilterSection
-            title="Platform"
-            summary={`${props.platformFilter.length}/${PLATFORM_OPTIONS.length}`}
-          >
-            <div className="filter-options">
-              {PLATFORM_OPTIONS.map((platform) => (
-                <label key={platform}>
-                  <input
-                    type="checkbox"
-                    checked={props.platformFilter.includes(platform)}
-                    onChange={() =>
-                      props.onPlatformFilterChange(
-                        togglePlatformFilter(props.platformFilter, platform)
-                      )
-                    }
-                  />
-                  <span className="filter-option-label">{PLATFORM_LABELS[platform]}</span>
-                </label>
-              ))}
-            </div>
-          </CollapsibleFilterSection>
-
-          <CollapsibleFilterSection
-            title="Projects"
-            summary={`${selectedProjectCount}/${props.projects.length}`}
-          >
-            <div className="filter-options">
-              {props.projects.map((project) => (
-                <label key={project.id} title={project.localPath}>
-                  <input
-                    type="checkbox"
-                    checked={props.selectedProjectIds.has(project.id)}
-                    onChange={() => toggleProject(project.id)}
-                  />
-                  <span className="filter-option-label">{project.name}</span>
-                </label>
-              ))}
-            </div>
-          </CollapsibleFilterSection>
-        </div>
-
-        <div className="search-toolbar">
-          <CollapsibleFilterSection
-            title="Group by"
-            summary={activeGroupByLabel}
-            defaultExpanded
-          >
-            <div className="group-by-options" role="group" aria-label="Group by">
-              {groupByOptions.map((option) => (
-                <button
-                  key={option.value}
-                  type="button"
-                  className={
-                    props.groupBy === option.value
-                      ? 'group-by-option is-active'
-                      : 'group-by-option'
-                  }
-                  aria-pressed={props.groupBy === option.value}
-                  onClick={() => props.onGroupByChange(option.value)}
-                >
+        <section className="filter-area" aria-label="Filter area">
+          <div className="filter-area-label">Filter area</div>
+          <div className="search-box">
+            <input
+              placeholder="Type keywords..."
+              value={props.query}
+              onChange={(event) => props.onQueryChange(event.currentTarget.value)}
+            />
+            <select
+              aria-label="Search scope"
+              value={props.queryScope}
+              onChange={(event) =>
+                props.onQueryScopeChange(
+                  event.currentTarget.value as 'all' | 'titles' | 'transcript'
+                )
+              }
+            >
+              {SEARCH_SCOPE_OPTIONS.map((option) => (
+                <option key={option.value} value={option.value}>
                   {option.label}
-                </button>
+                </option>
               ))}
-            </div>
-          </CollapsibleFilterSection>
-          <div className="search-selection-actions">
-            <button
-              type="button"
-              onClick={() => {
-                visibleRows.forEach((row) => {
-                  if (!props.selectedSessionIds.has(row.sessionId)) {
-                    props.onToggleSession(row.sessionId)
-                  }
-                })
-              }}
-            >
-              Select All in View
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                visibleRows.forEach((row) => {
-                  if (props.selectedSessionIds.has(row.sessionId)) {
-                    props.onToggleSession(row.sessionId)
-                  }
-                })
-              }}
-            >
-              Clear Selection
-            </button>
+            </select>
           </div>
-        </div>
+
+          <div className="search-filters">
+            <select
+              aria-label="Time range"
+              value={props.timeRange}
+              onChange={(event) =>
+                props.onTimeRangeChange(
+                  event.currentTarget.value as 'last-7-days' | 'last-30-days' | 'all-time'
+                )
+              }
+            >
+              <option value="last-7-days">Last 7 days</option>
+              <option value="last-30-days">Last 30 days</option>
+              <option value="all-time">All time</option>
+            </select>
+
+            <CollapsibleFilterSection
+              title="Platform"
+              summary={`${props.platformFilter.length}/${PLATFORM_OPTIONS.length}`}
+            >
+              <div className="filter-options">
+                {PLATFORM_OPTIONS.map((platform) => (
+                  <label key={platform}>
+                    <input
+                      type="checkbox"
+                      checked={props.platformFilter.includes(platform)}
+                      onChange={() =>
+                        props.onPlatformFilterChange(
+                          togglePlatformFilter(props.platformFilter, platform)
+                        )
+                      }
+                    />
+                    <span className="filter-option-label">{PLATFORM_LABELS[platform]}</span>
+                  </label>
+                ))}
+              </div>
+            </CollapsibleFilterSection>
+
+            <CollapsibleFilterSection
+              title="Projects"
+              summary={`${selectedProjectCount}/${props.projects.length}`}
+            >
+              <div className="filter-options">
+                {props.projects.map((project) => (
+                  <label key={project.id} title={project.localPath}>
+                    <input
+                      type="checkbox"
+                      checked={props.selectedProjectIds.has(project.id)}
+                      onChange={() => toggleProject(project.id)}
+                    />
+                    <span className="filter-option-label">{project.name}</span>
+                  </label>
+                ))}
+              </div>
+            </CollapsibleFilterSection>
+          </div>
+
+          <div className="search-toolbar">
+            <CollapsibleFilterSection
+              title="Group by"
+              summary={activeGroupByLabel}
+              defaultExpanded
+            >
+              <div className="group-by-options" role="group" aria-label="Group by">
+                {groupByOptions.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    className={
+                      props.groupBy === option.value
+                        ? 'group-by-option is-active'
+                        : 'group-by-option'
+                    }
+                    aria-pressed={props.groupBy === option.value}
+                    onClick={() => props.onGroupByChange(option.value)}
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </CollapsibleFilterSection>
+            <div className="search-selection-actions">
+              <button
+                type="button"
+                disabled={filterSelectionDisabled}
+                onClick={() =>
+                  props.onSetSessionSelection(
+                    filteredSessionIds,
+                    !allFilteredSessionsSelected
+                  )
+                }
+              >
+                {allFilteredSessionsSelected ? '全不选' : '全选'}
+              </button>
+            </div>
+          </div>
+        </section>
 
         <SessionTree
           groups={props.groups}
           onToggleSession={props.onToggleSession}
+          onSetSessionSelection={props.onSetSessionSelection}
           onFocusSession={props.onFocusSession}
           onToggleGroup={props.onToggleGroup}
         />

@@ -1,11 +1,19 @@
 import type Database from 'better-sqlite3'
 import {
+  buildHighlightedText,
   buildHighlightedSnippet,
   buildScopedFtsMatchQuery,
   buildScopedLikeCondition,
   buildSearchQueryPlan,
   type QueryScope
 } from './searchQuery'
+
+type PreviewTurn = {
+  seq: number
+  role: string
+  text: string
+  sourceSpanRef: string | null
+}
 
 function snippetColumns(scope: QueryScope) {
   if (scope === 'titles') {
@@ -32,13 +40,20 @@ export function createPreviewQuery(db: Database.Database) {
           order by seq asc
         `
       )
-      .all(sessionId)
+      .all(sessionId) as PreviewTurn[]
 
     const plan = buildSearchQueryPlan(query)
+    const previewTurns =
+      plan.trimmed && scope !== 'titles'
+        ? turns.map((turn) => ({
+            ...turn,
+            text: buildHighlightedText(String(turn.text), plan.variants)
+          }))
+        : turns
 
     if (!plan.trimmed) {
       return {
-        turns,
+        turns: previewTurns,
         snippet: null
       }
     }
@@ -75,7 +90,7 @@ export function createPreviewQuery(db: Database.Database) {
               )
 
       return {
-        turns,
+        turns: previewTurns,
         snippet: source
           ? {
               snippet: buildHighlightedSnippet(source, plan.variants)
@@ -108,7 +123,7 @@ export function createPreviewQuery(db: Database.Database) {
     }
 
     return {
-      turns,
+      turns: previewTurns,
       snippet
     }
   }

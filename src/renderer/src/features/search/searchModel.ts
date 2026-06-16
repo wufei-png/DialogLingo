@@ -50,6 +50,34 @@ export function togglePlatformFilter(
   return PLATFORM_OPTIONS.filter((value) => next.includes(value))
 }
 
+export function areAllSessionIdsSelected(
+  sessionIds: string[],
+  selectedSessionIds: Set<string>
+) {
+  return (
+    sessionIds.length > 0 &&
+    sessionIds.every((sessionId) => selectedSessionIds.has(sessionId))
+  )
+}
+
+export function applySessionSelection(
+  currentSelectedIds: Set<string>,
+  sessionIds: string[],
+  selected: boolean
+) {
+  const next = new Set(currentSelectedIds)
+
+  for (const sessionId of sessionIds) {
+    if (selected) {
+      next.add(sessionId)
+    } else {
+      next.delete(sessionId)
+    }
+  }
+
+  return next
+}
+
 function getProjectLabel(projectPath: string | null, projects: ProjectOption[]) {
   if (!projectPath) {
     return 'Unassigned'
@@ -77,7 +105,6 @@ export function groupSessions(input: {
   selectedSessionIds: Set<string>
   focusedSessionId: string | null
   collapsedGroupIds: Set<string>
-  queryActive: boolean
 }): SessionGroup[] {
   const buckets = new Map<string, { label: string; sessions: SearchSession[] }>()
 
@@ -125,7 +152,7 @@ export function groupSessions(input: {
       return {
         id,
         label: bucket.label,
-        expanded: input.queryActive || !input.collapsedGroupIds.has(id),
+        expanded: !input.collapsedGroupIds.has(id),
         selectedCount: rows.filter((row) => row.selected).length,
         totalCount: rows.length,
         rows

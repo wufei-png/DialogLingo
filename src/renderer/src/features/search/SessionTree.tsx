@@ -1,13 +1,57 @@
+import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
-import type { SessionGroup } from './searchModel'
+import { areAllSessionIdsSelected, type SessionGroup } from './searchModel'
+
+type ContextMenuState = {
+  groupId: string
+  x: number
+  y: number
+}
 
 export function SessionTree(props: {
   groups: SessionGroup[]
   onToggleSession: (sessionId: string) => void
+  onSetSessionSelection: (sessionIds: string[], selected: boolean) => void
   onFocusSession: (sessionId: string) => void
   onToggleGroup: (groupId: string) => void
 }) {
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
   const totalRows = props.groups.reduce((count, group) => count + group.rows.length, 0)
+  const contextGroup = contextMenu
+    ? props.groups.find((group) => group.id === contextMenu.groupId) ?? null
+    : null
+  const contextGroupSessionIds = contextGroup?.rows.map((row) => row.sessionId) ?? []
+  const contextGroupSelectedIds = new Set(
+    contextGroup?.rows.filter((row) => row.selected).map((row) => row.sessionId) ?? []
+  )
+  const contextGroupAllSelected = areAllSessionIdsSelected(
+    contextGroupSessionIds,
+    contextGroupSelectedIds
+  )
+
+  useEffect(() => {
+    if (!contextMenu) {
+      return
+    }
+
+    function closeContextMenu() {
+      setContextMenu(null)
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        closeContextMenu()
+      }
+    }
+
+    window.addEventListener('click', closeContextMenu)
+    window.addEventListener('keydown', handleKeyDown)
+
+    return () => {
+      window.removeEventListener('click', closeContextMenu)
+      window.removeEventListener('keydown', handleKeyDown)
+    }
+  }, [contextMenu])
 
   if (totalRows === 0) {
     return <div className="session-empty-state">No sessions</div>
@@ -30,6 +74,15 @@ export function SessionTree(props: {
               className="session-group-header"
               aria-expanded={group.expanded}
               onClick={() => props.onToggleGroup(group.id)}
+              onContextMenu={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                setContextMenu({
+                  groupId: group.id,
+                  x: event.clientX,
+                  y: event.clientY
+                })
+              }}
             >
               <span className="session-group-title">
                 <span className="collapsible-caret" aria-hidden="true" />
@@ -75,6 +128,28 @@ export function SessionTree(props: {
           </motion.section>
         ))}
       </AnimatePresence>
+      {contextMenu && contextGroup ? (
+        <div
+          className="session-group-context-menu"
+          role="menu"
+          style={{ left: contextMenu.x, top: contextMenu.y }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              props.onSetSessionSelection(
+                contextGroupSessionIds,
+                !contextGroupAllSelected
+              )
+              setContextMenu(null)
+            }}
+          >
+            {contextGroupAllSelected ? '取消全选本组' : '全选本组'}
+          </button>
+        </div>
+      ) : null}
     </div>
   )
 }
