@@ -32,7 +32,7 @@ export type LanguageHint = ConversationTurn['languageHint']
 
 export type SourceAdapter = {
   listSessions: (filters: SessionFilterInput) => Promise<SessionSummary[]>
-  readSession: (id: string) => Promise<ConversationTurn[]>
+  readSession: (id: string, options?: { locator?: string }) => Promise<ConversationTurn[]>
 }
 
 export type SourceRegistry = Record<SourceType, SourceAdapter>

@@ -100,8 +100,8 @@ export function createOpenCodeAdapter(root: string): SourceAdapter {
         .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
     },
 
-    async readSession(sessionId: string) {
-      const sessionFile = findSessionFile(root, sessionId)
+    async readSession(sessionId: string, options?: { locator?: string }) {
+      const sessionFile = options?.locator ?? findSessionFile(root, sessionId)
       if (!sessionFile) {
         return []
       }

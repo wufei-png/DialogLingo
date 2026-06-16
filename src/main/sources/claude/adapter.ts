@@ -136,8 +136,8 @@ export function createClaudeAdapter(root: string): SourceAdapter {
         .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
     },
 
-    async readSession(sessionId: string) {
-      const filePath = findSessionFile(root, sessionId)
+    async readSession(sessionId: string, options?: { locator?: string }) {
+      const filePath = options?.locator ?? findSessionFile(root, sessionId)
       if (!filePath) {
         return []
       }

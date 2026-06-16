@@ -4,6 +4,12 @@ import { createSourceRegistry } from '../sources'
 import type { SessionFilterInput, SourceRegistry } from '../sources/types'
 import { discoverProjects } from './discoverProjects'
 
+function yieldToEventLoop() {
+  return new Promise<void>((resolve) => {
+    setImmediate(resolve)
+  })
+}
+
 export async function scanSessions(
   db: Database.Database,
   registry: SourceRegistry = createSourceRegistry(),
@@ -53,13 +59,16 @@ export async function scanSessions(
   }
 
   for (const summary of allSummaries) {
+    await yieldToEventLoop()
+
     const persistedSessionId = `${summary.sourceType}:${summary.id}`
+    const readOptions = { locator: summary.locator }
     const turns =
       summary.sourceType === 'codex'
-        ? await registry.codex.readSession(summary.id)
+        ? await registry.codex.readSession(summary.id, readOptions)
         : summary.sourceType === 'claude'
-          ? await registry.claude.readSession(summary.id)
-          : await registry.opencode.readSession(summary.id)
+          ? await registry.claude.readSession(summary.id, readOptions)
+          : await registry.opencode.readSession(summary.id, readOptions)
 
     const searchText = turns.map((turn) => turn.text).join('\n')
     const sessionHash = crypto.createHash('sha1').update(searchText).digest('hex')
