@@ -137,6 +137,26 @@ button {
   color: #6b7280;
 }
 
+.boot-error {
+  margin: 0;
+  color: #b91c1c;
+  line-height: 1.5;
+}
+
+.boot-continue {
+  justify-self: center;
+  padding: 10px 18px;
+  border: 1px solid rgba(17, 24, 39, 0.16);
+  border-radius: 999px;
+  background: #111827;
+  color: #fff;
+  cursor: pointer;
+}
+
+.boot-continue:hover {
+  background: #1f2937;
+}
+
 .search-rail,
 .search-preview,
 .boot-card,

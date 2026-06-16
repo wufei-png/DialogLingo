@@ -9,13 +9,26 @@ import { useLaunchScanGate } from './lib/useLaunchScanGate'
 const queryClient = new QueryClient()
 
 export default function App() {
-  const bootReady = useLaunchScanGate()
+  const bootGate = useLaunchScanGate()
   const [activeSection, setActiveSection] = useState<NavSectionId>('search')
   const [activeJobId, setActiveJobId] = useState<string | null>(null)
   const [activeWorkbookId, setActiveWorkbookId] = useState<string | null>(null)
 
-  if (!bootReady) {
+  if (bootGate.phase === 'loading') {
+    return null
+  }
+
+  if (bootGate.phase === 'scanning') {
     return <LaunchScanScreen />
+  }
+
+  if (bootGate.phase === 'error') {
+    return (
+      <LaunchScanScreen
+        errorMessage={bootGate.errorMessage}
+        onContinue={bootGate.dismissError}
+      />
+    )
   }
 
   return (
