@@ -3,13 +3,13 @@ import {
   isTurnToolNoise
 } from '../text/turnNoise'
 
-export type RedactionInputTurn = {
+export type PrecleanInputTurn = {
   role: string
   text: string
   isToolNoise?: boolean
 }
 
-export function redactTurns<T extends RedactionInputTurn>(turns: T[]) {
+export function precleanTurns<T extends PrecleanInputTurn>(turns: T[]) {
   return turns.flatMap((turn) => {
     if (isTurnToolNoise(turn)) {
       return []

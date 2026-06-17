@@ -5,7 +5,7 @@ import { enrichCandidateBatch } from './enrichCandidateBatch'
 import { finalizeWorkbookItems } from './finalizeWorkbookItems'
 import { ModelAdapterError, type LearningItemDraft } from './modelAdapter'
 import { createMockLearningItemDrafts, isMockLlmEnabled } from './mockLlm'
-import { redactTurns } from './redaction'
+import { precleanTurns } from './preclean'
 import {
   collectGenerationPromptCandidates,
   type GenerationPromptCandidate
@@ -281,7 +281,7 @@ async function runStart(message: StartMessage) {
       currentBatchLabel: null
     })
 
-    const cleanedTurns = redactTurns(session.turns)
+    const cleanedTurns = precleanTurns(session.turns)
     const candidates = mineCandidateGroups(cleanedTurns).slice(
       0,
       message.generation.maxItemsPerSession
