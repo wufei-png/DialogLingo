@@ -156,4 +156,35 @@ describe('createPreviewQuery', () => {
     expect(preview.turns[0].text).toContain('first line before')
     expect(preview.turns[0].text).toContain('second line after')
   })
+
+  it('filters an initial environment context turn from preview rows', () => {
+    const db = createTestDb()
+    insertPreviewSession(db, {
+      id: 's1',
+      title: 'plain title',
+      searchText:
+        '<environment_context>\n  <cwd>/workspace/dialoglingo</cwd>\n</environment_context>'
+    })
+    db.prepare(
+      `
+        insert into session_turns (
+          id,
+          session_id,
+          seq,
+          role,
+          language_hint,
+          text,
+          source_span_ref,
+          is_tool_noise
+        )
+        values ('t-s1-real', 's1', 1, 'user', 'en', ?, 'fixture:2', 0)
+      `
+    ).run('Actual prompt after environment context')
+
+    const preview = createPreviewQuery(db)('s1', '')
+
+    expect(preview.turns.map((turn) => turn.text)).toEqual([
+      'Actual prompt after environment context'
+    ])
+  })
 })

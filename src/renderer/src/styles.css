@@ -586,6 +586,46 @@ button {
   padding: 20px;
   border-radius: 22px;
   background: rgba(243, 244, 246, 0.75);
+  display: grid;
+  gap: 16px;
+}
+
+.preview-turn {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+}
+
+.preview-turn.is-user {
+  justify-content: flex-end;
+}
+
+.preview-turn.is-assistant {
+  justify-content: flex-start;
+}
+
+.preview-bubble {
+  width: fit-content;
+  max-width: min(760px, 84%);
+  min-width: 0;
+  padding: 14px 16px;
+  border: 1px solid rgba(17, 24, 39, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.92);
+}
+
+.preview-turn-role {
+  margin: 0 0 6px;
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.preview-turn.is-user .preview-turn-role {
+  text-align: right;
+}
+
+.preview-turn-text,
+.preview-snippet {
   overflow-wrap: anywhere;
   white-space: pre-wrap;
   word-break: break-word;
@@ -595,7 +635,7 @@ button {
 .search-preview-body mark {
   border-radius: 4px;
   background: #fde68a;
-  color: inherit;
+  color: #111827;
   padding: 0 2px;
 }
 

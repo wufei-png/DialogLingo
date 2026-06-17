@@ -15,6 +15,23 @@ type PreviewTurn = {
   sourceSpanRef: string | null
 }
 
+function isEnvironmentContextText(text: string) {
+  const trimmed = text.trim()
+  return (
+    trimmed.startsWith('<environment_context>') &&
+    trimmed.endsWith('</environment_context>')
+  )
+}
+
+function filterInitialEnvironmentContextTurn(turns: PreviewTurn[]) {
+  const [firstTurn] = turns
+  if (firstTurn?.role === 'user' && isEnvironmentContextText(firstTurn.text)) {
+    return turns.slice(1)
+  }
+
+  return turns
+}
+
 function snippetColumns(scope: QueryScope) {
   if (scope === 'titles') {
     return [1]
@@ -27,7 +44,7 @@ function snippetColumns(scope: QueryScope) {
 
 export function createPreviewQuery(db: Database.Database) {
   return (sessionId: string, query: string, scope: QueryScope = 'all') => {
-    const turns = db
+    const rawTurns = db
       .prepare(
         `
           select
@@ -41,6 +58,7 @@ export function createPreviewQuery(db: Database.Database) {
         `
       )
       .all(sessionId) as PreviewTurn[]
+    const turns = filterInitialEnvironmentContextTurn(rawTurns)
 
     const plan = buildSearchQueryPlan(query)
     const previewTurns =

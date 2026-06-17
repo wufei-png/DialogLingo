@@ -1,19 +1,35 @@
 import { useEffect, useMemo, useRef } from 'react'
 import type { ReactNode } from 'react'
 
+type PreviewTurn = {
+  seq: number
+  role: 'user' | 'assistant'
+  text: string
+}
+
 type PreviewProps = {
   sessionTitle: string
-  preview: string
+  turns: PreviewTurn[]
+  fallbackPreview: string
+  enableHighlights: boolean
   matchCount: number
   activeMatchIndex: number
   onPrevMatch: () => void
   onNextMatch: () => void
 }
 
-function renderPreview(value: string, activeMatchIndex: number): ReactNode[] {
+function renderPreview(
+  value: string,
+  enableHighlights: boolean,
+  activeMatchIndex: number,
+  matchIndexRef: { current: number }
+): ReactNode[] {
+  if (!enableHighlights) {
+    return [value]
+  }
+
   const parts = value.split(/(<mark>|<\/mark>)/)
   let highlighted = false
-  let matchIndex = 0
   const rendered: ReactNode[] = []
 
   parts.forEach((part, index) => {
@@ -23,7 +39,7 @@ function renderPreview(value: string, activeMatchIndex: number): ReactNode[] {
     }
     if (part === '</mark>') {
       highlighted = false
-      matchIndex += 1
+      matchIndexRef.current += 1
       return
     }
     if (!part) {
@@ -31,7 +47,7 @@ function renderPreview(value: string, activeMatchIndex: number): ReactNode[] {
     }
 
     if (highlighted) {
-      const currentIndex = matchIndex
+      const currentIndex = matchIndexRef.current
       rendered.push(
         <mark
           key={`${index}-${currentIndex}`}
@@ -48,6 +64,10 @@ function renderPreview(value: string, activeMatchIndex: number): ReactNode[] {
   })
 
   return rendered
+}
+
+function getTurnClassName(role: PreviewTurn['role']) {
+  return role === 'user' ? 'preview-turn is-user' : 'preview-turn is-assistant'
 }
 
 function scrollMatchIntoPreview(body: HTMLElement, active: Element) {
@@ -74,8 +94,39 @@ function scrollMatchIntoPreview(body: HTMLElement, active: Element) {
 export function SessionPreviewPane(props: PreviewProps) {
   const bodyRef = useRef<HTMLElement | null>(null)
   const renderedPreview = useMemo(
-    () => renderPreview(props.preview, props.activeMatchIndex),
-    [props.preview, props.activeMatchIndex]
+    () => {
+      const matchIndexRef = { current: 0 }
+
+      if (props.turns.length === 0) {
+        return (
+          <div className="preview-snippet">
+            {renderPreview(
+              props.fallbackPreview,
+              props.enableHighlights,
+              props.activeMatchIndex,
+              matchIndexRef
+            )}
+          </div>
+        )
+      }
+
+      return props.turns.map((turn) => (
+        <div key={turn.seq} className={getTurnClassName(turn.role)}>
+          <div className="preview-bubble">
+            <p className="preview-turn-role">{turn.role}</p>
+            <div className="preview-turn-text">
+              {renderPreview(
+                turn.text,
+                props.enableHighlights,
+                props.activeMatchIndex,
+                matchIndexRef
+              )}
+            </div>
+          </div>
+        </div>
+      ))
+    },
+    [props.activeMatchIndex, props.enableHighlights, props.fallbackPreview, props.turns]
   )
 
   useEffect(() => {
@@ -86,7 +137,7 @@ export function SessionPreviewPane(props: PreviewProps) {
     }
 
     scrollMatchIntoPreview(body, active)
-  }, [props.activeMatchIndex, props.preview])
+  }, [props.activeMatchIndex, props.enableHighlights, props.fallbackPreview, props.turns])
 
   return (
     <section className="search-preview">

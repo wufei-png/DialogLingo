@@ -27,7 +27,12 @@ describe('createCodexAdapter', () => {
 
     const turns = await adapter.readSession(summary.id)
 
+    expect(summary.preview).toContain('Need better ranking')
+    expect(summary.preview).not.toContain('environment_context')
     expect(turns.map((turn) => turn.role)).toEqual(['user', 'assistant'])
     expect(turns[0]?.text).toContain('Need better ranking')
+    expect(turns.map((turn) => turn.text).join('\n')).not.toContain(
+      'environment_context'
+    )
   })
 })

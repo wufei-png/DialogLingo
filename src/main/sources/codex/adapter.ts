@@ -62,6 +62,23 @@ function extractMessageText(content: unknown): string {
     .trim()
 }
 
+function isEnvironmentContextText(text: string) {
+  const trimmed = text.trim()
+  return (
+    trimmed.startsWith('<environment_context>') &&
+    trimmed.endsWith('</environment_context>')
+  )
+}
+
+function filterInitialEnvironmentContextTurn(turns: ParsedCodexTurn[]) {
+  const [firstTurn] = turns
+  if (firstTurn?.role === 'user' && isEnvironmentContextText(firstTurn.text)) {
+    return turns.slice(1)
+  }
+
+  return turns
+}
+
 function loadSessionIndex(root: string) {
   const indexPath = path.join(root, 'session_index.jsonl')
   const titles = new Map<string, string>()
@@ -81,7 +98,7 @@ function loadSessionIndex(root: string) {
 }
 
 function extractRolloutTurns(filePath: string, rows: JsonMap[]): ParsedCodexTurn[] {
-  return rows
+  const turns = rows
     .flatMap((row, index) => {
       if (row.type !== 'response_item') {
         return []
@@ -96,6 +113,7 @@ function extractRolloutTurns(filePath: string, rows: JsonMap[]): ParsedCodexTurn
       if (role !== 'user' && role !== 'assistant') {
         return []
       }
+      const normalizedRole: ConversationTurn['role'] = role
 
       const text = extractMessageText(message.content)
       if (!text) {
@@ -105,7 +123,7 @@ function extractRolloutTurns(filePath: string, rows: JsonMap[]): ParsedCodexTurn
       return [
         {
           id: `codex-turn-${index}`,
-          role,
+          role: normalizedRole,
           text,
           languageHint: detectLanguageHint(text),
           sourceSpanRef: `${filePath}:${index + 1}`,
@@ -113,6 +131,8 @@ function extractRolloutTurns(filePath: string, rows: JsonMap[]): ParsedCodexTurn
         }
       ]
     })
+
+  return filterInitialEnvironmentContextTurn(turns)
 }
 
 function toConversationTurn({

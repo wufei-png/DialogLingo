@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import type { NavSectionId } from '../../../../shared/navigation'
-import type { Settings } from '../../../../shared/schemas/settings'
 import { ResizableSplitPane } from '../../components/ResizableSplitPane'
 import { trpc } from '../../lib/trpc'
 import {
@@ -25,7 +24,7 @@ type SearchSession = {
 }
 
 type SessionPreview = {
-  turns: Array<{ seq: number; role: string; text: string }>
+  turns: Array<{ seq: number; role: 'user' | 'assistant'; text: string }>
   snippet: { snippet?: string } | null
 }
 
@@ -56,6 +55,14 @@ function countHighlights(value: string) {
 
 function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error)
+}
+
+function getVisiblePreviewText(preview: SessionPreview | null, fallbackPreview: string) {
+  if (preview?.turns && preview.turns.length > 0) {
+    return preview.turns.map((turn) => turn.text).join('\n\n')
+  }
+
+  return preview?.snippet?.snippet || fallbackPreview
 }
 
 export function SearchPage(props: {
@@ -226,17 +233,16 @@ export function SearchPage(props: {
     })()
   }, [focusedSessionId, query, queryScope])
 
-  const previewText =
-    preview?.turns
-      ?.map((turn) => `${turn.role}: ${turn.text}`)
-      .join('\n\n') ||
-    preview?.snippet?.snippet ||
-    'Select a session from the left to inspect normalized preview text.'
-  const matchCount = countHighlights(previewText)
+  const emptyPreviewText = 'Select a session from the left to inspect normalized preview text.'
+  const previewTurns = preview?.turns ?? []
+  const fallbackPreview = preview?.snippet?.snippet || emptyPreviewText
+  const visiblePreviewText = getVisiblePreviewText(preview, emptyPreviewText)
+  const enablePreviewHighlights = query.trim().length > 0
+  const matchCount = enablePreviewHighlights ? countHighlights(visiblePreviewText) : 0
 
   useEffect(() => {
     setActiveMatchIndex(0)
-  }, [previewText])
+  }, [visiblePreviewText])
 
   function handleGroupByChange(nextGroupBy: SearchGroupBy) {
     setGroupBy(nextGroupBy)
@@ -260,19 +266,6 @@ export function SearchPage(props: {
     }
 
     try {
-      const settings = (await trpc.settingsGet.query()) as Settings
-      const missingProvider =
-        settings.modelBackend.kind === 'openai-compatible' &&
-        (
-          !settings.provider.baseUrl.trim() ||
-          !settings.provider.apiKey.trim() ||
-          !settings.provider.defaultModel.trim()
-        )
-      if (missingProvider) {
-        setGenerationError('Configure OpenAI-compatible base URL, API key, and model in Settings first.')
-        return
-      }
-
       const response = (await trpc.generationStart.mutate({
         sessionIds
       })) as {
@@ -356,7 +349,9 @@ export function SearchPage(props: {
       right={(
         <SessionPreviewPane
           sessionTitle={focusedSession?.title ?? 'No session selected'}
-          preview={previewText}
+          turns={previewTurns}
+          fallbackPreview={fallbackPreview}
+          enableHighlights={enablePreviewHighlights}
           matchCount={matchCount}
           activeMatchIndex={activeMatchIndex}
           onPrevMatch={() =>
