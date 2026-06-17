@@ -1141,6 +1141,7 @@ button {
   display: grid;
   align-content: start;
   gap: 12px;
+  height: 100%;
   min-height: 0;
   max-height: none;
   overflow: auto;
