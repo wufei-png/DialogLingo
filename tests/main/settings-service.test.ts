@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  DEFAULT_EXPRESSION_DIFFICULTY,
   DEFAULT_SPLIT_RATIO,
   DEFAULT_WORKBOOK_SPLIT_RATIO
 } from '../../src/shared/schemas/settings'
@@ -18,6 +19,7 @@ describe('createSettingsService', () => {
         }
       },
       generation: {
+        expressionDifficulty: DEFAULT_EXPRESSION_DIFFICULTY,
         batchSize: 8,
         boundedConcurrency: 2,
         maxItemsPerSession: 50

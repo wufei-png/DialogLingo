@@ -5,6 +5,7 @@ export const DEFAULT_WORKBOOK_SPLIT_RATIO = 0.65
 export const MIN_SPLIT_RATIO = 0.16
 export const MAX_SPLIT_RATIO = 0.7
 export const DEFAULT_CLI_TIMEOUT_MS = 120_000
+export const DEFAULT_EXPRESSION_DIFFICULTY = 'average'
 
 export const DEFAULT_MODEL_BACKEND = {
   kind: 'openai-compatible',
@@ -31,6 +32,7 @@ export const modelBackendKindSchema = z.enum([
   'claude-cli',
   'opencode-cli'
 ])
+export const expressionDifficultySchema = z.enum(['easy', 'average', 'hard'])
 
 const cliCommandSettingsSchema = z.object({
   executablePath: z.string().default(''),
@@ -60,6 +62,7 @@ export const settingsSchema = z.object({
   modelBackend: modelBackendSchema,
   generation: z.object({
     defaultLanguageDirection: z.enum(['en-zh', 'zh-en', 'bilingual']),
+    expressionDifficulty: expressionDifficultySchema.default(DEFAULT_EXPRESSION_DIFFICULTY),
     batchSize: z.number().int().positive(),
     boundedConcurrency: z.number().int().positive(),
     maxItemsPerSession: z.number().int().positive(),
@@ -104,3 +107,4 @@ export const settingsSchema = z.object({
 
 export type Settings = z.infer<typeof settingsSchema>
 export type ModelBackendKind = z.infer<typeof modelBackendKindSchema>
+export type ExpressionDifficulty = z.infer<typeof expressionDifficultySchema>

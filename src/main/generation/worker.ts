@@ -2,9 +2,11 @@ import { parentPort } from 'node:worker_threads'
 import type { Settings } from '../../shared/schemas/settings'
 import { mineCandidateGroups } from './candidates'
 import { enrichCandidateBatch } from './enrichCandidateBatch'
+import { finalizeWorkbookItems } from './finalizeWorkbookItems'
 import { ModelAdapterError, type LearningItemDraft } from './modelAdapter'
 import { createMockLearningItemDrafts, isMockLlmEnabled } from './mockLlm'
 import { precleanTurns } from './preclean'
+import { buildGenerationPrompt } from './prompts'
 
 type WorkerTurn = {
   role: 'user' | 'assistant'
@@ -38,6 +40,7 @@ type StartMessage = {
   provider: Settings['provider']
   modelBackend: Settings['modelBackend']
   generation: {
+    expressionDifficulty: Settings['generation']['expressionDifficulty']
     batchSize: number
     maxItemsPerSession: number
   }
@@ -72,27 +75,6 @@ function emit(input: {
     | 'invalid-structured-payload'
 }) {
   parentPort?.postMessage(input)
-}
-
-function toPrompt(input: {
-  sessionTitle: string
-  candidates: Array<{ sourceSpanRef: string; promptText: string }>
-}) {
-  const candidateText = input.candidates
-    .map(
-      (candidate, index) =>
-        `${index + 1}. source_span_ref=${candidate.sourceSpanRef}\n${candidate.promptText}`
-    )
-    .join('\n\n')
-
-  return [
-    `Create English-learning workbook items from the session "${input.sessionTitle}".`,
-    'Use Expression for reusable terms/phrases and Sentence for useful full sentences.',
-    'If source text is Chinese, generate useful English-side learning material; if source text is English, generate Chinese support.',
-    'Return only JSON matching the requested schema.',
-    '',
-    candidateText
-  ].join('\n')
 }
 
 function toWorkerItem(input: {
@@ -175,17 +157,19 @@ async function runMockStart(message: StartMessage) {
       turns: []
     } satisfies WorkerSession)
   const drafts = createMockLearningItemDrafts()
-  const items = drafts.map((draft, itemIndex) => {
-    const source = mockSourceForSession({ session, itemIndex })
-    return toWorkerItem({
-      jobId: message.jobId,
-      session,
-      draft,
-      itemIndex: itemIndex + 1,
-      sourceSpanRef: source.sourceSpanRef,
-      excerpt: source.excerpt
+  const items = finalizeWorkbookItems(
+    drafts.map((draft, itemIndex) => {
+      const source = mockSourceForSession({ session, itemIndex })
+      return toWorkerItem({
+        jobId: message.jobId,
+        session,
+        draft,
+        itemIndex: itemIndex + 1,
+        sourceSpanRef: source.sourceSpanRef,
+        excerpt: source.excerpt
+      })
     })
-  })
+  )
 
   emit({
     kind: 'phase',
@@ -320,7 +304,11 @@ async function runStart(message: StartMessage) {
         const drafts = await enrichCandidateBatch({
           provider: message.provider,
           modelBackend: message.modelBackend,
-          prompt: toPrompt({ sessionTitle: session.title, candidates: batch })
+          prompt: buildGenerationPrompt({
+            sessionTitle: session.title,
+            expressionDifficulty: message.generation.expressionDifficulty,
+            candidates: batch
+          })
         })
 
         drafts.forEach((draft, draftIndex) => {
@@ -362,10 +350,12 @@ async function runStart(message: StartMessage) {
     }
   }
 
+  const completedItems = finalizeWorkbookItems(items)
+
   emitTerminalPhases({
     jobId: message.jobId,
     totalSelectedSessionCount: message.sessions.length,
-    createdItemCount: items.length,
+    createdItemCount: completedItems.length,
     failedBatchCount
   })
 
@@ -375,12 +365,12 @@ async function runStart(message: StartMessage) {
     status: 'completed',
     totalSelectedSessionCount: message.sessions.length,
     processedSessionCount: message.sessions.length,
-    createdItemCount: items.length,
+    createdItemCount: completedItems.length,
     warningCount: 0,
     failureCount: failedBatchCount,
     currentSessionTitle: null,
     currentBatchLabel: null,
-    items
+    items: completedItems
   })
 }
 

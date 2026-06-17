@@ -7,6 +7,7 @@ import {
 import { trpc } from '../lib/trpc'
 
 type BackendKind = Settings['modelBackend']['kind']
+type ExpressionDifficulty = Settings['generation']['expressionDifficulty']
 type CliToolKey = 'codex' | 'claude' | 'opencode'
 
 type Props = {
@@ -69,6 +70,8 @@ export function SettingsSheet(props: Props) {
   const [opencodeExecutablePath, setOpencodeExecutablePath] = useState('')
   const [opencodeModel, setOpencodeModel] = useState('')
   const [cliTimeoutMs, setCliTimeoutMs] = useState('120000')
+  const [expressionDifficulty, setExpressionDifficulty] =
+    useState<ExpressionDifficulty>('average')
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
 
   useEffect(() => {
@@ -87,6 +90,7 @@ export function SettingsSheet(props: Props) {
     setOpencodeExecutablePath(settingsQuery.data.modelBackend.cli.opencode.executablePath)
     setOpencodeModel(settingsQuery.data.modelBackend.cli.opencode.model)
     setCliTimeoutMs(String(settingsQuery.data.modelBackend.cli.timeoutMs))
+    setExpressionDifficulty(settingsQuery.data.generation.expressionDifficulty)
     setSaveMessage(null)
   }, [settingsQuery.data])
 
@@ -94,7 +98,7 @@ export function SettingsSheet(props: Props) {
     return null
   }
 
-  async function saveProviderSettings() {
+  async function saveSettings() {
     const current = settingsQuery.data ?? ((await trpc.settingsGet.query()) as Settings)
     const next: Settings = {
       ...current,
@@ -120,6 +124,10 @@ export function SettingsSheet(props: Props) {
           },
           timeoutMs: toPositiveInt(cliTimeoutMs, current.modelBackend.cli.timeoutMs)
         }
+      },
+      generation: {
+        ...current.generation,
+        expressionDifficulty
       }
     }
     const saved = (await trpc.settingsSave.mutate(next)) as Settings
@@ -133,7 +141,7 @@ export function SettingsSheet(props: Props) {
         <header className="settings-sheet-header">
           <div>
             <p className="sheet-kicker">Settings</p>
-            <h2>Model Backend</h2>
+            <h2>Settings</h2>
           </div>
           <button type="button" onClick={props.onClose}>
             Close
@@ -203,8 +211,22 @@ export function SettingsSheet(props: Props) {
           <p className="settings-help">
             LiteLLM works as a local OpenAI-compatible endpoint; use the API backend with a LiteLLM base URL.
           </p>
-          <button type="button" onClick={() => void saveProviderSettings()}>
-            Save Backend
+          <h3 className="settings-section-heading">Generation</h3>
+          <label>
+            <span>Expression difficulty</span>
+            <select
+              value={expressionDifficulty}
+              onChange={(event) =>
+                setExpressionDifficulty(event.currentTarget.value as ExpressionDifficulty)
+              }
+            >
+              <option value="easy">Easy</option>
+              <option value="average">Average</option>
+              <option value="hard">Hard</option>
+            </select>
+          </label>
+          <button type="button" onClick={() => void saveSettings()}>
+            Save Settings
           </button>
           {saveMessage ? <p className="settings-save-message">{saveMessage}</p> : null}
         </div>

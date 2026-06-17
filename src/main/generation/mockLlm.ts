@@ -8,15 +8,15 @@ export function createMockLearningItemDrafts(): LearningItemDraft[] {
   return [
     {
       itemType: 'Expression',
-      sourceText: 'hi',
-      targetText: '嗨；你好',
-      gloss: 'An informal greeting.',
-      contextText: 'How do you say “嗨；你好” in a casual English chat?',
+      sourceText: 'set up',
+      targetText: '设置；配置',
+      gloss: 'To prepare or configure something so it can be used.',
+      contextText: 'Translate into English: “设置本地模型。”',
       explanation:
-        '“hi” 是非常常见的非正式问候语，适合聊天开场，比 “hello” 更随意。',
-      quizPrompt: 'How do you say “嗨；你好” in a casual English chat?',
-      quizAnswer: 'hi',
-      tags: ['greeting', 'casual', 'basic']
+        '“set up” 常用于软件、工具或环境配置，比 “make” 更自然。',
+      quizPrompt: 'Translate into English: “设置本地模型。”',
+      quizAnswer: 'set up the local model',
+      tags: ['software', 'configuration', 'phrasal-verb']
     },
     {
       itemType: 'Expression',

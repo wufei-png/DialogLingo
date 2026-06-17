@@ -21,6 +21,7 @@ describe('mock llm generation', () => {
 
     expect(drafts.filter((draft) => draft.itemType === 'Expression')).toHaveLength(2)
     expect(drafts.filter((draft) => draft.itemType === 'Sentence')).toHaveLength(2)
+    expect(drafts.map((draft) => draft.sourceText)).not.toContain('hi')
   })
 
   it('skips API provider validation when enabled', () => {

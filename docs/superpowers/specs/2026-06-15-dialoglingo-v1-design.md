@@ -651,9 +651,13 @@ Every generation stage runs as a background job, not in the renderer and not as 
    - execute as a background job
 6. `LLM enrichment`
    - small bounded batches only
+   - include the saved expression difficulty setting (`easy`, `average`, `hard`) in the extraction prompt
+   - prompt should reject trivial expression cards such as `hi` and `excuse me`
    - execute as a background job
 7. `global dedup + ranking`
    - merge near-duplicates across sessions
+   - current implementation performs exact normalized dedup by `item_type + sourceText`
+   - current implementation drops obvious trivial `Expression` items before workbook materialization
    - execute as a background job
 8. `workbook materialization`
    - create workbook items

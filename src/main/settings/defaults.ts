@@ -1,5 +1,6 @@
 import type { Settings } from '../../shared/schemas/settings'
 import {
+  DEFAULT_EXPRESSION_DIFFICULTY,
   DEFAULT_MODEL_BACKEND,
   DEFAULT_SPLIT_RATIO,
   DEFAULT_WORKBOOK_SPLIT_RATIO
@@ -31,6 +32,7 @@ export const DEFAULT_SETTINGS: Settings = {
   },
   generation: {
     defaultLanguageDirection: 'bilingual',
+    expressionDifficulty: DEFAULT_EXPRESSION_DIFFICULTY,
     batchSize: 8,
     boundedConcurrency: 2,
     maxItemsPerSession: 50,

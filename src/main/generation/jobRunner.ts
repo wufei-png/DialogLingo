@@ -17,6 +17,7 @@ export async function runGenerationJob(input: {
   settings: Pick<Settings, 'modelBackend'> & {
     provider: Settings['provider']
     generation: {
+      expressionDifficulty: Settings['generation']['expressionDifficulty']
       batchSize: number
       maxItemsPerSession: number
     }

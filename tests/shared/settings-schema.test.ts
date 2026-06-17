@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_CLI_TIMEOUT_MS,
+  DEFAULT_EXPRESSION_DIFFICULTY,
   DEFAULT_SPLIT_RATIO,
   DEFAULT_WORKBOOK_SPLIT_RATIO,
   settingsSchema
@@ -42,6 +43,7 @@ describe('settingsSchema', () => {
     expect(parsed.ui.splitRatio).toBe(DEFAULT_SPLIT_RATIO)
     expect(parsed.ui.workbookSplitRatio).toBe(DEFAULT_WORKBOOK_SPLIT_RATIO)
     expect(parsed.ui.workbookSourcePinned).toBe(false)
+    expect(parsed.generation.expressionDifficulty).toBe(DEFAULT_EXPRESSION_DIFFICULTY)
     expect(parsed.modelBackend).toMatchObject({
       kind: 'openai-compatible',
       cli: {
@@ -51,5 +53,17 @@ describe('settingsSchema', () => {
         timeoutMs: DEFAULT_CLI_TIMEOUT_MS
       }
     })
+  })
+
+  it('rejects unknown expression difficulty values', () => {
+    expect(() =>
+      settingsSchema.parse({
+        ...LEGACY_SETTINGS,
+        generation: {
+          ...LEGACY_SETTINGS.generation,
+          expressionDifficulty: 'expert'
+        }
+      })
+    ).toThrow()
   })
 })
