@@ -1,5 +1,6 @@
 import type { Settings } from '../../shared/schemas/settings'
 import {
+  DEFAULT_BATCH_SIZE,
   DEFAULT_EXPRESSION_DIFFICULTY,
   DEFAULT_MODEL_BACKEND,
   DEFAULT_SPLIT_RATIO,
@@ -33,7 +34,7 @@ export const DEFAULT_SETTINGS: Settings = {
   generation: {
     defaultLanguageDirection: 'bilingual',
     expressionDifficulty: DEFAULT_EXPRESSION_DIFFICULTY,
-    batchSize: 8,
+    batchSize: DEFAULT_BATCH_SIZE,
     boundedConcurrency: 2,
     maxItemsPerSession: 50,
     typeBalanceProfile: {

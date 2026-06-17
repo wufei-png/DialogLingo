@@ -6,6 +6,7 @@ export const MIN_SPLIT_RATIO = 0.16
 export const MAX_SPLIT_RATIO = 0.7
 export const DEFAULT_CLI_TIMEOUT_MS = 120_000
 export const DEFAULT_EXPRESSION_DIFFICULTY = 'average'
+export const DEFAULT_BATCH_SIZE = 32
 
 export const DEFAULT_MODEL_BACKEND = {
   kind: 'openai-compatible',
@@ -63,7 +64,7 @@ export const settingsSchema = z.object({
   generation: z.object({
     defaultLanguageDirection: z.enum(['en-zh', 'zh-en', 'bilingual']),
     expressionDifficulty: expressionDifficultySchema.default(DEFAULT_EXPRESSION_DIFFICULTY),
-    batchSize: z.number().int().positive(),
+    batchSize: z.number().int().positive().default(DEFAULT_BATCH_SIZE),
     boundedConcurrency: z.number().int().positive(),
     maxItemsPerSession: z.number().int().positive(),
     typeBalanceProfile: z.object({

@@ -9,6 +9,7 @@ export type RouterDeps = {
   settings: {
     get: () => unknown
     save: (next: any) => unknown
+    reset: () => unknown
   }
   jobs: {
     getSnapshot: (jobId: string) => unknown
@@ -57,6 +58,7 @@ export function buildRouter(deps: RouterDeps) {
     settingsSave: t.procedure
       .input(settingsSchema)
       .mutation(({ input }) => deps.settings.save(input)),
+    settingsReset: t.procedure.mutation(() => deps.settings.reset()),
     jobSnapshot: t.procedure
       .input(z.object({ jobId: z.string() }))
       .query(({ input }) => deps.jobs.getSnapshot(input.jobId)),

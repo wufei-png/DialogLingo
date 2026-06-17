@@ -37,6 +37,17 @@ export function createSettingsService(
         .run(JSON.stringify(next))
 
       return next
+    },
+    reset() {
+      const next = settingsSchema.parse(DEFAULT_SETTINGS)
+
+      sqlite
+        .prepare(
+          'insert into settings (id, json) values (1, ?) on conflict(id) do update set json = excluded.json'
+        )
+        .run(JSON.stringify(next))
+
+      return next
     }
   }
 }

@@ -55,11 +55,6 @@ export function useLayoutSettings() {
     [queryClient, settingsQuery.data]
   )
 
-  const resetSplitRatio = useCallback(
-    () => saveSplitRatio(DEFAULT_SPLIT_RATIO),
-    [saveSplitRatio]
-  )
-
   const saveWorkbookSplitRatio = useCallback(
     async (nextRatio: number) => {
       setWorkbookSplitRatio(nextRatio)
@@ -109,7 +104,6 @@ export function useLayoutSettings() {
     setWorkbookSourcePinned,
     saveSplitRatio,
     saveWorkbookSplitRatio,
-    saveWorkbookSourcePinned,
-    resetSplitRatio
+    saveWorkbookSourcePinned
   }
 }

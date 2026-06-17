@@ -57,9 +57,7 @@ function AppSurface() {
       </main>
       <SettingsSheet
         open={settingsOpen}
-        splitRatio={layoutSettings.splitRatio}
         onClose={() => setSettingsOpen(false)}
-        onResetSplitRatio={layoutSettings.resetSplitRatio}
       />
     </div>
   )

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  DEFAULT_BATCH_SIZE,
   DEFAULT_EXPRESSION_DIFFICULTY,
   DEFAULT_SPLIT_RATIO,
   DEFAULT_WORKBOOK_SPLIT_RATIO
@@ -20,7 +21,7 @@ describe('createSettingsService', () => {
       },
       generation: {
         expressionDifficulty: DEFAULT_EXPRESSION_DIFFICULTY,
-        batchSize: 8,
+        batchSize: DEFAULT_BATCH_SIZE,
         boundedConcurrency: 2,
         maxItemsPerSession: 50
       },
@@ -38,5 +39,30 @@ describe('createSettingsService', () => {
         workbookSourcePinned: false
       }
     })
+  })
+
+  it('resets persisted settings to defaults', () => {
+    const service = createSettingsService(':memory:', { runMigrations: true })
+
+    service.save({
+      ...service.get(),
+      provider: {
+        baseUrl: 'https://example.com',
+        apiKey: 'sk-test',
+        defaultModel: 'gpt-test'
+      },
+      generation: {
+        ...service.get().generation,
+        batchSize: 4
+      }
+    })
+
+    const reset = service.reset()
+
+    expect(reset).toMatchObject({
+      provider: { baseUrl: '', apiKey: '', defaultModel: '' },
+      generation: { batchSize: DEFAULT_BATCH_SIZE }
+    })
+    expect(service.get()).toEqual(reset)
   })
 })

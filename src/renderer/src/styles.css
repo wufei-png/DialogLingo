@@ -1291,6 +1291,77 @@ button {
   margin: 18px 0 8px;
 }
 
+.settings-label-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.settings-sheet .settings-help-trigger {
+  position: relative;
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(17, 24, 39, 0.08);
+  color: #4b5563;
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: help;
+}
+
+.settings-sheet .settings-help-trigger:hover {
+  background: rgba(17, 24, 39, 0.14);
+  transform: none;
+}
+
+.settings-sheet .settings-help-trigger::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 2;
+  width: min(260px, calc(100vw - 48px));
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: #111827;
+  color: #f9fafb;
+  font-size: 12px;
+  font-weight: 400;
+  line-height: 1.45;
+  text-align: left;
+  white-space: normal;
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(-4px);
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.settings-sheet .settings-help-trigger:hover::after,
+.settings-sheet .settings-help-trigger:focus-visible::after {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.settings-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.settings-sheet .settings-reset-button {
+  background: #fee2e2;
+  color: #991b1b;
+}
+
+.settings-sheet .settings-reset-button:hover {
+  background: #fecaca;
+}
+
 .search-preview-meta {
   display: flex;
   flex-wrap: wrap;

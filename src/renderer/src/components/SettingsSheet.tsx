@@ -1,26 +1,18 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import {
-  DEFAULT_SPLIT_RATIO,
-  type Settings
-} from '../../../shared/schemas/settings'
+import type { Settings } from '../../../shared/schemas/settings'
 import { trpc } from '../lib/trpc'
 
 type BackendKind = Settings['modelBackend']['kind']
 type ExpressionDifficulty = Settings['generation']['expressionDifficulty']
 type CliToolKey = 'codex' | 'claude' | 'opencode'
 
+const BATCH_SIZE_HELP =
+  'How many transcript snippets to send in each LLM request. Larger batches mean fewer API calls per session but longer prompts.'
+
 type Props = {
   open: boolean
-  splitRatio: number
   onClose: () => void
-  onResetSplitRatio: () => void
-}
-
-function formatRatio(value: number) {
-  const left = Math.round(value * 100)
-  const right = Math.round((1 - value) * 100)
-  return `${left}:${right}`
 }
 
 function cliToolKeyForBackend(kind: BackendKind): CliToolKey | null {
@@ -72,6 +64,7 @@ export function SettingsSheet(props: Props) {
   const [cliTimeoutMs, setCliTimeoutMs] = useState('120000')
   const [expressionDifficulty, setExpressionDifficulty] =
     useState<ExpressionDifficulty>('average')
+  const [batchSize, setBatchSize] = useState('32')
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
 
   useEffect(() => {
@@ -91,6 +84,7 @@ export function SettingsSheet(props: Props) {
     setOpencodeModel(settingsQuery.data.modelBackend.cli.opencode.model)
     setCliTimeoutMs(String(settingsQuery.data.modelBackend.cli.timeoutMs))
     setExpressionDifficulty(settingsQuery.data.generation.expressionDifficulty)
+    setBatchSize(String(settingsQuery.data.generation.batchSize))
     setSaveMessage(null)
   }, [settingsQuery.data])
 
@@ -127,12 +121,19 @@ export function SettingsSheet(props: Props) {
       },
       generation: {
         ...current.generation,
-        expressionDifficulty
+        expressionDifficulty,
+        batchSize: toPositiveInt(batchSize, current.generation.batchSize)
       }
     }
     const saved = (await trpc.settingsSave.mutate(next)) as Settings
     queryClient.setQueryData(['settings'], saved)
     setSaveMessage('Saved.')
+  }
+
+  async function resetAllSettings() {
+    const saved = (await trpc.settingsReset.mutate()) as Settings
+    queryClient.setQueryData(['settings'], saved)
+    setSaveMessage('Reset to defaults.')
   }
 
   return (
@@ -225,19 +226,36 @@ export function SettingsSheet(props: Props) {
               <option value="hard">Hard</option>
             </select>
           </label>
-          <button type="button" onClick={() => void saveSettings()}>
-            Save Settings
-          </button>
+          <label>
+            <span className="settings-label-row">
+              <span>LLM batch size</span>
+              <button
+                type="button"
+                className="settings-help-trigger"
+                aria-label="What is LLM batch size?"
+                data-tooltip={BATCH_SIZE_HELP}
+              >
+                ?
+              </button>
+            </span>
+            <input
+              type="number"
+              min="1"
+              step="1"
+              value={batchSize}
+              onChange={(event) => setBatchSize(event.currentTarget.value)}
+            />
+          </label>
+          <div className="settings-actions">
+            <button type="button" onClick={() => void saveSettings()}>
+              Save Settings
+            </button>
+            <button type="button" className="settings-reset-button" onClick={() => void resetAllSettings()}>
+              Reset all to defaults
+            </button>
+          </div>
           {saveMessage ? <p className="settings-save-message">{saveMessage}</p> : null}
         </div>
-        <h3 className="settings-section-heading">Layout</h3>
-        <div className="settings-row">
-          <span>Pane width</span>
-          <strong>{formatRatio(props.splitRatio)}</strong>
-        </div>
-        <button type="button" onClick={props.onResetSplitRatio}>
-          Reset to {formatRatio(DEFAULT_SPLIT_RATIO)}
-        </button>
       </section>
     </div>
   )
