@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 
 type PreviewTurn = {
   seq: number
-  role: 'user' | 'assistant'
+  role: 'user' | 'assistant' | string
   text: string
 }
 
@@ -16,6 +16,9 @@ type PreviewProps = {
   activeMatchIndex: number
   onPrevMatch: () => void
   onNextMatch: () => void
+  kicker?: string
+  headerMeta?: ReactNode
+  className?: string
 }
 
 function renderPreview(
@@ -140,7 +143,7 @@ export function SessionPreviewPane(props: PreviewProps) {
   }, [props.activeMatchIndex, props.enableHighlights, props.fallbackPreview, props.turns])
 
   return (
-    <section className="search-preview">
+    <section className={['search-preview', props.className].filter(Boolean).join(' ')}>
       {props.matchCount > 1 ? (
         <div className="match-nav" aria-label="Search matches">
           <button type="button" aria-label="Previous match" onClick={props.onPrevMatch}>
@@ -153,8 +156,11 @@ export function SessionPreviewPane(props: PreviewProps) {
       ) : null}
       <header className="search-preview-header">
         <div>
-          <p className="search-preview-kicker">Normalized Preview</p>
+          <p className="search-preview-kicker">{props.kicker ?? 'Normalized Preview'}</p>
           <h2>{props.sessionTitle}</h2>
+          {props.headerMeta ? (
+            <div className="search-preview-meta">{props.headerMeta}</div>
+          ) : null}
         </div>
       </header>
       <article className="search-preview-body" ref={bodyRef}>

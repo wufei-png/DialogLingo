@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   DEFAULT_CLI_TIMEOUT_MS,
   DEFAULT_SPLIT_RATIO,
+  DEFAULT_WORKBOOK_SPLIT_RATIO,
   settingsSchema
 } from '../../src/shared/schemas/settings'
 
@@ -39,6 +40,8 @@ describe('settingsSchema', () => {
 
     expect(DEFAULT_SPLIT_RATIO).toBe(0.2)
     expect(parsed.ui.splitRatio).toBe(DEFAULT_SPLIT_RATIO)
+    expect(parsed.ui.workbookSplitRatio).toBe(DEFAULT_WORKBOOK_SPLIT_RATIO)
+    expect(parsed.ui.workbookSourcePinned).toBe(false)
     expect(parsed.modelBackend).toMatchObject({
       kind: 'openai-compatible',
       cli: {

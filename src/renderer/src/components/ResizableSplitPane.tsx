@@ -19,6 +19,11 @@ function clampRatio(value: number) {
   return Math.min(MAX_SPLIT_RATIO, Math.max(MIN_SPLIT_RATIO, value))
 }
 
+function parsePixelLength(value: string, fallback: number) {
+  const parsed = Number.parseFloat(value)
+  return Number.isFinite(parsed) ? parsed : fallback
+}
+
 export function ResizableSplitPane(props: Props) {
   const containerRef = useRef<HTMLDivElement | null>(null)
   const ratioRef = useRef(clampRatio(props.ratio))
@@ -28,6 +33,31 @@ export function ResizableSplitPane(props: Props) {
     ratioRef.current = ratio
   }, [ratio])
 
+  const clampToContainer = useCallback((value: number) => {
+    const container = containerRef.current
+    const rect = container?.getBoundingClientRect()
+    if (!container || !rect || rect.width <= 0) {
+      return clampRatio(value)
+    }
+
+    const styles = window.getComputedStyle(container)
+    const dividerSize = parsePixelLength(
+      styles.getPropertyValue('--split-divider-size'),
+      8
+    )
+    const leftMin = parsePixelLength(styles.getPropertyValue('--split-left-min'), 220)
+    const rightMin = parsePixelLength(styles.getPropertyValue('--split-right-min'), 360)
+    const availableWidth = Math.max(1, rect.width - dividerSize)
+
+    if (leftMin + rightMin >= availableWidth) {
+      return leftMin / Math.max(1, leftMin + rightMin)
+    }
+
+    const minRatio = Math.max(MIN_SPLIT_RATIO, leftMin / availableWidth)
+    const maxRatio = Math.min(MAX_SPLIT_RATIO, 1 - rightMin / availableWidth)
+    return Math.min(maxRatio, Math.max(minRatio, value))
+  }, [])
+
   const updateFromClientX = useCallback(
     (clientX: number) => {
       const rect = containerRef.current?.getBoundingClientRect()
@@ -35,12 +65,12 @@ export function ResizableSplitPane(props: Props) {
         return ratioRef.current
       }
 
-      const nextRatio = clampRatio((clientX - rect.left) / rect.width)
+      const nextRatio = clampToContainer((clientX - rect.left) / rect.width)
       ratioRef.current = nextRatio
       props.onRatioChange(nextRatio)
       return nextRatio
     },
-    [props]
+    [clampToContainer, props]
   )
 
   const commitRatio = useCallback(() => {
@@ -52,7 +82,7 @@ export function ResizableSplitPane(props: Props) {
       ref={containerRef}
       className={['resizable-split-pane', props.className].filter(Boolean).join(' ')}
       style={{
-        gridTemplateColumns: `minmax(var(--split-left-min, 220px), ${ratio}fr) var(--split-divider-size, 8px) minmax(var(--split-right-min, 360px), ${1 - ratio}fr)`
+        gridTemplateColumns: `minmax(0, calc((100% - var(--split-divider-size, 8px)) * ${ratio})) var(--split-divider-size, 8px) minmax(0, calc((100% - var(--split-divider-size, 8px)) * ${1 - ratio}))`
       }}
     >
       <div className={['split-pane', 'split-pane-left', props.leftClassName].filter(Boolean).join(' ')}>
@@ -74,7 +104,7 @@ export function ResizableSplitPane(props: Props) {
 
           event.preventDefault()
           const direction = event.key === 'ArrowLeft' ? -1 : 1
-          const nextRatio = clampRatio(ratioRef.current + direction * 0.02)
+          const nextRatio = clampToContainer(ratioRef.current + direction * 0.02)
           ratioRef.current = nextRatio
           props.onRatioChange(nextRatio)
           props.onRatioCommit(nextRatio)

@@ -32,6 +32,19 @@ export type SessionGroup = {
   }>
 }
 
+export type SessionTreeVirtualRow =
+  | {
+      kind: 'group'
+      id: string
+      group: SessionGroup
+    }
+  | {
+      kind: 'session'
+      id: string
+      groupId: string
+      row: SessionGroup['rows'][number]
+    }
+
 export type ProjectOption = {
   id: string
   name: string
@@ -158,4 +171,28 @@ export function groupSessions(input: {
         rows
       }
     })
+}
+
+export function flattenSessionTree(groups: SessionGroup[]): SessionTreeVirtualRow[] {
+  return groups.flatMap((group) => {
+    const header: SessionTreeVirtualRow = {
+      kind: 'group',
+      id: `group:${group.id}`,
+      group
+    }
+
+    if (!group.expanded) {
+      return [header]
+    }
+
+    return [
+      header,
+      ...group.rows.map((row) => ({
+        kind: 'session' as const,
+        id: `session:${row.sessionId}`,
+        groupId: group.id,
+        row
+      }))
+    ]
+  })
 }

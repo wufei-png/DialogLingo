@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { createPreviewQuery } from '../../../src/main/search/queryPreview'
+import {
+  createPreviewQuery,
+  createWorkbookPreviewQuery
+} from '../../../src/main/search/queryPreview'
 import { createTestDb } from '../testDb'
 
 function insertPreviewSession(
@@ -186,5 +189,57 @@ describe('createPreviewQuery', () => {
     expect(preview.turns.map((turn) => turn.text)).toEqual([
       'Actual prompt after environment context'
     ])
+  })
+
+  it('returns full workbook source turns and highlights the matching source span', () => {
+    const db = createTestDb()
+    insertPreviewSession(db, {
+      id: 's1',
+      title: 'Source session',
+      searchText: 'first turn'
+    })
+    db.prepare(
+      `
+        insert into session_turns (
+          id,
+          session_id,
+          seq,
+          role,
+          language_hint,
+          text,
+          source_span_ref,
+          is_tool_noise
+        )
+        values ('t-s1-second', 's1', 1, 'assistant', 'en', ?, 'fixture:2', 0)
+      `
+    ).run('Use geometric registration before fine alignment.')
+
+    const preview = createWorkbookPreviewQuery(db)({
+      sessionId: 's1',
+      sourceSpanRef: 'fixture:2',
+      highlightText: 'geometric registration'
+    })
+
+    expect(preview.turns).toHaveLength(2)
+    expect(preview.turns[1].text).toContain('<mark>geometric registration</mark>')
+    expect(preview.matchedBy).toBe('source-span')
+  })
+
+  it('falls back to workbook source text highlighting when the span is unavailable', () => {
+    const db = createTestDb()
+    insertPreviewSession(db, {
+      id: 's1',
+      title: 'Source session',
+      searchText: 'The export bundle keeps workbook context available.'
+    })
+
+    const preview = createWorkbookPreviewQuery(db)({
+      sessionId: 's1',
+      sourceSpanRef: 'missing-span',
+      highlightText: 'workbook context'
+    })
+
+    expect(preview.turns[0].text).toContain('<mark>workbook context</mark>')
+    expect(preview.matchedBy).toBe('highlight-text')
   })
 })

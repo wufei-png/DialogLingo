@@ -1,6 +1,10 @@
-import { useEffect, useState } from 'react'
-import { AnimatePresence, motion } from 'motion/react'
-import { areAllSessionIdsSelected, type SessionGroup } from './searchModel'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useVirtualizer } from '@tanstack/react-virtual'
+import {
+  areAllSessionIdsSelected,
+  flattenSessionTree,
+  type SessionGroup
+} from './searchModel'
 
 type ContextMenuState = {
   groupId: string
@@ -15,8 +19,10 @@ export function SessionTree(props: {
   onFocusSession: (sessionId: string) => void
   onToggleGroup: (groupId: string) => void
 }) {
+  const parentRef = useRef<HTMLDivElement | null>(null)
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
   const totalRows = props.groups.reduce((count, group) => count + group.rows.length, 0)
+  const virtualRows = useMemo(() => flattenSessionTree(props.groups), [props.groups])
   const contextGroup = contextMenu
     ? props.groups.find((group) => group.id === contextMenu.groupId) ?? null
     : null
@@ -28,6 +34,12 @@ export function SessionTree(props: {
     contextGroupSessionIds,
     contextGroupSelectedIds
   )
+  const virtualizer = useVirtualizer({
+    count: virtualRows.length,
+    getScrollElement: () => parentRef.current,
+    estimateSize: (index) => (virtualRows[index]?.kind === 'group' ? 42 : 38),
+    overscan: 8
+  })
 
   useEffect(() => {
     if (!contextMenu) {
@@ -58,76 +70,83 @@ export function SessionTree(props: {
   }
 
   return (
-    <div className="session-tree">
-      <AnimatePresence initial={false}>
-        {props.groups.map((group) => (
-          <motion.section
-            key={group.id}
-            className="session-group"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.12, ease: 'easeOut' }}
-          >
-            <button
-              type="button"
-              className="session-group-header"
-              aria-expanded={group.expanded}
-              onClick={() => props.onToggleGroup(group.id)}
-              onContextMenu={(event) => {
-                event.preventDefault()
-                event.stopPropagation()
-                setContextMenu({
-                  groupId: group.id,
-                  x: event.clientX,
-                  y: event.clientY
-                })
-              }}
-            >
-              <span className="session-group-title">
-                <span className="collapsible-caret" aria-hidden="true" />
-                <span>{group.label}</span>
-              </span>
-              <span className="session-group-count">
-                {group.selectedCount}/{group.totalCount}
-              </span>
-            </button>
-            <AnimatePresence initial={false}>
-              {group.expanded ? (
-                <motion.div
-                  className="session-group-body"
-                  initial={{ height: 0, opacity: 0 }}
-                  animate={{ height: 'auto', opacity: 1 }}
-                  exit={{ height: 0, opacity: 0 }}
-                  transition={{ duration: 0.14, ease: 'easeOut' }}
+    <div className="session-tree" ref={parentRef}>
+      <div
+        className="session-tree-virtual"
+        style={{ height: `${virtualizer.getTotalSize()}px` }}
+      >
+        {virtualizer.getVirtualItems().map((virtualItem) => {
+          const item = virtualRows[virtualItem.index]
+
+          if (item.kind === 'group') {
+            return (
+              <div
+                key={item.id}
+                ref={virtualizer.measureElement}
+                data-index={virtualItem.index}
+                className="session-tree-virtual-row"
+                style={{ transform: `translateY(${virtualItem.start}px)` }}
+              >
+                <button
+                  type="button"
+                  className="session-group-header"
+                  aria-expanded={item.group.expanded}
+                  onClick={() => props.onToggleGroup(item.group.id)}
+                  onContextMenu={(event) => {
+                    event.preventDefault()
+                    event.stopPropagation()
+                    setContextMenu({
+                      groupId: item.group.id,
+                      x: event.clientX,
+                      y: event.clientY
+                    })
+                  }}
                 >
-                  <ul className="session-group-list">
-                    {group.rows.map((row) => (
-                      <li key={row.sessionId} className="session-row">
-                        <label>
-                          <input
-                            type="checkbox"
-                            checked={row.selected}
-                            onChange={() => props.onToggleSession(row.sessionId)}
-                          />
-                          <button
-                            type="button"
-                            className={row.focused ? 'session-row-button is-focused' : 'session-row-button'}
-                            title={row.title}
-                            onClick={() => props.onFocusSession(row.sessionId)}
-                          >
-                            <span>{row.title}</span>
-                          </button>
-                        </label>
-                      </li>
-                    ))}
-                  </ul>
-                </motion.div>
-              ) : null}
-            </AnimatePresence>
-          </motion.section>
-        ))}
-      </AnimatePresence>
+                  <span className="session-group-title">
+                    <span className="collapsible-caret" aria-hidden="true" />
+                    <span>{item.group.label}</span>
+                  </span>
+                  <span className="session-group-count">
+                    {item.group.selectedCount}/{item.group.totalCount}
+                  </span>
+                </button>
+              </div>
+            )
+          }
+
+          return (
+            <div
+              key={item.id}
+              ref={virtualizer.measureElement}
+              data-index={virtualItem.index}
+              className="session-tree-virtual-row"
+              style={{ transform: `translateY(${virtualItem.start}px)` }}
+            >
+              <div className="session-row">
+                <label>
+                  <input
+                    type="checkbox"
+                    checked={item.row.selected}
+                    onChange={() => props.onToggleSession(item.row.sessionId)}
+                  />
+                  <button
+                    type="button"
+                    className={
+                      item.row.focused
+                        ? 'session-row-button is-focused'
+                        : 'session-row-button'
+                    }
+                    title={item.row.title}
+                    onClick={() => props.onFocusSession(item.row.sessionId)}
+                  >
+                    <span>{item.row.title}</span>
+                  </button>
+                </label>
+              </div>
+            </div>
+          )
+        })}
+      </div>
       {contextMenu && contextGroup ? (
         <div
           className="session-group-context-menu"

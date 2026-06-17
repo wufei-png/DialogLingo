@@ -1,7 +1,8 @@
 import type { Settings } from '../../shared/schemas/settings'
 import {
   DEFAULT_MODEL_BACKEND,
-  DEFAULT_SPLIT_RATIO
+  DEFAULT_SPLIT_RATIO,
+  DEFAULT_WORKBOOK_SPLIT_RATIO
 } from '../../shared/schemas/settings'
 
 export const DEFAULT_SETTINGS: Settings = {
@@ -49,6 +50,8 @@ export const DEFAULT_SETTINGS: Settings = {
     includeArchivedSessions: false
   },
   ui: {
-    splitRatio: DEFAULT_SPLIT_RATIO
+    splitRatio: DEFAULT_SPLIT_RATIO,
+    workbookSplitRatio: DEFAULT_WORKBOOK_SPLIT_RATIO,
+    workbookSourcePinned: false
   }
 }

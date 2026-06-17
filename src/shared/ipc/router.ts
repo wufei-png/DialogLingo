@@ -40,6 +40,7 @@ export type RouterDeps = {
   }
   workbook: {
     list: (input: any) => unknown
+    previewSource: (input: any) => unknown
     saveItem: (input: any) => Promise<unknown>
     deleteItem: (input: any) => Promise<unknown>
     restoreItem: (input: any) => Promise<unknown>
@@ -93,6 +94,15 @@ export function buildRouter(deps: RouterDeps) {
     workbookList: t.procedure
       .input(z.object({ workbookId: z.string(), tab: workbookListTabSchema }))
       .query(({ input }) => deps.workbook.list(input)),
+    workbookPreviewSource: t.procedure
+      .input(
+        z.object({
+          sessionId: z.string(),
+          sourceSpanRef: z.string().nullable().optional(),
+          highlightText: z.string().nullable().optional()
+        })
+      )
+      .query(({ input }) => deps.workbook.previewSource(input)),
     workbookSaveItem: t.procedure
       .input(z.object({ itemId: z.string(), currentSnapshot: z.any() }))
       .mutation(({ input }) => deps.workbook.saveItem(input)),

@@ -1,6 +1,7 @@
 import { z } from 'zod'
 
 export const DEFAULT_SPLIT_RATIO = 0.2
+export const DEFAULT_WORKBOOK_SPLIT_RATIO = 0.65
 export const MIN_SPLIT_RATIO = 0.16
 export const MAX_SPLIT_RATIO = 0.7
 export const DEFAULT_CLI_TIMEOUT_MS = 120_000
@@ -87,9 +88,17 @@ export const settingsSchema = z.object({
       .number()
       .min(MIN_SPLIT_RATIO)
       .max(MAX_SPLIT_RATIO)
-      .default(DEFAULT_SPLIT_RATIO)
+      .default(DEFAULT_SPLIT_RATIO),
+    workbookSplitRatio: z
+      .number()
+      .min(MIN_SPLIT_RATIO)
+      .max(MAX_SPLIT_RATIO)
+      .default(DEFAULT_WORKBOOK_SPLIT_RATIO),
+    workbookSourcePinned: z.boolean().default(false)
   }).default({
-    splitRatio: DEFAULT_SPLIT_RATIO
+    splitRatio: DEFAULT_SPLIT_RATIO,
+    workbookSplitRatio: DEFAULT_WORKBOOK_SPLIT_RATIO,
+    workbookSourcePinned: false
   })
 })
 

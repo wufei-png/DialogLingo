@@ -3,6 +3,7 @@ import {
   PLATFORM_OPTIONS,
   applySessionSelection,
   areAllSessionIdsSelected,
+  flattenSessionTree,
   groupSessions,
   togglePlatformFilter
 } from '../../src/renderer/src/features/search/searchModel'
@@ -117,6 +118,23 @@ describe('searchModel', () => {
 
     expect(groups[0].id).toBe('2026-06-15')
     expect(groups[0].rows.map((row) => row.sessionId)).toEqual(['s3', 's1'])
+  })
+
+  it('flattens tree rows with only expanded group sessions', () => {
+    const groups = groupSessions({
+      groupBy: 'platform',
+      projects,
+      focusedSessionId: null,
+      selectedSessionIds: new Set(),
+      collapsedGroupIds: new Set(['codex']),
+      sessions
+    })
+
+    expect(flattenSessionTree(groups).map((row) => row.id)).toEqual([
+      'group:claude',
+      'session:s2',
+      'group:codex'
+    ])
   })
 
   it('selects all filtered sessions even when their groups are collapsed', () => {

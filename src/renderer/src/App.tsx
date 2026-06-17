@@ -42,9 +42,11 @@ function AppSurface() {
           <WorkbookPage
             activeSection={activeSection}
             onChangeSection={setActiveSection}
-            splitRatio={layoutSettings.splitRatio}
-            onSplitRatioChange={layoutSettings.setSplitRatio}
-            onSplitRatioCommit={layoutSettings.saveSplitRatio}
+            workbookSplitRatio={layoutSettings.workbookSplitRatio}
+            workbookSourcePinned={layoutSettings.workbookSourcePinned}
+            onWorkbookSplitRatioChange={layoutSettings.setWorkbookSplitRatio}
+            onWorkbookSplitRatioCommit={layoutSettings.saveWorkbookSplitRatio}
+            onWorkbookSourcePinnedChange={layoutSettings.saveWorkbookSourcePinned}
             jobId={activeJobId}
             workbookId={activeWorkbookId}
           />
@@ -63,11 +65,7 @@ function AppSurface() {
 export default function App() {
   const bootGate = useLaunchScanGate()
 
-  if (bootGate.phase === 'loading') {
-    return null
-  }
-
-  if (bootGate.phase === 'scanning') {
+  if (bootGate.phase === 'loading' || bootGate.phase === 'scanning') {
     return <LaunchScanScreen />
   }
 

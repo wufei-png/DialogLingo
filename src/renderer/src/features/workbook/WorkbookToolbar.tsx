@@ -4,9 +4,17 @@ type Props = {
   activeTab: WorkbookTab
   stats: string
   onChangeTab: (tab: WorkbookTab) => void
+  exportDisabled: boolean
+  onExport: () => void
 }
 
-export function WorkbookToolbar({ activeTab, stats, onChangeTab }: Props) {
+export function WorkbookToolbar({
+  activeTab,
+  stats,
+  onChangeTab,
+  exportDisabled,
+  onExport
+}: Props) {
   return (
     <header className="workbook-toolbar">
       <div className="workbook-tabs">
@@ -40,6 +48,9 @@ export function WorkbookToolbar({ activeTab, stats, onChangeTab }: Props) {
         </button>
       </div>
       <div className="workbook-stats">{stats}</div>
+      <button type="button" disabled={exportDisabled} onClick={onExport}>
+        Export
+      </button>
     </header>
   )
 }

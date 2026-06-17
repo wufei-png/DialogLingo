@@ -1,5 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { DEFAULT_SPLIT_RATIO } from '../../src/shared/schemas/settings'
+import {
+  DEFAULT_SPLIT_RATIO,
+  DEFAULT_WORKBOOK_SPLIT_RATIO
+} from '../../src/shared/schemas/settings'
 import { createSettingsService } from '../../src/main/settings/service'
 
 describe('createSettingsService', () => {
@@ -28,7 +31,9 @@ describe('createSettingsService', () => {
         includeArchivedSessions: false
       },
       ui: {
-        splitRatio: DEFAULT_SPLIT_RATIO
+        splitRatio: DEFAULT_SPLIT_RATIO,
+        workbookSplitRatio: DEFAULT_WORKBOOK_SPLIT_RATIO,
+        workbookSourcePinned: false
       }
     })
   })

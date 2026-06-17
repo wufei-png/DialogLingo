@@ -15,6 +15,14 @@ type PreviewTurn = {
   sourceSpanRef: string | null
 }
 
+type SessionPreviewMeta = {
+  sessionId: string
+  title: string
+  sourceType: string
+  projectPath: string | null
+  updatedAt: string
+}
+
 function isEnvironmentContextText(text: string) {
   const trimmed = text.trim()
   return (
@@ -40,6 +48,19 @@ function snippetColumns(scope: QueryScope) {
     return [3]
   }
   return [3, 2, 1]
+}
+
+function hasHighlight(value: string) {
+  return value.includes('<mark>')
+}
+
+function markWholeText(value: string) {
+  return `<mark>${value}</mark>`
+}
+
+function highlightText(value: string, highlightText: string) {
+  const plan = buildSearchQueryPlan(highlightText)
+  return plan.trimmed ? buildHighlightedText(value, plan.variants) : value
 }
 
 export function createPreviewQuery(db: Database.Database) {
@@ -143,6 +164,90 @@ export function createPreviewQuery(db: Database.Database) {
     return {
       turns: previewTurns,
       snippet
+    }
+  }
+}
+
+export function createWorkbookPreviewQuery(db: Database.Database) {
+  return (input: {
+    sessionId: string
+    sourceSpanRef?: string | null
+    highlightText?: string | null
+  }) => {
+    const session = db
+      .prepare(
+        `
+          select
+            s.id as sessionId,
+            s.title,
+            s.source_type as sourceType,
+            p.local_path as projectPath,
+            s.updated_at as updatedAt
+          from sessions s
+          left join projects p on p.id = s.project_id
+          where s.id = ?
+          limit 1
+        `
+      )
+      .get(input.sessionId) as SessionPreviewMeta | undefined
+    const rawTurns = db
+      .prepare(
+        `
+          select
+            seq,
+            role,
+            text,
+            source_span_ref as sourceSpanRef
+          from session_turns
+          where session_id = ?
+          order by seq asc
+        `
+      )
+      .all(input.sessionId) as PreviewTurn[]
+    const turns = filterInitialEnvironmentContextTurn(rawTurns)
+    const sourceSpanRef = input.sourceSpanRef?.trim() ?? ''
+    const highlight = input.highlightText?.trim() ?? ''
+    const sourceMatchedTurns = sourceSpanRef
+      ? turns.filter((turn) => turn.sourceSpanRef === sourceSpanRef)
+      : []
+
+    let matchedBy: 'source-span' | 'highlight-text' | 'none' = 'none'
+    const previewTurns =
+      sourceMatchedTurns.length > 0
+        ? turns.map((turn) => {
+            if (turn.sourceSpanRef !== sourceSpanRef) {
+              return turn
+            }
+
+            const nextText = highlightText(String(turn.text), highlight)
+            matchedBy = 'source-span'
+            return {
+              ...turn,
+              text: hasHighlight(nextText) ? nextText : markWholeText(String(turn.text))
+            }
+          })
+        : turns.map((turn) => {
+            const nextText = highlightText(String(turn.text), highlight)
+            if (hasHighlight(nextText)) {
+              matchedBy = 'highlight-text'
+            }
+            return {
+              ...turn,
+              text: nextText
+            }
+          })
+
+    return {
+      session: session ?? {
+        sessionId: input.sessionId,
+        title: input.sessionId,
+        sourceType: '',
+        projectPath: null,
+        updatedAt: ''
+      },
+      turns: previewTurns,
+      snippet: null,
+      matchedBy
     }
   }
 }

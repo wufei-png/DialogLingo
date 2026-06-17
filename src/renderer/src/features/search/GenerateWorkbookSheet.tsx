@@ -1,3 +1,5 @@
+import { createPortal } from 'react-dom'
+
 type SummaryRow = {
   label: string
   count: number
@@ -17,7 +19,7 @@ export function GenerateWorkbookSheet(props: Props) {
     return null
   }
 
-  return (
+  return createPortal(
     <div className="sheet-backdrop">
       <div className="sheet">
         <p className="sheet-kicker">Generate Workbook</p>
@@ -58,6 +60,7 @@ export function GenerateWorkbookSheet(props: Props) {
           </button>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }

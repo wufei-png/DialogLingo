@@ -22,7 +22,7 @@ import {
 import { runGenerationJob } from './generation/jobRunner'
 import { writeWorkbookDraft } from './generation/materializeWorkbook'
 import { validateGenerationRequest } from './generation/validateGeneration'
-import { createPreviewQuery } from './search/queryPreview'
+import { createPreviewQuery, createWorkbookPreviewQuery } from './search/queryPreview'
 import { createSessionSearch, type SearchInput } from './search/querySessions'
 import { listActiveProjects } from './projects/listProjects'
 import { buildLaunchPlan, type LaunchPlan } from './scan/scanCoordinator'
@@ -349,6 +349,7 @@ function expandOutputPath(value: string) {
 function createRouter() {
   const searchSessions = createSessionSearch(sqlite)
   const previewSession = createPreviewQuery(sqlite)
+  const previewWorkbookSource = createWorkbookPreviewQuery(sqlite)
 
   return buildRouter({
     settings,
@@ -557,6 +558,11 @@ function createRouter() {
         workbookId: string
         tab: 'all' | 'expressions' | 'sentences' | 'deleted'
       }) => listWorkbookItems(input),
+      previewSource: (input: {
+        sessionId: string
+        sourceSpanRef?: string | null
+        highlightText?: string | null
+      }) => previewWorkbookSource(input),
       saveItem: async (input: { itemId: string; currentSnapshot: unknown }) => ({
         ok: true as const,
         itemId: input.itemId,
