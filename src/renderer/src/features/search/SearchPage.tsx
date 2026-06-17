@@ -29,6 +29,10 @@ type SessionPreview = {
 
 type QueryScope = 'all' | 'titles' | 'transcript'
 type TimeRangePreset = 'last-7-days' | 'last-30-days' | 'all-time'
+type GenerationPromptPreview = {
+  prompt: string
+  candidateCount: number
+}
 
 const SOURCE_GROUP_IDS = ['codex', 'claude', 'opencode']
 
@@ -254,7 +258,13 @@ export function SearchPage(props: {
     setCollapsedGroupIds(new Set(nextGroups.map((group) => group.id)))
   }
 
-  async function handleGenerate(sessionIds: string[]) {
+  const loadGenerationPromptPreview = useCallback(async (sessionIds: string[]) => {
+    return (await trpc.generationPromptPreview.query({
+      sessionIds
+    })) as GenerationPromptPreview
+  }, [])
+
+  async function handleGenerate(sessionIds: string[], promptOverride: string | null) {
     setGenerationError(null)
 
     if (sessionIds.length === 0) {
@@ -264,7 +274,8 @@ export function SearchPage(props: {
 
     try {
       const response = (await trpc.generationStart.mutate({
-        sessionIds
+        sessionIds,
+        promptOverride
       })) as {
         jobId: string
         workbookId: string
@@ -338,6 +349,7 @@ export function SearchPage(props: {
               await loadSessions()
             })()
           }}
+          onPromptPreview={loadGenerationPromptPreview}
           onGenerate={handleGenerate}
       />
       )}

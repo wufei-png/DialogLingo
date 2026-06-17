@@ -21,6 +21,7 @@ import {
 } from './export/manifest'
 import { runGenerationJob } from './generation/jobRunner'
 import { writeWorkbookDraft } from './generation/materializeWorkbook'
+import { buildGenerationPromptPreview } from './generation/promptPreview'
 import { validateGenerationRequest } from './generation/validateGeneration'
 import { createPreviewQuery, createWorkbookPreviewQuery } from './search/queryPreview'
 import { createSessionSearch, type SearchInput } from './search/querySessions'
@@ -444,8 +445,26 @@ function createRouter() {
       })
     },
     generation: {
-      start: async (input: { sessionIds: string[] }) => {
+      previewPrompt: async (input: { sessionIds: string[] }) => {
+        if (input.sessionIds.length === 0) {
+          throw new Error('Select at least one session before generating.')
+        }
+
         const currentSettings = settings.get() as Settings
+        const sessionsForGeneration = querySessionRows(input.sessionIds)
+
+        return buildGenerationPromptPreview({
+          sessions: sessionsForGeneration,
+          expressionDifficulty: currentSettings.generation.expressionDifficulty,
+          maxItemsPerSession: currentSettings.generation.maxItemsPerSession,
+          batchSize: currentSettings.generation.batchSize
+        })
+      },
+      start: async (input: { sessionIds: string[]; promptOverride?: string | null }) => {
+        const currentSettings = settings.get() as Settings
+        const promptOverride = input.promptOverride?.trim()
+          ? input.promptOverride
+          : undefined
         validateGenerationRequest({
           sessionIds: input.sessionIds,
           settings: currentSettings
@@ -505,6 +524,7 @@ function createRouter() {
           jobId,
           sessions: sessionsForGeneration,
           settings: currentSettings,
+          promptOverride,
           onCompletedItems: (items) => {
             completedItems = items
           },

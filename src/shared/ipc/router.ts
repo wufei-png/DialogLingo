@@ -36,6 +36,7 @@ export type RouterDeps = {
     }
   }
   generation: {
+    previewPrompt: (input: any) => Promise<unknown>
     start: (input: any) => Promise<unknown>
     cancel: (input: any) => Promise<unknown>
   }
@@ -87,8 +88,16 @@ export function buildRouter(deps: RouterDeps) {
     sessionRescan: t.procedure.mutation(() => deps.sessions.rescan()),
     projectsList: t.procedure.query(() => deps.projects.list()),
     launchScanStatus: t.procedure.query(() => deps.scan.getLaunchStatus()),
-    generationStart: t.procedure
+    generationPromptPreview: t.procedure
       .input(z.object({ sessionIds: z.array(z.string()) }))
+      .query(({ input }) => deps.generation.previewPrompt(input)),
+    generationStart: t.procedure
+      .input(
+        z.object({
+          sessionIds: z.array(z.string()),
+          promptOverride: z.string().nullable().optional()
+        })
+      )
       .mutation(({ input }) => deps.generation.start(input)),
     generationCancel: t.procedure
       .input(z.object({ jobId: z.string() }))

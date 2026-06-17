@@ -1,4 +1,4 @@
-import { useId, useState, type ReactNode } from 'react'
+import { useId, useMemo, useState, type ReactNode } from 'react'
 import { MeasuredCollapse } from '../../components/MeasuredCollapse'
 import { GenerateWorkbookSheet } from './GenerateWorkbookSheet'
 import {
@@ -20,6 +20,11 @@ type SearchSession = {
   sourceType: SearchPlatform
   projectPath: string | null
   updatedAt: string
+}
+
+type GenerationPromptPreview = {
+  prompt: string
+  candidateCount: number
 }
 
 const SEARCH_SCOPE_OPTIONS: Array<{
@@ -87,9 +92,14 @@ export function SearchRail(props: {
   onFocusSession: (sessionId: string) => void
   onToggleGroup: (groupId: string) => void
   onRescan: () => void
-  onGenerate: (sessionIds: string[]) => Promise<void>
+  onPromptPreview: (sessionIds: string[]) => Promise<GenerationPromptPreview>
+  onGenerate: (sessionIds: string[], promptOverride: string | null) => Promise<void>
 }) {
   const [sheetOpen, setSheetOpen] = useState(false)
+  const selectedSessionIds = useMemo(
+    () => [...props.selectedSessionIds],
+    [props.selectedSessionIds]
+  )
 
   const platformSummary = PLATFORM_OPTIONS.map((platform) => ({
     label: PLATFORM_LABELS[platform],
@@ -298,11 +308,13 @@ export function SearchRail(props: {
       <GenerateWorkbookSheet
         open={sheetOpen}
         selectedCount={props.selectedSessionIds.size}
+        sessionIds={selectedSessionIds}
         platformSummary={platformSummary.length > 0 ? platformSummary : groupSummary}
         projectSummary={projectSummary}
+        onLoadPrompt={props.onPromptPreview}
         onCancel={() => setSheetOpen(false)}
-        onConfirm={() => {
-          void props.onGenerate([...props.selectedSessionIds]).then(() => {
+        onConfirm={(promptOverride) => {
+          void props.onGenerate(selectedSessionIds, promptOverride).then(() => {
             setSheetOpen(false)
           })
         }}

@@ -6,6 +6,10 @@ import { finalizeWorkbookItems } from './finalizeWorkbookItems'
 import { ModelAdapterError, type LearningItemDraft } from './modelAdapter'
 import { createMockLearningItemDrafts, isMockLlmEnabled } from './mockLlm'
 import { precleanTurns } from './preclean'
+import {
+  collectGenerationPromptCandidates,
+  type GenerationPromptCandidate
+} from './promptPreview'
 import { buildGenerationPrompt } from './prompts'
 
 type WorkerTurn = {
@@ -44,6 +48,7 @@ type StartMessage = {
     batchSize: number
     maxItemsPerSession: number
   }
+  promptOverride?: string | null
 }
 
 let cancelled = false
@@ -225,7 +230,13 @@ async function runStart(message: StartMessage) {
     return
   }
 
+  if (message.promptOverride?.trim()) {
+    await runPromptOverrideStart(message, message.promptOverride)
+    return
+  }
+
   const items: WorkerItem[] = []
+  const promptCandidates: Array<GenerationPromptCandidate & { session: WorkerSession }> = []
   let failedBatchCount = 0
 
   for (let index = 0; index < message.sessions.length; index += 1) {
@@ -265,6 +276,16 @@ async function runStart(message: StartMessage) {
       0,
       message.generation.maxItemsPerSession
     )
+    promptCandidates.push(
+      ...candidates.map((candidate) => ({
+        sessionId: session.sessionId,
+        sessionTitle: session.title,
+        sourceSpanRef: candidate.sourceSpanRef,
+        promptText: candidate.promptText,
+        ...(candidate.role ? { role: candidate.role } : {}),
+        session
+      }))
+    )
 
     emit({
       kind: 'phase',
@@ -278,76 +299,249 @@ async function runStart(message: StartMessage) {
       currentSessionTitle: session.title,
       currentBatchLabel: `${candidates.length} candidates`
     })
+  }
 
-    for (
-      let batchStart = 0;
-      batchStart < candidates.length;
-      batchStart += message.generation.batchSize
-    ) {
-      const batch = candidates.slice(batchStart, batchStart + message.generation.batchSize)
-      const batchLabel = `llm batch ${Math.floor(batchStart / message.generation.batchSize) + 1}`
+  for (
+    let batchStart = 0;
+    batchStart < promptCandidates.length;
+    batchStart += message.generation.batchSize
+  ) {
+    const batch = promptCandidates.slice(batchStart, batchStart + message.generation.batchSize)
+    const batchLabel = `llm batch ${Math.floor(batchStart / message.generation.batchSize) + 1}`
 
-      emit({
-        kind: 'phase',
+    if (cancelled) {
+      parentPort?.postMessage({
+        kind: 'snapshot',
         jobId: message.jobId,
-        status: 'enriching',
+        status: 'cancelled',
         totalSelectedSessionCount: message.sessions.length,
-        processedSessionCount: index + 1,
+        processedSessionCount: message.sessions.length,
         createdItemCount: items.length,
         warningCount: 0,
         failureCount: failedBatchCount,
-        currentSessionTitle: session.title,
-        currentBatchLabel: batchLabel
+        currentSessionTitle: null,
+        currentBatchLabel: batchLabel,
+        items
+      })
+      return
+    }
+
+    emit({
+      kind: 'phase',
+      jobId: message.jobId,
+      status: 'enriching',
+      totalSelectedSessionCount: message.sessions.length,
+      processedSessionCount: message.sessions.length,
+      createdItemCount: items.length,
+      warningCount: 0,
+      failureCount: failedBatchCount,
+      currentSessionTitle: null,
+      currentBatchLabel: batchLabel
+    })
+
+    try {
+      const drafts = await enrichCandidateBatch({
+        provider: message.provider,
+        modelBackend: message.modelBackend,
+        prompt: buildGenerationPrompt({
+          sessionTitle:
+            message.sessions.length === 1
+              ? message.sessions[0]?.title ?? 'Selected session'
+              : `${message.sessions.length} selected sessions`,
+          expressionDifficulty: message.generation.expressionDifficulty,
+          candidates: batch
+        })
       })
 
-      try {
-        const drafts = await enrichCandidateBatch({
-          provider: message.provider,
-          modelBackend: message.modelBackend,
-          prompt: buildGenerationPrompt({
-            sessionTitle: session.title,
-            expressionDifficulty: message.generation.expressionDifficulty,
-            candidates: batch
+      drafts.forEach((draft, draftIndex) => {
+        const sourceCandidate = batch[draftIndex % batch.length]
+        items.push(
+          toWorkerItem({
+            jobId: message.jobId,
+            session: sourceCandidate.session,
+            draft,
+            itemIndex: items.length + 1,
+            sourceSpanRef: sourceCandidate.sourceSpanRef,
+            excerpt: sourceCandidate.promptText
           })
-        })
+        )
+      })
+    } catch (error) {
+      failedBatchCount += 1
+      const reason =
+        error instanceof ModelAdapterError
+          ? error.reason
+          : 'model-request-failure'
 
-        drafts.forEach((draft, draftIndex) => {
-          const sourceCandidate = batch[draftIndex % batch.length]
-          items.push(
-            toWorkerItem({
-              jobId: message.jobId,
-              session,
-              draft,
-              itemIndex: items.length + 1,
-              sourceSpanRef: sourceCandidate.sourceSpanRef,
-              excerpt: sourceCandidate.promptText
-            })
-          )
-        })
-      } catch (error) {
-        failedBatchCount += 1
-        const reason =
-          error instanceof ModelAdapterError
-            ? error.reason
-            : 'model-request-failure'
-
-        emit({
-          kind: 'failure',
-          jobId: message.jobId,
-          status: 'failed',
-          totalSelectedSessionCount: message.sessions.length,
-          processedSessionCount: index + 1,
-          createdItemCount: items.length,
-          warningCount: 0,
-          failureCount: failedBatchCount,
-          failedBatchCount,
-          failureReason: reason,
-          currentSessionTitle: session.title,
-          currentBatchLabel: batchLabel
-        })
-        return
-      }
+      emit({
+        kind: 'failure',
+        jobId: message.jobId,
+        status: 'failed',
+        totalSelectedSessionCount: message.sessions.length,
+        processedSessionCount: message.sessions.length,
+        createdItemCount: items.length,
+        warningCount: 0,
+        failureCount: failedBatchCount,
+        failedBatchCount,
+        failureReason: reason,
+        currentSessionTitle: null,
+        currentBatchLabel: batchLabel
+      })
+      return
     }
+  }
+
+  const completedItems = finalizeWorkbookItems(items)
+
+  emitTerminalPhases({
+    jobId: message.jobId,
+    totalSelectedSessionCount: message.sessions.length,
+    createdItemCount: completedItems.length,
+    failedBatchCount
+  })
+
+  parentPort?.postMessage({
+    kind: 'completed',
+    jobId: message.jobId,
+    status: 'completed',
+    totalSelectedSessionCount: message.sessions.length,
+    processedSessionCount: message.sessions.length,
+    createdItemCount: completedItems.length,
+    warningCount: 0,
+    failureCount: failedBatchCount,
+    currentSessionTitle: null,
+    currentBatchLabel: null,
+    items: completedItems
+  })
+}
+
+async function runPromptOverrideStart(message: StartMessage, promptOverride: string) {
+  const items: WorkerItem[] = []
+  const promptCandidates: GenerationPromptCandidate[] = []
+  let failedBatchCount = 0
+
+  for (let index = 0; index < message.sessions.length; index += 1) {
+    const session = message.sessions[index]
+
+    if (cancelled) {
+      parentPort?.postMessage({
+        kind: 'snapshot',
+        jobId: message.jobId,
+        status: 'cancelled',
+        totalSelectedSessionCount: message.sessions.length,
+        processedSessionCount: index,
+        createdItemCount: items.length,
+        warningCount: 0,
+        failureCount: 0,
+        currentSessionTitle: session.title,
+        currentBatchLabel: null,
+        items
+      })
+      return
+    }
+
+    emit({
+      kind: 'phase',
+      jobId: message.jobId,
+      status: 'normalizing',
+      totalSelectedSessionCount: message.sessions.length,
+      processedSessionCount: index,
+      createdItemCount: items.length,
+      warningCount: 0,
+      failureCount: 0,
+      currentSessionTitle: session.title,
+      currentBatchLabel: 'custom prompt'
+    })
+
+    const sessionCandidates = collectGenerationPromptCandidates({
+      sessions: [session],
+      maxItemsPerSession: message.generation.maxItemsPerSession
+    })
+    promptCandidates.push(...sessionCandidates)
+
+    emit({
+      kind: 'phase',
+      jobId: message.jobId,
+      status: 'mining',
+      totalSelectedSessionCount: message.sessions.length,
+      processedSessionCount: index + 1,
+      createdItemCount: items.length,
+      warningCount: 0,
+      failureCount: 0,
+      currentSessionTitle: session.title,
+      currentBatchLabel: `${sessionCandidates.length} candidates`
+    })
+  }
+
+  emit({
+    kind: 'phase',
+    jobId: message.jobId,
+    status: 'enriching',
+    totalSelectedSessionCount: message.sessions.length,
+    processedSessionCount: message.sessions.length,
+    createdItemCount: items.length,
+    warningCount: 0,
+    failureCount: failedBatchCount,
+    currentSessionTitle: null,
+    currentBatchLabel: 'custom prompt'
+  })
+
+  try {
+    const drafts = await enrichCandidateBatch({
+      provider: message.provider,
+      modelBackend: message.modelBackend,
+      prompt: promptOverride
+    })
+    const fallbackSession =
+      message.sessions[0] ??
+      ({
+        sessionId: 'custom-prompt',
+        title: 'Custom prompt',
+        turns: []
+      } satisfies WorkerSession)
+
+    drafts.forEach((draft, draftIndex) => {
+      const sourceCandidate =
+        promptCandidates.length > 0
+          ? promptCandidates[draftIndex % promptCandidates.length]
+          : null
+      const session =
+        message.sessions.find((row) => row.sessionId === sourceCandidate?.sessionId) ??
+        fallbackSession
+
+      items.push(
+        toWorkerItem({
+          jobId: message.jobId,
+          session,
+          draft,
+          itemIndex: items.length + 1,
+          sourceSpanRef: sourceCandidate?.sourceSpanRef ?? 'custom-prompt',
+          excerpt: sourceCandidate?.promptText ?? promptOverride.slice(0, 500)
+        })
+      )
+    })
+  } catch (error) {
+    failedBatchCount += 1
+    const reason =
+      error instanceof ModelAdapterError
+        ? error.reason
+        : 'model-request-failure'
+
+    emit({
+      kind: 'failure',
+      jobId: message.jobId,
+      status: 'failed',
+      totalSelectedSessionCount: message.sessions.length,
+      processedSessionCount: message.sessions.length,
+      createdItemCount: items.length,
+      warningCount: 0,
+      failureCount: failedBatchCount,
+      failedBatchCount,
+      failureReason: reason,
+      currentSessionTitle: null,
+      currentBatchLabel: 'custom prompt'
+    })
+    return
   }
 
   const completedItems = finalizeWorkbookItems(items)

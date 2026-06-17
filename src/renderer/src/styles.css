@@ -656,6 +656,8 @@ button {
 .sheet {
   width: min(760px, calc(100vw - 32px));
   max-height: calc(100vh - 32px);
+  display: grid;
+  gap: 16px;
   overflow: auto;
   padding: 24px;
 }
@@ -684,6 +686,101 @@ button {
   display: flex;
   justify-content: flex-end;
   gap: 12px;
+}
+
+.generation-prompt-panel {
+  display: grid;
+  gap: 10px;
+}
+
+.prompt-editor-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: flex-start;
+}
+
+.prompt-editor-header h3,
+.prompt-editor-header p {
+  margin: 0;
+}
+
+.prompt-editor-header p {
+  color: #6b7280;
+  font-size: 13px;
+}
+
+.prompt-editor-status {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.prompt-editor-status span {
+  padding: 4px 8px;
+  border-radius: 999px;
+  background: rgba(107, 143, 113, 0.14);
+  color: #3f6f4a;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.prompt-editor-status button {
+  padding: 7px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: #e5e7eb;
+  color: #111827;
+  font-size: 12px;
+}
+
+.prompt-editor-error {
+  margin: 0;
+  color: #991b1b;
+  font-size: 13px;
+}
+
+.prompt-editor-shell {
+  position: relative;
+  border-radius: 14px;
+  background: rgba(255, 255, 255, 0.82);
+  box-shadow:
+    0 0 0 1px rgba(17, 24, 39, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+.prompt-editor-shell.is-focused {
+  box-shadow:
+    0 0 0 2px #f59e0b,
+    inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+.prompt-editor-shell.is-saved::after {
+  position: absolute;
+  top: 12px;
+  right: 8px;
+  bottom: 12px;
+  width: 4px;
+  border-radius: 999px;
+  background: #6b8f71;
+  content: '';
+  pointer-events: none;
+}
+
+.generation-prompt-textarea {
+  width: 100%;
+  min-height: 160px;
+  max-height: min(360px, 42vh);
+  padding: 14px 22px 14px 14px;
+  border: 0;
+  resize: none;
+  background: transparent;
+  color: #111827;
+  font-family: 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', monospace;
+  font-size: 12px;
+  line-height: 1.55;
+  outline: 0;
+  white-space: pre-wrap;
 }
 
 .workbook-page {

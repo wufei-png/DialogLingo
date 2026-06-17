@@ -272,7 +272,7 @@ The `Generate Workbook` action lives in the left-rail footer because selection h
 - project distribution
 - generated item types: `Expression + Sentence`
 
-That confirmation sheet should confirm scope only. It should not expose generation-parameter editing.
+That confirmation sheet should confirm scope and expose the generated model prompt as an editable per-generation draft. The prompt editor should follow workbook-card editing semantics: editable by default, save on blur, visible saved/modified affordances, and revert to the generated prompt.
 
 Large transcript text surfaces should not receive heavy motion treatment. Avoid transcript-scroll animation, heavy table-sort animation, and fake token-stream activity in the preview surface.
 
@@ -1039,7 +1039,9 @@ Anki is the primary target, but export must always degrade cleanly.
 - `Tag prefix`
 - `Output location`
 
-Do not add template-editing complexity in v1.
+Do not add persistent template-management complexity in v1. The generation confirmation sheet may expose only the current run's final prompt draft.
+
+Prompt drafts should keep model-facing context compact: Markdown sections for role, task, rules, output contract, and input conversation; `<session title="...">` boundaries inside the input section; and plain `user:` / `assistant:` turns. Do not expose internal `source_span_ref`, session ids, or candidate numbering in the model prompt; keep source mapping in application state. Because the runtime supplies a JSON Schema separately, prompts should mention schema adherence and the empty object form `{"items":[]}` without embedding the full schema text.
 
 ### Bundle contents
 

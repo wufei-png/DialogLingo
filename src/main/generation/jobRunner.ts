@@ -22,6 +22,7 @@ export async function runGenerationJob(input: {
       maxItemsPerSession: number
     }
   }
+  promptOverride?: string
   emit: (event: unknown) => void
   onCompletedItems: (
     items: Array<{
@@ -73,7 +74,8 @@ export async function runGenerationJob(input: {
     sessions: input.sessions,
     provider: input.settings.provider,
     modelBackend: input.settings.modelBackend,
-    generation: input.settings.generation
+    generation: input.settings.generation,
+    promptOverride: input.promptOverride
   })
 
   return worker

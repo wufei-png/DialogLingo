@@ -19,25 +19,99 @@ const EXPRESSION_DIFFICULTY_PROMPTS: Record<ExpressionDifficulty, string> = {
 export function buildGenerationPrompt(input: {
   sessionTitle: string
   expressionDifficulty: ExpressionDifficulty
-  candidates: Array<{ sourceSpanRef: string; promptText: string }>
+  candidates: Array<{
+    sourceSpanRef: string
+    promptText: string
+    role?: 'user' | 'assistant'
+    sessionTitle?: string
+  }>
 }) {
-  const candidateText = input.candidates
-    .map(
-      (candidate, index) =>
-        `${index + 1}. source_span_ref=${candidate.sourceSpanRef}\n${candidate.promptText}`
-    )
-    .join('\n\n')
+  const candidateText = formatPromptSessions(input.sessionTitle, input.candidates)
   const trivialExamples = TRIVIAL_EXPRESSION_SOURCE_TEXTS.join(', ')
 
   return [
-    `Create English-learning workbook items from the session "${input.sessionTitle}".`,
-    'Use Expression for reusable terms/phrases and Sentence for useful full sentences.',
-    EXPRESSION_DIFFICULTY_PROMPTS[input.expressionDifficulty],
-    'If source text is Chinese, generate useful English-side learning material; if source text is English, generate Chinese support.',
-    `Do not generate trivial Expression items for obvious greetings, fillers, or ultra-basic words such as: ${trivialExamples}.`,
-    'Do not return duplicate items with the same item type and sourceText.',
-    'Return only JSON matching the requested schema.',
+    '# Role',
+    'You are an expert ESL (English as a Second Language) teacher and curriculum designer.',
     '',
+    '# Task',
+    'Create English-learning workbook items from the conversation excerpts provided in the <session> tags.',
+    '',
+    '# Rules',
+    `1. Target audience: ${EXPRESSION_DIFFICULTY_PROMPTS[input.expressionDifficulty]}`,
+    '2. Item types:',
+    '   - Use Expression for reusable terms/phrases.',
+    '   - Use Sentence for useful full sentences.',
+    '3. Bilingual support:',
+    '   - If source text is Chinese, generate useful English equivalents.',
+    '   - If source text is English, generate Chinese translations and support.',
+    '4. Exclusions:',
+    `   - Do not generate trivial items for obvious greetings, fillers, or ultra-basic words such as: ${trivialExamples}.`,
+    '   - Do not return duplicate items with the same itemType and sourceText.',
+    '   - Ignore empty greetings, provider errors, and model/access-error messages unless they contain useful English worth learning.',
+    '5. Empty state:',
+    '   - If no content meets the learning criteria, return {"items":[]}.',
+    '',
+    '# Output Contract',
+    'Return only a valid JSON object matching the externally provided schema.',
+    'Do not output markdown fences, conversational text, or explanations outside the JSON.',
+    'The top-level object must contain an items array.',
+    '',
+    '# Input Conversation',
     candidateText
   ].join('\n')
+}
+
+function formatPromptSessions(
+  fallbackSessionTitle: string,
+  candidates: Array<{
+    promptText: string
+    role?: 'user' | 'assistant'
+    sessionTitle?: string
+  }>
+) {
+  const groups: Array<{
+    title: string
+    turns: Array<{ role: 'user' | 'assistant'; text: string }>
+  }> = []
+
+  for (const candidate of candidates) {
+    const title = candidate.sessionTitle ?? fallbackSessionTitle
+    const lastGroup = groups[groups.length - 1]
+    const group =
+      lastGroup?.title === title
+        ? lastGroup
+        : {
+          title,
+          turns: []
+        }
+
+    if (group !== lastGroup) {
+      groups.push(group)
+    }
+
+    group.turns.push({
+      role: candidate.role ?? 'assistant',
+      text: candidate.promptText
+    })
+  }
+
+  return groups
+    .map((group) =>
+      [
+        `<session title="${escapePromptAttribute(group.title)}">`,
+        group.turns
+          .map((turn) => `${turn.role}:\n${turn.text}`)
+          .join('\n\n'),
+        '</session>'
+      ].join('\n')
+    )
+    .join('\n\n')
+}
+
+function escapePromptAttribute(value: string) {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/"/g, '&quot;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
 }
