@@ -83,4 +83,46 @@ describe('finalizeWorkbookItems', () => {
 
     expect(finalized.map((entry) => entry.id)).toEqual(['expr', 'sent'])
   })
+
+  it('merges conservative near-duplicate expression variants', () => {
+    const finalized = finalizeWorkbookItems([
+      item({ id: 'a', sourceText: 'the selected model', sourceSpanRef: 'span-1' }),
+      item({ id: 'b', sourceText: 'Selected model!', sourceSpanRef: 'span-2' })
+    ])
+
+    expect(finalized.map((entry) => entry.id)).toEqual(['a'])
+    expect(finalized[0].sourceRefs.map((ref) => ref.sourceSpanRef)).toEqual([
+      'span-1',
+      'span-2'
+    ])
+  })
+
+  it('keeps materially different expressions separate', () => {
+    const finalized = finalizeWorkbookItems([
+      item({ id: 'short', sourceText: 'set up' }),
+      item({ id: 'specific', sourceText: 'set up the local model' })
+    ])
+
+    expect(finalized.map((entry) => entry.id)).toEqual(['short', 'specific'])
+  })
+
+  it('merges minor sentence wording variants without crossing item types', () => {
+    const finalized = finalizeWorkbookItems([
+      item({
+        id: 'a',
+        itemType: 'Sentence',
+        sourceText: 'There is an issue with the selected model.',
+        sourceSpanRef: 'span-1'
+      }),
+      item({
+        id: 'b',
+        itemType: 'Sentence',
+        sourceText: 'There is an issue with selected model.',
+        sourceSpanRef: 'span-2'
+      })
+    ])
+
+    expect(finalized.map((entry) => entry.id)).toEqual(['a'])
+    expect(finalized[0].sourceRefs).toHaveLength(2)
+  })
 })

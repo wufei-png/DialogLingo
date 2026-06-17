@@ -1,6 +1,6 @@
 import type { ExpressionDifficulty } from '../../shared/schemas/settings'
 import { mineCandidateGroups } from './candidates'
-import { precleanTurns } from './preclean'
+import { redactTurns } from './redaction'
 import { buildGenerationPrompt } from './prompts'
 
 export type GenerationPromptSession = {
@@ -27,7 +27,7 @@ export function collectGenerationPromptCandidates(input: {
   maxItemsPerSession: number
 }) {
   return input.sessions.flatMap((session) =>
-    mineCandidateGroups(precleanTurns(session.turns))
+    mineCandidateGroups(redactTurns(session.turns))
       .slice(0, input.maxItemsPerSession)
       .map((candidate) => ({
         sessionId: session.sessionId,

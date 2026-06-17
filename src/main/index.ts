@@ -223,7 +223,8 @@ function querySessionRows(sessionIds: string[]) {
         s.title,
         st.role,
         st.text,
-        st.source_span_ref as sourceSpanRef
+        st.source_span_ref as sourceSpanRef,
+        st.is_tool_noise as isToolNoise
       from sessions s
       join session_turns st on st.session_id = s.id
       where s.id = ?
@@ -231,21 +232,29 @@ function querySessionRows(sessionIds: string[]) {
     `
   )
 
-  return sessionIds.map((sessionId) => ({
-    sessionId,
-    title:
-      (
-        sqlite
-          .prepare('select title from sessions where id = ?')
-          .get(sessionId) as { title?: string } | undefined
-      )?.title ?? sessionId,
-    turns: query.all(sessionId) as Array<{
+  return sessionIds.map((sessionId) => {
+    const turns = query.all(sessionId) as Array<{
       title: string
       role: 'user' | 'assistant'
       text: string
       sourceSpanRef: string
+      isToolNoise: number
     }>
-  }))
+
+    return {
+      sessionId,
+      title:
+        (
+          sqlite
+            .prepare('select title from sessions where id = ?')
+            .get(sessionId) as { title?: string } | undefined
+        )?.title ?? sessionId,
+      turns: turns.map((turn) => ({
+        ...turn,
+        isToolNoise: Boolean(turn.isToolNoise)
+      }))
+    }
+  })
 }
 
 function listWorkbookItems(input: {

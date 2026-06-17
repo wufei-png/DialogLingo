@@ -99,4 +99,83 @@ describe('scanSessions', () => {
       sourceSpanRef: '/fixtures/codex-with-turns.jsonl:2'
     })
   })
+
+  it('persists adapter-provided and heuristic tool-noise flags', async () => {
+    const db = createTestDb()
+    const summary = {
+      id: 'codex-tool-noise',
+      sourceType: 'codex' as const,
+      title: 'Codex tool noise',
+      projectPath: '/workspace/dialoglingo',
+      startedAt: '2026-06-15T12:00:00.000Z',
+      updatedAt: '2026-06-15T12:00:05.000Z',
+      preview: 'Need better candidate mining.',
+      locator: '/fixtures/codex-tool-noise.jsonl',
+      turns: [
+        {
+          id: 'natural',
+          role: 'assistant' as const,
+          text: 'Need better candidate mining before generation.',
+          languageHint: 'en' as const,
+          sourceSpanRef: '/fixtures/codex-tool-noise.jsonl:2'
+        },
+        {
+          id: 'adapter-noise',
+          role: 'assistant' as const,
+          text: 'Adapter-marked tool output.',
+          languageHint: 'en' as const,
+          sourceSpanRef: '/fixtures/codex-tool-noise.jsonl:3',
+          isToolNoise: true
+        },
+        {
+          id: 'heuristic-noise',
+          role: 'assistant' as const,
+          text: '```ts\nconst value = 1\n```',
+          languageHint: 'en' as const,
+          sourceSpanRef: '/fixtures/codex-tool-noise.jsonl:4'
+        }
+      ]
+    }
+    const registry: SourceRegistry = {
+      codex: {
+        listSessions: async () => [summary],
+        readSession: async () => []
+      },
+      claude: {
+        listSessions: async () => [],
+        readSession: async () => []
+      },
+      opencode: {
+        listSessions: async () => [],
+        readSession: async () => []
+      }
+    }
+
+    await scanSessions(db, registry)
+
+    const rows = db
+      .prepare(
+        `
+          select source_span_ref as sourceSpanRef, is_tool_noise as isToolNoise
+          from session_turns
+          order by seq asc
+        `
+      )
+      .all() as Array<{ sourceSpanRef: string; isToolNoise: number }>
+
+    expect(rows).toEqual([
+      {
+        sourceSpanRef: '/fixtures/codex-tool-noise.jsonl:2',
+        isToolNoise: 0
+      },
+      {
+        sourceSpanRef: '/fixtures/codex-tool-noise.jsonl:3',
+        isToolNoise: 1
+      },
+      {
+        sourceSpanRef: '/fixtures/codex-tool-noise.jsonl:4',
+        isToolNoise: 1
+      }
+    ])
+  })
 })

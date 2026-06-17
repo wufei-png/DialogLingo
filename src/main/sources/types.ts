@@ -29,6 +29,7 @@ export type ConversationTurn = {
   text: string
   languageHint: 'en' | 'zh' | 'mixed' | 'unknown'
   sourceSpanRef: string
+  isToolNoise?: boolean
 }
 
 export type LanguageHint = ConversationTurn['languageHint']

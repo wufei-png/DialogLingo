@@ -5,12 +5,13 @@ import { enrichCandidateBatch } from './enrichCandidateBatch'
 import { finalizeWorkbookItems } from './finalizeWorkbookItems'
 import { ModelAdapterError, type LearningItemDraft } from './modelAdapter'
 import { createMockLearningItemDrafts, isMockLlmEnabled } from './mockLlm'
-import { precleanTurns } from './preclean'
+import { redactTurns } from './redaction'
 import {
   collectGenerationPromptCandidates,
   type GenerationPromptCandidate
 } from './promptPreview'
 import { buildGenerationPrompt } from './prompts'
+import { rankWorkbookItems } from './ranking'
 
 type WorkerTurn = {
   role: 'user' | 'assistant'
@@ -47,6 +48,7 @@ type StartMessage = {
     expressionDifficulty: Settings['generation']['expressionDifficulty']
     batchSize: number
     maxItemsPerSession: number
+    typeBalanceProfile: Settings['generation']['typeBalanceProfile']
   }
   promptOverride?: string | null
 }
@@ -136,7 +138,7 @@ function emitTerminalPhases(input: {
     warningCount: 0,
     failureCount: input.failedBatchCount,
     currentSessionTitle: null,
-    currentBatchLabel: 'type-balance rerank'
+    currentBatchLabel: 'dedup + type-balance rerank'
   })
 
   emit({
@@ -153,6 +155,13 @@ function emitTerminalPhases(input: {
   })
 }
 
+function finalizeAndRankItems(items: WorkerItem[], generation: StartMessage['generation']) {
+  return rankWorkbookItems(
+    finalizeWorkbookItems(items),
+    generation.typeBalanceProfile
+  )
+}
+
 async function runMockStart(message: StartMessage) {
   const session =
     message.sessions[0] ??
@@ -162,7 +171,7 @@ async function runMockStart(message: StartMessage) {
       turns: []
     } satisfies WorkerSession)
   const drafts = createMockLearningItemDrafts()
-  const items = finalizeWorkbookItems(
+  const items = finalizeAndRankItems(
     drafts.map((draft, itemIndex) => {
       const source = mockSourceForSession({ session, itemIndex })
       return toWorkerItem({
@@ -173,7 +182,8 @@ async function runMockStart(message: StartMessage) {
         sourceSpanRef: source.sourceSpanRef,
         excerpt: source.excerpt
       })
-    })
+    }),
+    message.generation
   )
 
   emit({
@@ -271,7 +281,7 @@ async function runStart(message: StartMessage) {
       currentBatchLabel: null
     })
 
-    const cleanedTurns = precleanTurns(session.turns)
+    const cleanedTurns = redactTurns(session.turns)
     const candidates = mineCandidateGroups(cleanedTurns).slice(
       0,
       message.generation.maxItemsPerSession
@@ -391,7 +401,7 @@ async function runStart(message: StartMessage) {
     }
   }
 
-  const completedItems = finalizeWorkbookItems(items)
+  const completedItems = finalizeAndRankItems(items, message.generation)
 
   emitTerminalPhases({
     jobId: message.jobId,
@@ -544,7 +554,7 @@ async function runPromptOverrideStart(message: StartMessage, promptOverride: str
     return
   }
 
-  const completedItems = finalizeWorkbookItems(items)
+  const completedItems = finalizeAndRankItems(items, message.generation)
 
   emitTerminalPhases({
     jobId: message.jobId,

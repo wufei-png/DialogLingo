@@ -57,8 +57,9 @@ describe('buildGenerationPrompt', () => {
       ]
     })
 
-    expect(prompt).toContain('source_span_ref=span-a')
-    expect(prompt).toContain('source_span_ref=span-b')
+    expect(prompt).toContain('<session title="Greeting cleanup">')
+    expect(prompt).not.toContain('source_span_ref=span-a')
+    expect(prompt).not.toContain('source_span_ref=span-b')
     expect(prompt).toContain('hi')
     expect(prompt).toContain('excuse me')
     expect(prompt).toContain('Do not return duplicate items')

@@ -119,7 +119,7 @@ Use these notes as current implementation context when maintaining the renderer;
 - The launch intro copy `Local chat to workbook` appears only on the scan/loading screen. It should not reserve space in the main Search or Workbook surfaces.
 - Search and Workbook both use the same persisted split-pane ratio. The default is compact left / wide right, `1:4` (`ui.splitRatio = 0.2`), with a draggable divider on both sections.
 - Settings is a compact utility reachable from the bottom of the left pane. Its layout control resets the shared split ratio back to `1:4`.
-- The current Workbook section is a persistent two-pane review surface: left card stream and left-local tabs, right source/provenance plus export action. Do not revert to a global toolbar that crosses the right pane without an explicit layout decision.
+- The current Workbook section defaults to an on-demand source drawer, with an optional pinned split-pane source view. Do not assume a permanently reserved source column unless the user explicitly pins it.
 - Search session navigation rows show titles only. Preview/snippet content belongs in the main preview pane, not in the navigation list.
 - Platform filtering is a live data filter. Toggling platform checkboxes updates the rendered session groups and removes hidden sessions from the selected set.
 
@@ -127,11 +127,14 @@ Use these notes as current implementation context when maintaining the renderer;
 
 Use this section to orient maintenance against the current code. It does not close product questions that still need explicit design discussion.
 
-- Workbook layout is still an open product decision. The current code uses a persistent draggable two-pane review surface with the card stream on the left and source/provenance plus export on the right. The older on-demand provenance-panel design, the current code shape, and possible third alternatives still need to be compared before treating one as the final product contract.
-- TODO: Workbook keyboard flow is not fully implemented. Current cards support explicit `Edit`, `Save`, `Cancel`, `Delete`, `Restore`, `Revert`, and `View source`; `Cmd/Ctrl+Enter` and `Esc` only operate inside the edited target field. `Enter` to edit, save-and-advance, `j/k`, arrow-key selection, and card-level `Delete/Backspace` remain planned interactions.
+- Workbook layout now follows the on-demand provenance-panel direction by default. The source panel opens from `View source` as a drawer and can be pinned into a draggable split view; the pinned mode is a user preference rather than the default layout.
+- TODO: Workbook keyboard flow is partially implemented. Current cards autosave edited fields on blur, `Esc` resets the current edit buffer, `Cmd/Ctrl+Enter` saves and advances while editing, `Enter` focuses the selected card target field, `j/k` and arrow keys move card selection when not editing, and `Delete/Backspace` moves the selected active card to `Deleted`. Dedicated explicit `Save` / `Cancel` button affordances and more polished focus semantics remain open.
 - Search preview follows the current code contract: session navigation rows are title-only, while snippets/highlights belong in the focused preview pane. Empty search should not render transcript literal `<mark>` text as a highlight; preview highlighting is active only when the query is non-empty.
-- TODO: Workbook source/provenance is intentionally thin right now. `SourcePanel` shows the selected item type and source refs/excerpts, but source platform, project/workspace, timestamp, normalized snippet highlighting, raw fallback controls, and real `Prev / Next` match navigation are still planned work.
+- Workbook source/provenance is no longer just a placeholder. `SourcePanel` shows source platform, project/workspace, timestamp, source-span/text-match status, source-ref navigation, normalized highlighting, and `Prev / Next` match navigation. Optional raw excerpt fallback controls are still planned work.
 - Generation docs should describe the current model layer as OpenAI-compatible API plus explicit CLI backends and mock LLM mode. Older references to a dedicated `litellmClient.ts` are historical; LiteLLM remains usable as an OpenAI-compatible local gateway, not as a special provider-router surface.
+- Current generation pre-clean uses persisted and heuristic tool-noise signals, redacts obvious API-key-like secrets, drops pure tool/code/log/path/error noise, and strips noisy blocks from otherwise useful natural-language turns before model prompting. Search indexing still keeps raw transcript text; search preview code/log collapse remains follow-up work.
+- Current candidate mining splits cleaned natural-language turns into local candidate excerpts, filters trivial/pure fragment/noisy/near-duplicate candidates, and applies `maxItemsPerSession` after filtering. Durable `candidate_groups` persistence is still planned work.
+- Current generation post-processing performs exact normalized dedup, conservative near-duplicate source-text merging, trivial expression filtering, in-memory heuristic base ranking, and type-balance rerank before workbook materialization. Durable `ranked_orders` checkpoint persistence is still planned work.
 - Database docs should be checked against `src/main/db/schema.ts` and migrations before DB work. Current code includes fields/tables such as `sessions.search_text`, `sessions.is_archived`, `workbook_items.source_refs_json`, `candidate_groups`, `enrichment_batches`, and `ranked_orders` that older prose may omit.
 
 ### Search & Select
@@ -444,6 +447,8 @@ Each adapter exposes:
 - `listSessions(filters): SessionSummary[]`
 - `readSession(sessionId): ConversationTurn[]`
 
+`ConversationTurn` may include `isToolNoise` when the adapter can classify provider/tool/meta output. The scan layer also applies conservative pure-noise heuristics before persisting `session_turns.is_tool_noise`.
+
 ### Reuse policy
 
 Reuse discovery patterns, path knowledge, and official/local APIs where possible:
@@ -648,6 +653,8 @@ Every generation stage runs as a background job, not in the renderer and not as 
    - execute as a background job
 5. `candidate mining`
    - local heuristics first
+   - current implementation uses pre-cleaned natural-language excerpts instead of sending every non-empty turn to the model
+   - current implementation removes pure URL/path/hash/shell fragments, obvious code/log/tool output, short trivial text, and conservative local near-duplicates before applying the per-session candidate cap
    - execute as a background job
 6. `LLM enrichment`
    - small bounded batches only
@@ -655,9 +662,11 @@ Every generation stage runs as a background job, not in the renderer and not as 
    - prompt should reject trivial expression cards such as `hi` and `excuse me`
    - execute as a background job
 7. `global dedup + ranking`
-   - merge near-duplicates across sessions
+   - merge exact duplicates and conservative near-duplicates across sessions
    - current implementation performs exact normalized dedup by `item_type + sourceText`
+   - current implementation also merges obvious source-text near-duplicates such as article/punctuation/contraction variants, while avoiding broad semantic clustering that could hide distinct learning items
    - current implementation drops obvious trivial `Expression` items before workbook materialization
+   - current implementation applies in-memory heuristic base ranking and type-balance rerank before workbook materialization
    - execute as a background job
 8. `workbook materialization`
    - create workbook items

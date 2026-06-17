@@ -20,6 +20,7 @@ export async function runGenerationJob(input: {
       expressionDifficulty: Settings['generation']['expressionDifficulty']
       batchSize: number
       maxItemsPerSession: number
+      typeBalanceProfile: Settings['generation']['typeBalanceProfile']
     }
   }
   promptOverride?: string

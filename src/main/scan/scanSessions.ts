@@ -2,6 +2,7 @@ import crypto from 'node:crypto'
 import type Database from 'better-sqlite3'
 import { createSourceRegistry } from '../sources'
 import type { SessionFilterInput, SourceRegistry } from '../sources/types'
+import { isTurnToolNoise } from '../text/turnNoise'
 import { discoverProjects } from './discoverProjects'
 
 function yieldToEventLoop() {
@@ -136,7 +137,7 @@ export async function scanSessions(
             source_span_ref,
             is_tool_noise
           )
-          values (?, ?, ?, ?, ?, ?, ?, 0)
+          values (?, ?, ?, ?, ?, ?, ?, ?)
         `
       ).run(
         `${persistedSessionId}:${turn.id}`,
@@ -145,7 +146,8 @@ export async function scanSessions(
         turn.role,
         turn.languageHint,
         turn.text,
-        turn.sourceSpanRef
+        turn.sourceSpanRef,
+        isTurnToolNoise(turn) ? 1 : 0
       )
     })
   }
