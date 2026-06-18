@@ -245,9 +245,10 @@ const en = {
     exportSuccess: 'Exported to {{path}}',
     exportFailed: 'Export failed: {{message}}',
     noWorkbookSelected: 'No workbook selected.',
-    exportAnkiPackage: 'Export Anki Package (.apkg)',
-    exportAnkiTextBundle: 'Export Anki Text Bundle (.tsv + .md + .json)',
-    exportGenericTextBundle: 'Export Generic Text Bundle (.csv + .md + .json)'
+    format: 'Format',
+    exportAnkiPackage: 'Anki Package (.apkg)',
+    exportAnkiTextBundle: 'Anki Text Bundle (.tsv + .md + .json)',
+    exportGenericTextBundle: 'Generic Text Bundle (.csv + .md + .json)'
   }
 } as const
 

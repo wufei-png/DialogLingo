@@ -4,8 +4,8 @@ import {
   FileText,
   FolderOpen,
   Layers,
-  Package as PackageIcon,
-  Tag as TagIcon
+  Tag as TagIcon,
+  X
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { IconLabel } from '../../components/IconLabel'
@@ -72,6 +72,7 @@ export function ExportModal({ open, onClose, onConfirm }: Props) {
   const [tagPrefix, setTagPrefix] = useState('dialoglingo')
   const [outputLocation, setOutputLocation] = useState('')
   const [keepFlaggedItems, setKeepFlaggedItems] = useState(false)
+  const [selectedFormat, setSelectedFormat] = useState<ExportFormat>('anki-package')
   const [exportingFormat, setExportingFormat] = useState<ExportFormat | null>(null)
   const [exportMessage, setExportMessage] = useState<string | null>(null)
   const [exportError, setExportError] = useState<string | null>(null)
@@ -153,8 +154,15 @@ export function ExportModal({ open, onClose, onConfirm }: Props) {
   return (
     <div className="sheet-backdrop">
       <div className="sheet export-modal">
-        <p className="sheet-kicker">{t('export.kicker')}</p>
-        <h2>{t('export.title')}</h2>
+        <header className="export-modal-header">
+          <div>
+            <p className="sheet-kicker">{t('export.kicker')}</p>
+            <h2>{t('export.title')}</h2>
+          </div>
+          <button type="button" onClick={onClose}>
+            <IconLabel icon={X}>{t('common.close')}</IconLabel>
+          </button>
+        </header>
         <div className="export-field-list">
           <label className="export-field">
             <span className="export-field-copy">
@@ -264,36 +272,28 @@ export function ExportModal({ open, onClose, onConfirm }: Props) {
             />
           </div>
         </div>
-        <div className="sheet-actions">
-          <button type="button" onClick={onClose}>
-            {t('common.close')}
-          </button>
+        <div className="sheet-actions export-run-actions">
+          <label className="export-format-select">
+            <span className="export-field-label">
+              <IconLabel icon={FileText}>{t('export.format')}</IconLabel>
+            </span>
+            <select
+              aria-label={t('export.format')}
+              disabled={Boolean(exportingFormat)}
+              value={selectedFormat}
+              onChange={(event) => setSelectedFormat(event.target.value as ExportFormat)}
+            >
+              <option value="anki-package">{t('export.exportAnkiPackage')}</option>
+              <option value="anki-text-bundle">{t('export.exportAnkiTextBundle')}</option>
+              <option value="generic-text-bundle">{t('export.exportGenericTextBundle')}</option>
+            </select>
+          </label>
           <button
             type="button"
             disabled={Boolean(exportingFormat)}
-            onClick={() => void runExport('anki-package')}
+            onClick={() => void runExport(selectedFormat)}
           >
-            {exportingFormat === 'anki-package'
-              ? t('export.exporting')
-              : <IconLabel icon={PackageIcon}>{t('export.exportAnkiPackage')}</IconLabel>}
-          </button>
-          <button
-            type="button"
-            disabled={Boolean(exportingFormat)}
-            onClick={() => void runExport('anki-text-bundle')}
-          >
-            {exportingFormat === 'anki-text-bundle'
-              ? t('export.exporting')
-              : <IconLabel icon={FileText}>{t('export.exportAnkiTextBundle')}</IconLabel>}
-          </button>
-          <button
-            type="button"
-            disabled={Boolean(exportingFormat)}
-            onClick={() => void runExport('generic-text-bundle')}
-          >
-            {exportingFormat === 'generic-text-bundle'
-              ? t('export.exporting')
-              : <IconLabel icon={FileText}>{t('export.exportGenericTextBundle')}</IconLabel>}
+            {exportingFormat ? t('export.exporting') : t('workbook.export')}
           </button>
         </div>
         {exportMessage ? (

@@ -249,9 +249,10 @@ const zhCN = {
     exportSuccess: '已导出到 {{path}}',
     exportFailed: '导出失败：{{message}}',
     noWorkbookSelected: '未选择学习册。',
-    exportAnkiPackage: '导出 Anki 包（.apkg）',
-    exportAnkiTextBundle: '导出 Anki 文本包（.tsv + .md + .json）',
-    exportGenericTextBundle: '导出通用文本包（.csv + .md + .json）'
+    format: '格式',
+    exportAnkiPackage: 'Anki 包（.apkg）',
+    exportAnkiTextBundle: 'Anki 文本包（.tsv + .md + .json）',
+    exportGenericTextBundle: '通用文本包（.csv + .md + .json）'
   }
 } satisfies LocaleResource<typeof en>
 

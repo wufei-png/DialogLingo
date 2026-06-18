@@ -937,6 +937,34 @@ h3 .icon-label {
   gap: 16px;
 }
 
+.export-modal-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  align-items: center;
+}
+
+.export-modal-header h2 {
+  margin: 0;
+}
+
+.export-modal-header button {
+  padding: 9px 12px;
+  border: 0;
+  border-radius: 8px;
+  background: #e5e7eb;
+  color: #111827;
+  transition: background 140ms ease, transform 140ms ease;
+}
+
+.export-modal-header button:hover {
+  background: rgba(209, 213, 219, 0.88);
+}
+
+.export-modal-header button:active {
+  transform: translateY(1px);
+}
+
 .export-modal input,
 .export-modal select {
   width: 100%;
@@ -1020,6 +1048,22 @@ h3 .icon-label {
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 12px;
+}
+
+.export-run-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: end;
+}
+
+.export-format-select {
+  display: grid;
+  min-width: 0;
+  gap: 6px;
+}
+
+.export-run-actions button {
+  min-width: 104px;
 }
 
 .generation-prompt-panel {
@@ -1688,7 +1732,7 @@ h3 .icon-label {
 }
 
 .settings-sheet {
-  width: min(440px, calc(100vw - 32px));
+  width: min(660px, calc(100vw - 32px));
   padding: 18px;
 }
 
@@ -2499,6 +2543,14 @@ h3 .icon-label {
     grid-template-columns: minmax(0, 1fr);
     align-items: start;
     gap: 8px;
+  }
+
+  .export-run-actions {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .export-run-actions button {
+    width: 100%;
   }
 }
 
