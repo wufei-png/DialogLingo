@@ -232,6 +232,8 @@ const zhCN = {
     tagPrefixDescription: '应用到生成 Anki 标签的前缀。',
     outputFolder: '输出文件夹',
     outputFolderDescription: '点击导出会先让你选择文件夹。这里作为初始打开位置。',
+    bundleFolderName: '新文件夹名',
+    bundleFolderNameDescription: '文本包导出会在输出文件夹内新建这个文件夹。',
     cardDirection: '卡片方向',
     cardDirectionDescription: '控制哪种语言显示在正面或背面。',
     directionEnZh: '英 -> 中',

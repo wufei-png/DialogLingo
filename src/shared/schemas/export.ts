@@ -9,6 +9,7 @@ export const exportFormatSchema = z.enum([
 export const exportRequestSchema = z.object({
   format: exportFormatSchema,
   deckName: z.string(),
+  bundleFolderName: z.string().optional(),
   direction: z.enum(['en-zh', 'zh-en', 'bilingual']),
   includeExpressions: z.boolean(),
   includeSentences: z.boolean(),

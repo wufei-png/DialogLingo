@@ -16,6 +16,7 @@ type ExportFormat = 'anki-package' | 'anki-text-bundle' | 'generic-text-bundle'
 type ExportConfirmPayload = {
   format: ExportFormat
   deckName: string
+  bundleFolderName: string
   direction: 'en-zh' | 'zh-en' | 'bilingual'
   includeExpressions: boolean
   includeSentences: boolean
@@ -62,10 +63,20 @@ function SelectionButton(props: { selected: boolean; label: string; onToggle: ()
   )
 }
 
+function isTextBundleFormat(format: ExportFormat) {
+  return format === 'anki-text-bundle' || format === 'generic-text-bundle'
+}
+
+function defaultBundleFolderName(deckName: string) {
+  return deckName.trim() || 'DialogLingo'
+}
+
 export function ExportModal({ open, onClose, onConfirm }: Props) {
   const { t } = useTranslation()
   useEscapeToClose(open, onClose)
   const [deckName, setDeckName] = useState('DialogLingo')
+  const [bundleFolderName, setBundleFolderName] = useState('DialogLingo')
+  const [bundleFolderNameEdited, setBundleFolderNameEdited] = useState(false)
   const [direction, setDirection] = useState<'en-zh' | 'zh-en' | 'bilingual'>('bilingual')
   const [includeExpressions, setIncludeExpressions] = useState(true)
   const [includeSentences, setIncludeSentences] = useState(true)
@@ -94,6 +105,12 @@ export function ExportModal({ open, onClose, onConfirm }: Props) {
     }
   }, [open, outputLocation])
 
+  useEffect(() => {
+    if (!bundleFolderNameEdited) {
+      setBundleFolderName(defaultBundleFolderName(deckName))
+    }
+  }, [bundleFolderNameEdited, deckName])
+
   async function runExport(format: ExportFormat) {
     setExportMessage(null)
     setExportError(null)
@@ -114,6 +131,7 @@ export function ExportModal({ open, onClose, onConfirm }: Props) {
       const result = await onConfirm({
         format,
         deckName,
+        bundleFolderName,
         direction,
         includeExpressions,
         includeSentences,
@@ -209,6 +227,27 @@ export function ExportModal({ open, onClose, onConfirm }: Props) {
               onChange={(event) => setOutputLocation(event.target.value)}
             />
           </label>
+          {isTextBundleFormat(selectedFormat) ? (
+            <label className="export-field">
+              <span className="export-field-copy">
+                <span className="export-field-label">
+                  <IconLabel icon={FolderOpen}>{t('export.bundleFolderName')}</IconLabel>
+                </span>
+                <span className="export-field-description">
+                  {t('export.bundleFolderNameDescription')}
+                </span>
+              </span>
+              <input
+                aria-label={t('export.bundleFolderName')}
+                placeholder={defaultBundleFolderName(deckName)}
+                value={bundleFolderName}
+                onChange={(event) => {
+                  setBundleFolderNameEdited(true)
+                  setBundleFolderName(event.target.value)
+                }}
+              />
+            </label>
+          ) : null}
           <label className="export-field">
             <span className="export-field-copy">
               <span className="export-field-label">

@@ -1068,12 +1068,17 @@ Anki is the primary target, but export must always degrade cleanly.
   - `Sentence`
 - `Tag prefix`
 - `Output location`
+- `New folder name`
+  - visible for text-bundle exports
+  - names the subfolder created inside `Output location`
 
 Do not add persistent template-management complexity in v1. The generation confirmation sheet may expose only the current run's final prompt draft.
 
 Prompt drafts should keep model-facing context compact: Markdown sections for role, task, rules, output contract, and input conversation; `<session title="...">` boundaries inside the input section; and plain `user:` / `assistant:` turns. Do not expose internal `source_span_ref`, session ids, or candidate numbering in the model prompt; keep source mapping in application state. Because the runtime supplies a JSON Schema separately, prompts should mention schema adherence and the empty object form `{"items":[]}` without embedding the full schema text.
 
 ### Bundle contents
+
+Text bundle exports create a new subfolder inside the chosen output location before writing bundle files. If the requested folder name already exists, DialogLingo should create a unique sibling such as `DialogLingo-2` instead of mixing files into an existing folder.
 
 #### `Anki Text Bundle`
 

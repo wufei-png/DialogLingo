@@ -228,6 +228,9 @@ const en = {
     outputFolder: 'Output folder',
     outputFolderDescription:
       'The export button asks for a folder before writing files. This field is the starting folder.',
+    bundleFolderName: 'New folder name',
+    bundleFolderNameDescription:
+      'Text bundle exports create this folder inside the output folder.',
     cardDirection: 'Card direction',
     cardDirectionDescription: 'Controls which language appears on the front or back.',
     directionEnZh: 'EN -> ZH',
