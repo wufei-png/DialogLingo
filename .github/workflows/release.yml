@@ -86,10 +86,23 @@ jobs:
         run: npm run verify:package-inputs
 
       - name: Build and publish draft release assets
-        run: npx electron-builder ${{ matrix.args }} --publish always
+        shell: bash
+        run: |
+          if [ -z "${CSC_LINK:-}" ]; then
+            unset CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
+          fi
+
+          if [ -z "${WIN_CSC_LINK:-}" ]; then
+            unset WIN_CSC_LINK WIN_CSC_KEY_PASSWORD
+          fi
+
+          if [ -z "${CSC_LINK:-}" ] && [ -z "${WIN_CSC_LINK:-}" ]; then
+            export CSC_IDENTITY_AUTO_DISCOVERY=false
+          fi
+
+          npx electron-builder ${{ matrix.args }} --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CSC_IDENTITY_AUTO_DISCOVERY: ${{ ((matrix.platform == 'mac' && secrets.MAC_CSC_LINK != '') || (matrix.platform == 'win' && secrets.WIN_CSC_LINK != '')) && 'true' || 'false' }}
           CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
           APPLE_ID: ${{ secrets.APPLE_ID }}
