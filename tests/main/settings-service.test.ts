@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  DEFAULT_APP_LOCALE,
   DEFAULT_BATCH_SIZE,
   DEFAULT_EXPRESSION_DIFFICULTY,
   DEFAULT_SPLIT_RATIO,
@@ -34,6 +35,7 @@ describe('createSettingsService', () => {
         includeArchivedSessions: false
       },
       ui: {
+        locale: DEFAULT_APP_LOCALE,
         splitRatio: DEFAULT_SPLIT_RATIO,
         workbookSplitRatio: DEFAULT_WORKBOOK_SPLIT_RATIO,
         workbookSourcePinned: false
@@ -110,5 +112,21 @@ describe('createSettingsService', () => {
       includeArchivedSessions: true
     })
     expect(service.get()).toEqual(saved)
+  })
+
+  it('persists the selected app locale', () => {
+    const service = createSettingsService(':memory:', { runMigrations: true })
+    const current = service.get()
+
+    const saved = service.save({
+      ...current,
+      ui: {
+        ...current.ui,
+        locale: 'zh-CN'
+      }
+    })
+
+    expect(saved.ui.locale).toBe('zh-CN')
+    expect(service.get().ui.locale).toBe('zh-CN')
   })
 })

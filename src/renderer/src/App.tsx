@@ -7,6 +7,7 @@ import { SettingsSheet } from './components/SettingsSheet'
 import { LaunchScanScreen } from './features/boot/LaunchScanScreen'
 import { SearchPage } from './features/search/SearchPage'
 import { WorkbookPage } from './features/workbook/WorkbookPage'
+import { AppLocaleBridge } from './i18n/AppLocaleBridge'
 import { useLaunchScanGate } from './lib/useLaunchScanGate'
 
 const queryClient = new QueryClient()
@@ -73,7 +74,7 @@ function AppSurface() {
   )
 }
 
-export default function App() {
+function AppRoutes() {
   const bootGate = useLaunchScanGate()
 
   if (bootGate.phase === 'loading' || bootGate.phase === 'scanning') {
@@ -90,8 +91,16 @@ export default function App() {
   }
 
   return (
+    <AppSurface />
+  )
+}
+
+export default function App() {
+  return (
     <QueryClientProvider client={queryClient}>
-      <AppSurface />
+      <AppLocaleBridge>
+        <AppRoutes />
+      </AppLocaleBridge>
     </QueryClientProvider>
   )
 }

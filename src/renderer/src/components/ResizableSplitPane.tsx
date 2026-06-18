@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, type ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 import {
   MAX_SPLIT_RATIO,
   MIN_SPLIT_RATIO
@@ -25,6 +26,7 @@ function parsePixelLength(value: string, fallback: number) {
 }
 
 export function ResizableSplitPane(props: Props) {
+  const { t } = useTranslation()
   const containerRef = useRef<HTMLDivElement | null>(null)
   const ratioRef = useRef(clampRatio(props.ratio))
   const ratio = clampRatio(props.ratio)
@@ -91,7 +93,7 @@ export function ResizableSplitPane(props: Props) {
       <button
         type="button"
         className="split-divider"
-        aria-label="Resize panes"
+        aria-label={t('split.resizePanes')}
         aria-orientation="vertical"
         aria-valuemax={Math.round(MAX_SPLIT_RATIO * 100)}
         aria-valuemin={Math.round(MIN_SPLIT_RATIO * 100)}

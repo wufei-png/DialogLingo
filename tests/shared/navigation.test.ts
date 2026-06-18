@@ -4,8 +4,8 @@ import { NAV_SECTIONS } from '../../src/shared/navigation'
 describe('NAV_SECTIONS', () => {
   it('declares the two top-level sections in order', () => {
     expect(NAV_SECTIONS).toEqual([
-      { id: 'search', label: 'Search & Select' },
-      { id: 'workbook', label: 'Workbook' }
+      { id: 'search' },
+      { id: 'workbook' }
     ])
   })
 })

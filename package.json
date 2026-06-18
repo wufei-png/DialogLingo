@@ -32,9 +32,11 @@
     "better-sqlite3": "12.10.1",
     "drizzle-orm": "^0.45.2",
     "electron-trpc": "0.7.1",
+    "i18next": "^26.3.1",
     "motion": "^12.23.12",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
+    "react-i18next": "^17.0.8",
     "zod": "^3.25.76",
     "zustand": "^5.0.6"
   },

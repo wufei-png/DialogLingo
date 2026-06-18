@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { NAV_SECTIONS, type NavSectionId } from '../../../shared/navigation'
 
 type Props = {
@@ -6,8 +7,10 @@ type Props = {
 }
 
 export function SectionTabs(props: Props) {
+  const { t } = useTranslation()
+
   return (
-    <nav className="section-tabs" aria-label="Sections">
+    <nav className="section-tabs" aria-label={t('navigation.sections')}>
       {NAV_SECTIONS.map((section) => (
         <button
           key={section.id}
@@ -15,7 +18,7 @@ export function SectionTabs(props: Props) {
           type="button"
           onClick={() => props.onChangeSection(section.id)}
         >
-          {section.label}
+          {t(`navigation.${section.id}`)}
         </button>
       ))}
     </nav>

@@ -1,6 +1,6 @@
 export const NAV_SECTIONS = [
-  { id: 'search', label: 'Search & Select' },
-  { id: 'workbook', label: 'Workbook' }
+  { id: 'search' },
+  { id: 'workbook' }
 ] as const
 
 export type NavSectionId = (typeof NAV_SECTIONS)[number]['id']

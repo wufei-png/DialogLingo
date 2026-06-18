@@ -7,6 +7,7 @@ export const MAX_SPLIT_RATIO = 0.7
 export const DEFAULT_CLI_TIMEOUT_MS = 120_000
 export const DEFAULT_EXPRESSION_DIFFICULTY = 'average'
 export const DEFAULT_BATCH_SIZE = 32
+export const DEFAULT_APP_LOCALE = 'en'
 
 export const DEFAULT_MODEL_BACKEND = {
   kind: 'openai-compatible',
@@ -34,6 +35,7 @@ export const modelBackendKindSchema = z.enum([
   'opencode-cli'
 ])
 export const expressionDifficultySchema = z.enum(['easy', 'average', 'hard'])
+export const appLocaleSchema = z.enum(['en', 'zh-CN'])
 
 const cliCommandSettingsSchema = z.object({
   executablePath: z.string().default(''),
@@ -88,6 +90,7 @@ export const settingsSchema = z.object({
     includeArchivedSessions: z.boolean()
   }),
   ui: z.object({
+    locale: appLocaleSchema.default(DEFAULT_APP_LOCALE),
     splitRatio: z
       .number()
       .min(MIN_SPLIT_RATIO)
@@ -100,6 +103,7 @@ export const settingsSchema = z.object({
       .default(DEFAULT_WORKBOOK_SPLIT_RATIO),
     workbookSourcePinned: z.boolean().default(false)
   }).default({
+    locale: DEFAULT_APP_LOCALE,
     splitRatio: DEFAULT_SPLIT_RATIO,
     workbookSplitRatio: DEFAULT_WORKBOOK_SPLIT_RATIO,
     workbookSourcePinned: false
@@ -109,3 +113,4 @@ export const settingsSchema = z.object({
 export type Settings = z.infer<typeof settingsSchema>
 export type ModelBackendKind = z.infer<typeof modelBackendKindSchema>
 export type ExpressionDifficulty = z.infer<typeof expressionDifficultySchema>
+export type AppLocale = z.infer<typeof appLocaleSchema>

@@ -1,5 +1,6 @@
 import type { Settings } from '../../shared/schemas/settings'
 import {
+  DEFAULT_APP_LOCALE,
   DEFAULT_BATCH_SIZE,
   DEFAULT_EXPRESSION_DIFFICULTY,
   DEFAULT_MODEL_BACKEND,
@@ -53,6 +54,7 @@ export const DEFAULT_SETTINGS: Settings = {
     includeArchivedSessions: false
   },
   ui: {
+    locale: DEFAULT_APP_LOCALE,
     splitRatio: DEFAULT_SPLIT_RATIO,
     workbookSplitRatio: DEFAULT_WORKBOOK_SPLIT_RATIO,
     workbookSourcePinned: false
