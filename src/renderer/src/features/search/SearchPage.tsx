@@ -11,11 +11,16 @@ import {
   PLATFORM_OPTIONS,
   applySessionSelection,
   buildSessionSearchInput,
+  findSessionTreeNavigationRow,
+  getSessionTreeSessionRowId,
   groupSessions,
+  moveSessionTreeNavigation,
+  reconcileSessionTreeNavigation,
   resolveSearchBootPlan,
   type ProjectOption,
   type SearchGroupBy,
   type SearchQueryScope,
+  type SessionTreeNavigationId,
   type SearchPlatform
 } from './searchModel'
 import { SearchRail } from './SearchRail'
@@ -73,6 +78,25 @@ function getVisiblePreviewText(preview: SessionPreview | null, fallbackPreview: 
   return preview?.snippet?.snippet || fallbackPreview
 }
 
+function isTextEditingTarget(target: EventTarget | null) {
+  return (
+    target instanceof HTMLElement &&
+    (target.tagName === 'INPUT' ||
+      target.tagName === 'TEXTAREA' ||
+      target.tagName === 'SELECT' ||
+      target.isContentEditable)
+  )
+}
+
+function shouldLetEnterTargetHandleItself(target: EventTarget | null) {
+  return (
+    target instanceof HTMLElement &&
+    (Boolean(target.closest('.session-select-button')) ||
+      (Boolean(target.closest('button, a, [role="button"]')) &&
+        !target.closest('.session-tree')))
+  )
+}
+
 export function SearchPage(props: {
   splitRatio: number
   onSplitRatioChange: (ratio: number) => void
@@ -84,6 +108,9 @@ export function SearchPage(props: {
   const [sessions, setSessions] = useState<SearchSession[]>([])
   const [projects, setProjects] = useState<ProjectOption[]>([])
   const [focusedSessionId, setFocusedSessionId] = useState<string | null>(null)
+  const [navigationRowId, setNavigationRowId] = useState<SessionTreeNavigationId | null>(
+    null
+  )
   const [selectedSessionIds, setSelectedSessionIds] = useState<Set<string>>(new Set())
   const [selectedProjectIds, setSelectedProjectIds] = useState<Set<string>>(new Set())
   const [collapsedGroupIds, setCollapsedGroupIds] = useState<Set<string>>(
@@ -112,6 +139,9 @@ export function SearchPage(props: {
     () => sessions.find((session) => session.sessionId === focusedSessionId) ?? null,
     [focusedSessionId, sessions]
   )
+  const fallbackNavigationRowId = focusedSessionId
+    ? getSessionTreeSessionRowId(focusedSessionId)
+    : null
 
   const selectedProjectSignature = useMemo(
     () => [...selectedProjectIds].sort().join('|'),
@@ -133,7 +163,10 @@ export function SearchPage(props: {
         projects,
         groupBy,
         selectedSessionIds,
-        focusedSessionId,
+        focusedSessionId:
+          navigationRowId?.startsWith('session:')
+            ? navigationRowId.slice('session:'.length)
+            : focusedSessionId,
         collapsedGroupIds,
         labels: searchGroupLabels
       }),
@@ -142,10 +175,19 @@ export function SearchPage(props: {
       projects,
       groupBy,
       selectedSessionIds,
+      navigationRowId,
       focusedSessionId,
       collapsedGroupIds,
       searchGroupLabels
     ]
+  )
+  const visibleNavigationRowId = useMemo(
+    () =>
+      reconcileSessionTreeNavigation(
+        groups,
+        navigationRowId ?? fallbackNavigationRowId
+      ),
+    [fallbackNavigationRowId, groups, navigationRowId]
   )
 
   const loadProjects = useCallback(async (defaultProjectIds?: string[]) => {
@@ -169,6 +211,7 @@ export function SearchPage(props: {
     if (platformFilter.length === 0 || selectedProjectIds.size === 0) {
       setSessions([])
       setFocusedSessionId(null)
+      setNavigationRowId(null)
       setSelectedSessionIds(new Set())
       return
     }
@@ -190,6 +233,12 @@ export function SearchPage(props: {
       const visibleIds = new Set(rows.map((row) => row.sessionId))
       return new Set([...current].filter((sessionId) => visibleIds.has(sessionId)))
     })
+    setNavigationRowId((current) =>
+      current?.startsWith('session:') &&
+      rows.some((row) => getSessionTreeSessionRowId(row.sessionId) === current)
+        ? current
+        : null
+    )
     setFocusedSessionId((current) =>
       rows.some((row) => row.sessionId === current)
         ? current
@@ -301,6 +350,64 @@ export function SearchPage(props: {
     setCollapsedGroupIds(new Set(nextGroups.map((group) => group.id)))
   }
 
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (isTextEditingTarget(event.target)) {
+        return
+      }
+
+      if (event.key === 'j' || event.key === 'ArrowDown') {
+        event.preventDefault()
+        setNavigationRowId((current) =>
+          moveSessionTreeNavigation(groups, current ?? fallbackNavigationRowId, 1)
+        )
+        return
+      }
+
+      if (event.key === 'k' || event.key === 'ArrowUp') {
+        event.preventDefault()
+        setNavigationRowId((current) =>
+          moveSessionTreeNavigation(groups, current ?? fallbackNavigationRowId, -1)
+        )
+        return
+      }
+
+      if (event.key === 'Enter') {
+        if (shouldLetEnterTargetHandleItself(event.target)) {
+          return
+        }
+
+        const currentRowId =
+          reconcileSessionTreeNavigation(groups, navigationRowId ?? fallbackNavigationRowId) ??
+          moveSessionTreeNavigation(groups, null, 1)
+        const currentRow = findSessionTreeNavigationRow(groups, currentRowId)
+        if (!currentRow) {
+          return
+        }
+
+        event.preventDefault()
+        setNavigationRowId(currentRow.id)
+        if (currentRow.kind === 'group') {
+          setCollapsedGroupIds((current) => {
+            const next = new Set(current)
+            if (next.has(currentRow.group.id)) {
+              next.delete(currentRow.group.id)
+            } else {
+              next.add(currentRow.group.id)
+            }
+            return next
+          })
+          return
+        }
+
+        setFocusedSessionId(currentRow.row.sessionId)
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [fallbackNavigationRowId, groups, navigationRowId])
+
   const loadGenerationPromptPreview = useCallback(async (sessionIds: string[]) => {
     return (await trpc.generationPromptPreview.query({
       sessionIds
@@ -350,6 +457,7 @@ export function SearchPage(props: {
           queryScope={queryScope}
           timeRange={timeRange}
           groupBy={groupBy}
+          navigationRowId={visibleNavigationRowId}
           generationError={generationError}
           onQueryChange={setQuery}
           onQueryScopeChange={setQueryScope}
@@ -373,7 +481,11 @@ export function SearchPage(props: {
               applySessionSelection(current, sessionIds, selected)
             )
           }
-          onFocusSession={setFocusedSessionId}
+          onNavigateRow={setNavigationRowId}
+          onFocusSession={(sessionId) => {
+            setFocusedSessionId(sessionId)
+            setNavigationRowId(getSessionTreeSessionRowId(sessionId))
+          }}
           onToggleGroup={(groupId) =>
             setCollapsedGroupIds((current) => {
               const next = new Set(current)

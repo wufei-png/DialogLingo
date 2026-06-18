@@ -9,6 +9,7 @@ import {
   togglePlatformFilter,
   type ProjectOption,
   type SearchGroupBy,
+  type SessionTreeNavigationId,
   type SearchPlatform
 } from './searchModel'
 import { SessionTree } from './SessionTree'
@@ -74,6 +75,7 @@ export function SearchRail(props: {
   queryScope: 'all' | 'titles' | 'transcript'
   timeRange: 'last-7-days' | 'last-30-days' | 'all-time'
   groupBy: SearchGroupBy
+  navigationRowId: SessionTreeNavigationId | null
   generationError: string | null
   onQueryChange: (query: string) => void
   onQueryScopeChange: (scope: 'all' | 'titles' | 'transcript') => void
@@ -83,6 +85,7 @@ export function SearchRail(props: {
   onProjectFilterChange: (projectIds: Set<string>) => void
   onToggleSession: (sessionId: string) => void
   onSetSessionSelection: (sessionIds: string[], selected: boolean) => void
+  onNavigateRow: (rowId: SessionTreeNavigationId) => void
   onFocusSession: (sessionId: string) => void
   onToggleGroup: (groupId: string) => void
   onRescan: () => void
@@ -282,8 +285,10 @@ export function SearchRail(props: {
 
         <SessionTree
           groups={props.groups}
+          navigationRowId={props.navigationRowId}
           onToggleSession={props.onToggleSession}
           onSetSessionSelection={props.onSetSessionSelection}
+          onNavigateRow={props.onNavigateRow}
           onFocusSession={props.onFocusSession}
           onToggleGroup={props.onToggleGroup}
         />

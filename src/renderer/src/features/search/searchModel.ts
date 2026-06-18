@@ -56,6 +56,8 @@ export type SessionTreeVirtualRow =
       row: SessionGroup['rows'][number]
     }
 
+export type SessionTreeNavigationId = SessionTreeVirtualRow['id']
+
 export type ProjectOption = {
   id: string
   name: string
@@ -253,4 +255,49 @@ export function flattenSessionTree(groups: SessionGroup[]): SessionTreeVirtualRo
       }))
     ]
   })
+}
+
+export function getSessionTreeSessionRowId(sessionId: string) {
+  return `session:${sessionId}`
+}
+
+export function findSessionTreeNavigationRow(
+  groups: SessionGroup[],
+  currentRowId: SessionTreeNavigationId | null
+) {
+  if (!currentRowId) {
+    return null
+  }
+
+  return flattenSessionTree(groups).find((row) => row.id === currentRowId) ?? null
+}
+
+export function reconcileSessionTreeNavigation(
+  groups: SessionGroup[],
+  currentRowId: SessionTreeNavigationId | null
+) {
+  return findSessionTreeNavigationRow(groups, currentRowId)?.id ?? null
+}
+
+export function moveSessionTreeNavigation(
+  groups: SessionGroup[],
+  currentRowId: SessionTreeNavigationId | null,
+  direction: -1 | 1
+) {
+  const rows = flattenSessionTree(groups)
+  if (rows.length === 0) {
+    return null
+  }
+
+  if (!currentRowId) {
+    return rows[direction > 0 ? 0 : rows.length - 1].id
+  }
+
+  const currentIndex = rows.findIndex((row) => row.id === currentRowId)
+  if (currentIndex < 0) {
+    return rows[direction > 0 ? 0 : rows.length - 1].id
+  }
+
+  const nextIndex = Math.min(rows.length - 1, Math.max(0, currentIndex + direction))
+  return rows[nextIndex].id
 }

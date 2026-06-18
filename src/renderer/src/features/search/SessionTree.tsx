@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import {
   areAllSessionIdsSelected,
   flattenSessionTree,
+  type SessionTreeNavigationId,
   type SessionGroup
 } from './searchModel'
 import { renderMarkedText } from '../../lib/renderMarkedText'
@@ -16,8 +17,10 @@ type ContextMenuState = {
 
 export function SessionTree(props: {
   groups: SessionGroup[]
+  navigationRowId: SessionTreeNavigationId | null
   onToggleSession: (sessionId: string) => void
   onSetSessionSelection: (sessionIds: string[], selected: boolean) => void
+  onNavigateRow: (rowId: SessionTreeNavigationId) => void
   onFocusSession: (sessionId: string) => void
   onToggleGroup: (groupId: string) => void
 }) {
@@ -26,6 +29,10 @@ export function SessionTree(props: {
   const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
   const totalRows = props.groups.reduce((count, group) => count + group.rows.length, 0)
   const virtualRows = useMemo(() => flattenSessionTree(props.groups), [props.groups])
+  const navigationRowIndex = useMemo(
+    () => virtualRows.findIndex((row) => row.id === props.navigationRowId),
+    [props.navigationRowId, virtualRows]
+  )
   const contextGroup = contextMenu
     ? props.groups.find((group) => group.id === contextMenu.groupId) ?? null
     : null
@@ -44,6 +51,12 @@ export function SessionTree(props: {
     getItemKey: (index) => virtualRows[index]?.id ?? index,
     overscan: 8
   })
+
+  useEffect(() => {
+    if (navigationRowIndex >= 0) {
+      virtualizer.scrollToIndex(navigationRowIndex, { align: 'auto' })
+    }
+  }, [navigationRowIndex, virtualizer])
 
   useEffect(() => {
     if (!contextMenu) {
@@ -83,6 +96,8 @@ export function SessionTree(props: {
           const item = virtualRows[virtualItem.index]
 
           if (item.kind === 'group') {
+            const focused = props.navigationRowId === item.id
+
             return (
               <div
                 key={virtualItem.key}
@@ -93,9 +108,16 @@ export function SessionTree(props: {
               >
                 <button
                   type="button"
-                  className="session-group-header"
+                  className={
+                    focused ? 'session-group-header is-focused' : 'session-group-header'
+                  }
                   aria-expanded={item.group.expanded}
-                  onClick={() => props.onToggleGroup(item.group.id)}
+                  aria-current={focused ? 'true' : undefined}
+                  onMouseEnter={() => props.onNavigateRow(item.id)}
+                  onClick={() => {
+                    props.onNavigateRow(item.id)
+                    props.onToggleGroup(item.group.id)
+                  }}
                   onContextMenu={(event) => {
                     event.preventDefault()
                     event.stopPropagation()
@@ -118,6 +140,8 @@ export function SessionTree(props: {
             )
           }
 
+          const focused = props.navigationRowId === item.id
+
           return (
             <div
               key={virtualItem.key}
@@ -130,10 +154,15 @@ export function SessionTree(props: {
                 <button
                   type="button"
                   className={
-                    item.row.focused ? 'session-row-button is-focused' : 'session-row-button'
+                    focused ? 'session-row-button is-focused' : 'session-row-button'
                   }
                   title={item.row.title}
-                  onClick={() => props.onFocusSession(item.row.sessionId)}
+                  aria-current={focused ? 'true' : undefined}
+                  onMouseEnter={() => props.onNavigateRow(item.id)}
+                  onClick={() => {
+                    props.onNavigateRow(item.id)
+                    props.onFocusSession(item.row.sessionId)
+                  }}
                 >
                   <span className="session-row-title">
                     {renderMarkedText(item.row.titleSnippet ?? item.row.title, {

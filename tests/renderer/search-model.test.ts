@@ -5,8 +5,12 @@ import {
   applySessionSelection,
   areAllSessionIdsSelected,
   buildSessionSearchInput,
+  findSessionTreeNavigationRow,
   flattenSessionTree,
+  getSessionTreeSessionRowId,
   groupSessions,
+  moveSessionTreeNavigation,
+  reconcileSessionTreeNavigation,
   resolveSearchBootPlan,
   togglePlatformFilter
 } from '../../src/renderer/src/features/search/searchModel'
@@ -205,6 +209,66 @@ describe('searchModel', () => {
       'session:s2',
       'group:codex'
     ])
+  })
+
+  it('moves tree navigation through group and session rows', () => {
+    const groups = groupSessions({
+      groupBy: 'platform',
+      projects,
+      focusedSessionId: null,
+      selectedSessionIds: new Set(),
+      collapsedGroupIds: new Set(['codex']),
+      sessions
+    })
+
+    expect(moveSessionTreeNavigation(groups, null, 1)).toBe('group:claude')
+    expect(moveSessionTreeNavigation(groups, null, -1)).toBe('group:codex')
+    expect(moveSessionTreeNavigation(groups, 'group:claude', 1)).toBe('session:s2')
+    expect(moveSessionTreeNavigation(groups, 'session:s2', 1)).toBe('group:codex')
+    expect(moveSessionTreeNavigation(groups, 'missing', 1)).toBe('group:claude')
+    expect(reconcileSessionTreeNavigation(groups, 'session:s1')).toBeNull()
+    expect(reconcileSessionTreeNavigation(groups, 'group:codex')).toBe('group:codex')
+  })
+
+  it('moves tree navigation in visible order and clamps at list edges', () => {
+    const groups = groupSessions({
+      groupBy: 'platform',
+      projects,
+      focusedSessionId: null,
+      selectedSessionIds: new Set(),
+      collapsedGroupIds: new Set(),
+      sessions
+    })
+
+    expect(flattenSessionTree(groups).map((row) => row.id)).toEqual([
+      'group:claude',
+      'session:s2',
+      'group:codex',
+      'session:s1'
+    ])
+    expect(moveSessionTreeNavigation(groups, 'session:s2', 1)).toBe('group:codex')
+    expect(moveSessionTreeNavigation(groups, 'group:codex', 1)).toBe('session:s1')
+    expect(moveSessionTreeNavigation(groups, 'session:s1', 1)).toBe('session:s1')
+    expect(moveSessionTreeNavigation(groups, 'session:s1', -1)).toBe('group:codex')
+    expect(moveSessionTreeNavigation(groups, 'group:claude', -1)).toBe('group:claude')
+  })
+
+  it('finds navigation rows for Enter behavior', () => {
+    const groups = groupSessions({
+      groupBy: 'platform',
+      projects,
+      focusedSessionId: null,
+      selectedSessionIds: new Set(),
+      collapsedGroupIds: new Set(),
+      sessions
+    })
+
+    expect(getSessionTreeSessionRowId('s1')).toBe('session:s1')
+    expect(findSessionTreeNavigationRow(groups, 'group:codex')?.kind).toBe('group')
+    expect(findSessionTreeNavigationRow(groups, 'session:s1')).toMatchObject({
+      kind: 'session',
+      row: expect.objectContaining({ sessionId: 's1' })
+    })
   })
 
   it('selects all filtered sessions even when their groups are collapsed', () => {
