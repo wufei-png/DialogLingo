@@ -1,28 +1,51 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { trpc } from '../../lib/trpc'
+import { useEscapeToClose } from '../../lib/useEscapeToClose'
+
+type ExportFormat = 'anki-package' | 'anki-text-bundle' | 'generic-text-bundle'
+type ExportConfirmPayload = {
+  format: ExportFormat
+  deckName: string
+  direction: 'en-zh' | 'zh-en' | 'bilingual'
+  includeExpressions: boolean
+  includeSentences: boolean
+  tagPrefix: string
+  outputLocation: string
+  keepFlaggedItems: boolean
+}
+
+type ExportConfirmResult =
+  | {
+      ok: true
+      outputLocation: string
+      outputPath?: string
+    }
+  | {
+      ok: false
+      message?: string
+    }
 
 type Props = {
   open: boolean
   onClose: () => void
-  onConfirm: (payload: {
-    format: 'anki-package' | 'anki-text-bundle' | 'generic-text-bundle'
-    deckName: string
-    direction: 'en-zh' | 'zh-en' | 'bilingual'
-    includeExpressions: boolean
-    includeSentences: boolean
-    tagPrefix: string
-    outputLocation: string
-    keepFlaggedItems: boolean
-  }) => void
+  onConfirm: (payload: ExportConfirmPayload) => Promise<ExportConfirmResult>
 }
 
 function SelectionButton(props: { selected: boolean; label: string; onToggle: () => void }) {
+  const { t } = useTranslation()
+
   return (
     <button
       type="button"
       className={props.selected ? 'selection-button is-selected' : 'selection-button'}
       aria-pressed={props.selected}
-      aria-label={props.selected ? `Disable ${props.label}` : `Enable ${props.label}`}
-      title={props.selected ? 'Selected' : 'Not selected'}
+      aria-label={
+        props.selected
+          ? t('common.disable', { label: props.label })
+          : t('common.enable', { label: props.label })
+      }
+      title={props.selected ? t('common.selected') : t('common.notSelected')}
       onClick={props.onToggle}
     >
       <span className="selection-button-check" aria-hidden="true" />
@@ -31,13 +54,88 @@ function SelectionButton(props: { selected: boolean; label: string; onToggle: ()
 }
 
 export function ExportModal({ open, onClose, onConfirm }: Props) {
+  const { t } = useTranslation()
+  useEscapeToClose(open, onClose)
   const [deckName, setDeckName] = useState('DialogLingo')
   const [direction, setDirection] = useState<'en-zh' | 'zh-en' | 'bilingual'>('bilingual')
   const [includeExpressions, setIncludeExpressions] = useState(true)
   const [includeSentences, setIncludeSentences] = useState(true)
   const [tagPrefix, setTagPrefix] = useState('dialoglingo')
-  const [outputLocation, setOutputLocation] = useState('~/Downloads/DialogLingo')
+  const [outputLocation, setOutputLocation] = useState('')
   const [keepFlaggedItems, setKeepFlaggedItems] = useState(false)
+  const [exportingFormat, setExportingFormat] = useState<ExportFormat | null>(null)
+  const [exportMessage, setExportMessage] = useState<string | null>(null)
+  const [exportError, setExportError] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!open || outputLocation) {
+      return
+    }
+
+    let cancelled = false
+    void trpc.exportDefaultOutputLocation.query().then((defaultLocation) => {
+      if (!cancelled) {
+        setOutputLocation(String(defaultLocation))
+      }
+    })
+
+    return () => {
+      cancelled = true
+    }
+  }, [open, outputLocation])
+
+  async function runExport(format: ExportFormat) {
+    setExportMessage(null)
+    setExportError(null)
+    setExportingFormat(format)
+
+    try {
+      const selection = (await trpc.exportChooseOutputDirectory.mutate({
+        currentPath: outputLocation || null,
+        title: t('export.chooseFolderTitle')
+      })) as { cancelled: boolean; outputLocation: string | null }
+
+      if (selection.cancelled || !selection.outputLocation) {
+        setExportMessage(t('export.exportCancelled'))
+        return
+      }
+
+      setOutputLocation(selection.outputLocation)
+      const result = await onConfirm({
+        format,
+        deckName,
+        direction,
+        includeExpressions,
+        includeSentences,
+        tagPrefix,
+        outputLocation: selection.outputLocation,
+        keepFlaggedItems
+      })
+
+      if (result.ok) {
+        setExportMessage(
+          t('export.exportSuccess', {
+            path: result.outputPath ?? result.outputLocation
+          })
+        )
+        return
+      }
+
+      setExportError(
+        t('export.exportFailed', {
+          message: result.message ?? ''
+        })
+      )
+    } catch (error) {
+      setExportError(
+        t('export.exportFailed', {
+          message: error instanceof Error ? error.message : String(error)
+        })
+      )
+    } finally {
+      setExportingFormat(null)
+    }
+  }
 
   if (!open) {
     return null
@@ -46,165 +144,147 @@ export function ExportModal({ open, onClose, onConfirm }: Props) {
   return (
     <div className="sheet-backdrop">
       <div className="sheet export-modal">
-        <p className="sheet-kicker">Export Workbook</p>
-        <h2>Choose an export target</h2>
+        <p className="sheet-kicker">{t('export.kicker')}</p>
+        <h2>{t('export.title')}</h2>
         <div className="export-field-list">
           <label className="export-field">
             <span className="export-field-copy">
-              <span className="export-field-label">Deck name</span>
+              <span className="export-field-label">{t('export.deckName')}</span>
               <span className="export-field-description">
-                Name used for the Anki deck and export manifest.
+                {t('export.deckNameDescription')}
               </span>
             </span>
             <input
-              aria-label="Deck name"
+              aria-label={t('export.deckName')}
               value={deckName}
               onChange={(event) => setDeckName(event.target.value)}
             />
           </label>
           <label className="export-field">
             <span className="export-field-copy">
-              <span className="export-field-label">Tag prefix</span>
+              <span className="export-field-label">{t('export.tagPrefix')}</span>
               <span className="export-field-description">
-                Prefix applied to generated Anki tags.
+                {t('export.tagPrefixDescription')}
               </span>
             </span>
             <input
-              aria-label="Tag prefix"
+              aria-label={t('export.tagPrefix')}
               value={tagPrefix}
               onChange={(event) => setTagPrefix(event.target.value)}
             />
           </label>
           <label className="export-field">
             <span className="export-field-copy">
-              <span className="export-field-label">Output folder</span>
+              <span className="export-field-label">{t('export.outputFolder')}</span>
               <span className="export-field-description">
-                Local folder where export files will be written.
+                {t('export.outputFolderDescription')}
               </span>
             </span>
             <input
-              aria-label="Output folder"
+              aria-label={t('export.outputFolder')}
               value={outputLocation}
               onChange={(event) => setOutputLocation(event.target.value)}
             />
           </label>
           <label className="export-field">
             <span className="export-field-copy">
-              <span className="export-field-label">Card direction</span>
+              <span className="export-field-label">{t('export.cardDirection')}</span>
               <span className="export-field-description">
-                Controls which language appears on the front or back.
+                {t('export.cardDirectionDescription')}
               </span>
             </span>
             <select
-              aria-label="Card direction"
+              aria-label={t('export.cardDirection')}
               value={direction}
               onChange={(event) =>
                 setDirection(event.target.value as 'en-zh' | 'zh-en' | 'bilingual')
               }
             >
-              <option value="en-zh">EN -&gt; ZH</option>
-              <option value="zh-en">ZH -&gt; EN</option>
-              <option value="bilingual">Bilingual</option>
+              <option value="en-zh">{t('export.directionEnZh')}</option>
+              <option value="zh-en">{t('export.directionZhEn')}</option>
+              <option value="bilingual">{t('export.directionBilingual')}</option>
             </select>
           </label>
         </div>
         <div className="export-option-list">
           <div className="export-option-row">
             <span className="export-option-copy">
-              <span className="export-option-label">Expressions</span>
+              <span className="export-option-label">{t('export.expressions')}</span>
               <span className="export-option-description">
-                Include reviewed expression cards.
+                {t('export.expressionsDescription')}
               </span>
             </span>
             <SelectionButton
               selected={includeExpressions}
-              label="Expressions"
+              label={t('export.expressions')}
               onToggle={() => setIncludeExpressions((current) => !current)}
             />
           </div>
           <div className="export-option-row">
             <span className="export-option-copy">
-              <span className="export-option-label">Sentences</span>
+              <span className="export-option-label">{t('export.sentences')}</span>
               <span className="export-option-description">
-                Include reviewed sentence cards.
+                {t('export.sentencesDescription')}
               </span>
             </span>
             <SelectionButton
               selected={includeSentences}
-              label="Sentences"
+              label={t('export.sentences')}
               onToggle={() => setIncludeSentences((current) => !current)}
             />
           </div>
           <div className="export-option-row">
             <span className="export-option-copy">
-              <span className="export-option-label">Keep flagged items</span>
+              <span className="export-option-label">{t('export.keepFlaggedItems')}</span>
               <span className="export-option-description">
-                Export items marked for another review pass.
+                {t('export.keepFlaggedItemsDescription')}
               </span>
             </span>
             <SelectionButton
               selected={keepFlaggedItems}
-              label="Keep flagged items"
+              label={t('export.keepFlaggedItems')}
               onToggle={() => setKeepFlaggedItems((current) => !current)}
             />
           </div>
         </div>
         <div className="sheet-actions">
           <button type="button" onClick={onClose}>
-            Close
+            {t('common.close')}
           </button>
           <button
             type="button"
-            onClick={() =>
-              onConfirm({
-                format: 'anki-package',
-                deckName,
-                direction,
-                includeExpressions,
-                includeSentences,
-                tagPrefix,
-                outputLocation,
-                keepFlaggedItems
-              })
-            }
+            disabled={Boolean(exportingFormat)}
+            onClick={() => void runExport('anki-package')}
           >
-            Export Anki Package
+            {exportingFormat === 'anki-package'
+              ? t('export.exporting')
+              : t('export.exportAnkiPackage')}
           </button>
           <button
             type="button"
-            onClick={() =>
-              onConfirm({
-                format: 'anki-text-bundle',
-                deckName,
-                direction,
-                includeExpressions,
-                includeSentences,
-                tagPrefix,
-                outputLocation,
-                keepFlaggedItems
-              })
-            }
+            disabled={Boolean(exportingFormat)}
+            onClick={() => void runExport('anki-text-bundle')}
           >
-            Export Anki Text Bundle
+            {exportingFormat === 'anki-text-bundle'
+              ? t('export.exporting')
+              : t('export.exportAnkiTextBundle')}
           </button>
           <button
             type="button"
-            onClick={() =>
-              onConfirm({
-                format: 'generic-text-bundle',
-                deckName,
-                direction,
-                includeExpressions,
-                includeSentences,
-                tagPrefix,
-                outputLocation,
-                keepFlaggedItems
-              })
-            }
+            disabled={Boolean(exportingFormat)}
+            onClick={() => void runExport('generic-text-bundle')}
           >
-            Export Generic Text Bundle
+            {exportingFormat === 'generic-text-bundle'
+              ? t('export.exporting')
+              : t('export.exportGenericTextBundle')}
           </button>
         </div>
+        {exportMessage ? (
+          <p className="export-status-message">{exportMessage}</p>
+        ) : null}
+        {exportError ? (
+          <p className="export-status-message is-error">{exportError}</p>
+        ) : null}
       </div>
     </div>
   )

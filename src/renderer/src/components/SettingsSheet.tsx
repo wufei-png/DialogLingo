@@ -1,15 +1,15 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import type { Settings } from '../../../shared/schemas/settings'
+import { useTranslation } from 'react-i18next'
+import type { AppLocale, Settings } from '../../../shared/schemas/settings'
+import appI18n from '../i18n/i18n'
 import { trpc } from '../lib/trpc'
+import { useEscapeToClose } from '../lib/useEscapeToClose'
 
 type BackendKind = Settings['modelBackend']['kind']
 type ExpressionDifficulty = Settings['generation']['expressionDifficulty']
 type FlaggedItemExportPolicy = Settings['privacy']['flaggedItemExportPolicy']
 type CliToolKey = 'codex' | 'claude' | 'opencode'
-
-const BATCH_SIZE_HELP =
-  'How many transcript snippets to send in each LLM request. Larger batches mean fewer API calls per session but longer prompts.'
 
 type Props = {
   open: boolean
@@ -68,12 +68,15 @@ function getErrorMessage(error: unknown) {
 }
 
 export function SettingsSheet(props: Props) {
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
+  useEscapeToClose(props.open, props.onClose)
   const settingsQuery = useQuery({
     enabled: props.open,
     queryKey: ['settings'],
     queryFn: async () => (await trpc.settingsGet.query()) as Settings
   })
+  const [locale, setLocale] = useState<AppLocale>('en')
   const [baseUrl, setBaseUrl] = useState('')
   const [apiKey, setApiKey] = useState('')
   const [defaultModel, setDefaultModel] = useState('')
@@ -103,6 +106,7 @@ export function SettingsSheet(props: Props) {
     }
 
     setBaseUrl(settingsQuery.data.provider.baseUrl)
+    setLocale(settingsQuery.data.ui.locale)
     setApiKey(settingsQuery.data.provider.apiKey)
     setDefaultModel(settingsQuery.data.provider.defaultModel)
     setBackendKind(settingsQuery.data.modelBackend.kind)
@@ -130,11 +134,11 @@ export function SettingsSheet(props: Props) {
     return null
   }
 
-    async function saveSettings() {
-      const current = settingsQuery.data ?? ((await trpc.settingsGet.query()) as Settings)
-      const includeArchivedChanged =
-        current.scan.includeArchivedSessions !== includeArchivedSessions
-      const nextExpressionTarget = toPercentInt(expressionTargetPercent, 60) / 100
+  async function saveSettings() {
+    const current = settingsQuery.data ?? ((await trpc.settingsGet.query()) as Settings)
+    const includeArchivedChanged =
+      current.scan.includeArchivedSessions !== includeArchivedSessions
+    const nextExpressionTarget = toPercentInt(expressionTargetPercent, 60) / 100
     const next: Settings = {
       ...current,
       provider: {
@@ -185,50 +189,71 @@ export function SettingsSheet(props: Props) {
         ...current.scan,
         scanOnLaunch,
         includeArchivedSessions
+      },
+      ui: {
+        ...current.ui,
+        locale
       }
     }
-      const saved = (await trpc.settingsSave.mutate(next)) as Settings
-      queryClient.setQueryData(['settings'], saved)
-      if (!includeArchivedChanged) {
-        setSaveMessage('Saved.')
-        return
-      }
+    const saved = (await trpc.settingsSave.mutate(next)) as Settings
+    queryClient.setQueryData(['settings'], saved)
+    await appI18n.changeLanguage(saved.ui.locale)
+    if (!includeArchivedChanged) {
+      setSaveMessage(appI18n.t('settings.messages.saved'))
+      return
+    }
 
-      setSaveMessage('Saved. Rescanning sessions...')
-      try {
-        await trpc.sessionRescan.mutate()
-        setSaveMessage('Saved and rescanned sessions.')
-      } catch (error) {
-        setSaveMessage(`Saved, but rescan failed: ${getErrorMessage(error)}`)
-      }
+    setSaveMessage(appI18n.t('settings.messages.savedRescanning'))
+    try {
+      await trpc.sessionRescan.mutate()
+      setSaveMessage(appI18n.t('settings.messages.savedAndRescanned'))
+    } catch (error) {
+      setSaveMessage(
+        appI18n.t('settings.messages.savedRescanFailed', {
+          message: getErrorMessage(error)
+        })
+      )
     }
+  }
 
   async function resetAllSettings() {
     const saved = (await trpc.settingsReset.mutate()) as Settings
     queryClient.setQueryData(['settings'], saved)
-    setSaveMessage('Reset to defaults.')
+    await appI18n.changeLanguage(saved.ui.locale)
+    setSaveMessage(appI18n.t('settings.messages.reset'))
   }
 
   return (
     <div className="sheet-backdrop">
-      <section className="sheet settings-sheet" role="dialog" aria-modal="true" aria-label="Settings">
+      <section className="sheet settings-sheet" role="dialog" aria-modal="true" aria-label={t('settings.title')}>
         <header className="settings-sheet-header">
           <div>
-            <p className="sheet-kicker">Settings</p>
-            <h2>Settings</h2>
+            <p className="sheet-kicker">{t('settings.title')}</p>
+            <h2>{t('settings.title')}</h2>
           </div>
           <button type="button" onClick={props.onClose}>
-            Close
+            {t('common.close')}
           </button>
         </header>
         <div className="settings-form">
+          <h3 className="settings-section-heading">{t('settings.interface')}</h3>
           <label>
-            <span>Backend</span>
+            <span>{t('settings.language')}</span>
+            <select
+              value={locale}
+              onChange={(event) => setLocale(event.currentTarget.value as AppLocale)}
+            >
+              <option value="en">{t('settings.languageEnglish')}</option>
+              <option value="zh-CN">{t('settings.languageChinese')}</option>
+            </select>
+          </label>
+          <label>
+            <span>{t('settings.backend')}</span>
             <select
               value={backendKind}
               onChange={(event) => setBackendKind(event.currentTarget.value as BackendKind)}
             >
-              <option value="openai-compatible">OpenAI-compatible API</option>
+              <option value="openai-compatible">{t('settings.backendOpenAiCompatible')}</option>
               <option value="codex-cli">Codex CLI</option>
               <option value="claude-cli">Claude CLI</option>
               <option value="opencode-cli">OpenCode CLI</option>
@@ -237,7 +262,7 @@ export function SettingsSheet(props: Props) {
           {backendKind === 'openai-compatible' ? (
             <>
               <label>
-                <span>OpenAI-compatible base URL</span>
+                <span>{t('settings.openAiBaseUrl')}</span>
                 <input
                   placeholder="https://api.openai.com or http://localhost:4000"
                   value={baseUrl}
@@ -245,7 +270,7 @@ export function SettingsSheet(props: Props) {
                 />
               </label>
               <label>
-                <span>API key</span>
+                <span>{t('settings.apiKey')}</span>
                 <input
                   type="password"
                   placeholder="sk-..."
@@ -254,7 +279,7 @@ export function SettingsSheet(props: Props) {
                 />
               </label>
               <label>
-                <span>Default model</span>
+                <span>{t('settings.defaultModel')}</span>
                 <input
                   placeholder="gpt-4o-mini"
                   value={defaultModel}
@@ -283,30 +308,30 @@ export function SettingsSheet(props: Props) {
             />
           ) : null}
           <p className="settings-help">
-            LiteLLM works as a local OpenAI-compatible endpoint; use the API backend with a LiteLLM base URL.
+            {t('settings.liteLlmHelp')}
           </p>
-          <h3 className="settings-section-heading">Generation</h3>
+          <h3 className="settings-section-heading">{t('settings.generation')}</h3>
           <label>
-            <span>Expression difficulty</span>
+            <span>{t('settings.expressionDifficulty')}</span>
             <select
               value={expressionDifficulty}
               onChange={(event) =>
                 setExpressionDifficulty(event.currentTarget.value as ExpressionDifficulty)
               }
             >
-              <option value="easy">Easy</option>
-              <option value="average">Average</option>
-              <option value="hard">Hard</option>
+              <option value="easy">{t('settings.difficultyEasy')}</option>
+              <option value="average">{t('settings.difficultyAverage')}</option>
+              <option value="hard">{t('settings.difficultyHard')}</option>
             </select>
           </label>
           <label>
             <span className="settings-label-row">
-              <span>LLM batch size</span>
+              <span>{t('settings.llmBatchSize')}</span>
               <button
                 type="button"
                 className="settings-help-trigger"
-                aria-label="What is LLM batch size?"
-                data-tooltip={BATCH_SIZE_HELP}
+                aria-label={t('settings.llmBatchSizeQuestion')}
+                data-tooltip={t('settings.llmBatchSizeHelp')}
               >
                 ?
               </button>
@@ -320,7 +345,7 @@ export function SettingsSheet(props: Props) {
             />
           </label>
           <label>
-            <span>Max items per session</span>
+            <span>{t('settings.maxItemsPerSession')}</span>
             <input
               type="number"
               min="1"
@@ -330,7 +355,19 @@ export function SettingsSheet(props: Props) {
             />
           </label>
           <label>
-            <span>Expression target ({expressionTargetPercent}%)</span>
+            <span className="settings-label-row">
+              <span>{t('settings.expressionTarget', { percent: expressionTargetPercent })}</span>
+              <button
+                type="button"
+                className="settings-help-trigger"
+                aria-label={t('settings.expressionTargetQuestion')}
+                data-tooltip={t('settings.expressionTargetHelp', {
+                  sentencePercent: 100 - toPercentInt(expressionTargetPercent, 60)
+                })}
+              >
+                ?
+              </button>
+            </span>
             <input
               type="range"
               min="0"
@@ -340,11 +377,18 @@ export function SettingsSheet(props: Props) {
               onChange={(event) => setExpressionTargetPercent(event.currentTarget.value)}
             />
           </label>
-          <p className="settings-help">
-            Sentence target is {100 - toPercentInt(expressionTargetPercent, 60)}%.
-          </p>
           <label>
-            <span>Balance strength</span>
+            <span className="settings-label-row">
+              <span>{t('settings.balanceStrength')}</span>
+              <button
+                type="button"
+                className="settings-help-trigger"
+                aria-label={t('settings.balanceStrengthQuestion')}
+                data-tooltip={t('settings.balanceStrengthHelp')}
+              >
+                ?
+              </button>
+            </span>
             <input
               type="number"
               min="0"
@@ -353,9 +397,9 @@ export function SettingsSheet(props: Props) {
               onChange={(event) => setBalanceStrength(event.currentTarget.value)}
             />
           </label>
-          <h3 className="settings-section-heading">Privacy</h3>
+          <h3 className="settings-section-heading">{t('settings.privacy')}</h3>
           <label>
-            <span>Flagged item export policy</span>
+            <span>{t('settings.flaggedItemExportPolicy')}</span>
             <select
               value={flaggedItemExportPolicy}
               onChange={(event) =>
@@ -364,13 +408,13 @@ export function SettingsSheet(props: Props) {
                 )
               }
             >
-              <option value="warn">Warn and require explicit keep</option>
-              <option value="block">Block flagged items</option>
+              <option value="warn">{t('settings.warnAndRequireKeep')}</option>
+              <option value="block">{t('settings.blockFlaggedItems')}</option>
             </select>
           </label>
-          <h3 className="settings-section-heading">Scan</h3>
+          <h3 className="settings-section-heading">{t('settings.scan')}</h3>
           <label className="settings-toggle-row">
-            <span>Scan on launch</span>
+            <span>{t('settings.scanOnLaunch')}</span>
             <span className="settings-switch-control">
               <input
                 className="settings-switch-input"
@@ -382,7 +426,7 @@ export function SettingsSheet(props: Props) {
             </span>
           </label>
           <label className="settings-toggle-row">
-            <span>Include archived sessions</span>
+            <span>{t('settings.includeArchivedSessions')}</span>
             <span className="settings-switch-control">
               <input
                 className="settings-switch-input"
@@ -395,10 +439,10 @@ export function SettingsSheet(props: Props) {
           </label>
           <div className="settings-actions">
             <button type="button" onClick={() => void saveSettings()}>
-              Save Settings
+              {t('settings.saveSettings')}
             </button>
             <button type="button" className="settings-reset-button" onClick={() => void resetAllSettings()}>
-              Reset all to defaults
+              {t('settings.resetAllToDefaults')}
             </button>
           </div>
           {saveMessage ? <p className="settings-save-message">{saveMessage}</p> : null}
@@ -425,6 +469,8 @@ function CliSettingsFields(props: {
   onOpencodeModelChange: (value: string) => void
   onCliTimeoutMsChange: (value: string) => void
 }) {
+  const { t } = useTranslation()
+
   if (!props.tool) {
     return null
   }
@@ -457,7 +503,7 @@ function CliSettingsFields(props: {
   return (
     <>
       <label>
-        <span>{cliToolLabel(props.tool)} executable path</span>
+        <span>{t('settings.cliExecutablePath', { tool: cliToolLabel(props.tool) })}</span>
         <input
           placeholder={props.tool}
           value={executablePath}
@@ -465,18 +511,18 @@ function CliSettingsFields(props: {
         />
       </label>
       <p className="settings-help">
-        Leave blank to discover <code>{props.tool}</code> from PATH.
+        {t('settings.cliPathHelp', { tool: props.tool })}
       </p>
       <label>
-        <span>{cliToolLabel(props.tool)} model</span>
+        <span>{t('settings.cliModel', { tool: cliToolLabel(props.tool) })}</span>
         <input
-          placeholder="Use CLI default"
+          placeholder={t('settings.cliDefaultPlaceholder')}
           value={model}
           onChange={(event) => onModelChange(event.currentTarget.value)}
         />
       </label>
       <label>
-        <span>CLI timeout</span>
+        <span>{t('settings.cliTimeout')}</span>
         <input
           type="number"
           min="1000"

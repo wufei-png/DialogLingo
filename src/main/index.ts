@@ -4,7 +4,8 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { app, BrowserWindow } from 'electron'
+import { app, BrowserWindow, dialog } from 'electron'
+import type { OpenDialogOptions } from 'electron'
 import { buildRouter } from '../shared/ipc/router'
 import type { ScanEvent } from '../shared/ipc/events'
 import type { Settings } from '../shared/schemas/settings'
@@ -581,6 +582,41 @@ function expandOutputPath(value: string) {
   return value
 }
 
+function getDefaultExportDirectory() {
+  return app.getPath('downloads')
+}
+
+async function chooseExportOutputDirectory(input: {
+  currentPath?: string | null
+  title?: string
+}) {
+  const currentPath = input.currentPath?.trim()
+  const defaultPath = currentPath
+    ? expandOutputPath(currentPath)
+    : getDefaultExportDirectory()
+  const owner = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
+  const options: OpenDialogOptions = {
+    title: input.title,
+    defaultPath,
+    properties: ['openDirectory', 'createDirectory']
+  }
+  const result = owner
+    ? await dialog.showOpenDialog(owner, options)
+    : await dialog.showOpenDialog(options)
+
+  if (result.canceled || result.filePaths.length === 0) {
+    return {
+      cancelled: true as const,
+      outputLocation: null
+    }
+  }
+
+  return {
+    cancelled: false as const,
+    outputLocation: result.filePaths[0]
+  }
+}
+
 function createRouter() {
   const searchSessions = createSessionSearch(sqlite)
   const previewSession = createPreviewQuery(sqlite)
@@ -828,6 +864,11 @@ function createRouter() {
       })
     },
     exportRuns: {
+      defaultOutputLocation: () => getDefaultExportDirectory(),
+      chooseOutputDirectory: (input: {
+        currentPath?: string | null
+        title?: string
+      }) => chooseExportOutputDirectory(input),
       run: async (input: {
         workbookId: string
         request: {
@@ -863,6 +904,7 @@ function createRouter() {
           flaggedItemExportPolicy: flaggedPolicy
         })
         const outputLocation = expandOutputPath(input.request.outputLocation)
+        let outputPath = outputLocation
         const exportInput: ExportRowsInput = {
           workbookId: input.workbookId,
           deckName: input.request.deckName,
@@ -884,6 +926,7 @@ function createRouter() {
             const filePath = outputLocation.endsWith('.apkg')
               ? outputLocation
               : path.join(outputLocation, `${input.request.deckName}.apkg`)
+            outputPath = filePath
             await mkdir(path.dirname(filePath), { recursive: true })
             await writeFile(filePath, output.data)
           }
@@ -923,7 +966,8 @@ function createRouter() {
             ok: true as const,
             workbookId: input.workbookId,
             format: input.request.format,
-            outputLocation
+            outputLocation,
+            outputPath
           }
         } catch (error) {
           return {

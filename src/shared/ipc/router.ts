@@ -52,6 +52,8 @@ export type RouterDeps = {
   }
   exportRuns: {
     run: (input: any) => Promise<unknown>
+    defaultOutputLocation: () => string
+    chooseOutputDirectory: (input: any) => Promise<unknown>
   }
 }
 
@@ -137,6 +139,17 @@ export function buildRouter(deps: RouterDeps) {
     exportRun: t.procedure
       .input(z.object({ workbookId: z.string(), request: z.any() }))
       .mutation(({ input }) => deps.exportRuns.run(input)),
+    exportDefaultOutputLocation: t.procedure.query(() =>
+      deps.exportRuns.defaultOutputLocation()
+    ),
+    exportChooseOutputDirectory: t.procedure
+      .input(
+        z.object({
+          currentPath: z.string().nullable().optional(),
+          title: z.string().optional()
+        })
+      )
+      .mutation(({ input }) => deps.exportRuns.chooseOutputDirectory(input)),
     appHealth: t.procedure.query(() => ({ ok: true as const }))
   })
 }

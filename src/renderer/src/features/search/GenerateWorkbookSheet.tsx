@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { useTranslation } from 'react-i18next'
+import { useEscapeToClose } from '../../lib/useEscapeToClose'
 
 type SummaryRow = {
   label: string
@@ -21,7 +23,9 @@ type Props = {
 }
 
 export function GenerateWorkbookSheet(props: Props) {
+  const { t } = useTranslation()
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
+  useEscapeToClose(props.open, props.onCancel)
   const [prompt, setPrompt] = useState('')
   const [originalPrompt, setOriginalPrompt] = useState('')
   const [savedPrompt, setSavedPrompt] = useState('')
@@ -123,12 +127,12 @@ export function GenerateWorkbookSheet(props: Props) {
   return createPortal(
     <div className="sheet-backdrop">
       <div className="sheet">
-        <p className="sheet-kicker">Generate Workbook</p>
-        <h2>Generate Expression + Sentence items?</h2>
-        <p>{props.selectedCount} sessions selected</p>
+        <p className="sheet-kicker">{t('generateWorkbook.kicker')}</p>
+        <h2>{t('generateWorkbook.title')}</h2>
+        <p>{t('generateWorkbook.selectedSessions', { count: props.selectedCount })}</p>
         <div className="sheet-grid">
           <section>
-            <h3>Platform</h3>
+            <h3>{t('generateWorkbook.platform')}</h3>
             <ul>
               {props.platformSummary.map((row) => (
                 <li key={row.label}>
@@ -138,7 +142,7 @@ export function GenerateWorkbookSheet(props: Props) {
             </ul>
           </section>
           <section>
-            <h3>Project</h3>
+            <h3>{t('generateWorkbook.project')}</h3>
             <ul>
               {props.projectSummary.map((row) => (
                 <li key={row.label}>
@@ -151,18 +155,18 @@ export function GenerateWorkbookSheet(props: Props) {
         <section className="generation-prompt-panel">
           <div className="prompt-editor-header">
             <div>
-              <h3>Model prompt</h3>
+              <h3>{t('generateWorkbook.modelPrompt')}</h3>
               <p>
                 {loadingPrompt
-                  ? 'Preparing final prompt...'
-                  : `${candidateCount} mined candidates included`}
+                  ? t('generateWorkbook.preparingPrompt')
+                  : t('generateWorkbook.minedCandidates', { count: candidateCount })}
               </p>
             </div>
             <div className="prompt-editor-status">
-              {saved ? <span>Saved</span> : null}
+              {saved ? <span>{t('common.saved')}</span> : null}
               {promptChanged ? (
                 <button type="button" onClick={revertPrompt}>
-                  Revert
+                  {t('common.revert')}
                 </button>
               ) : null}
             </div>
@@ -195,7 +199,7 @@ export function GenerateWorkbookSheet(props: Props) {
         </section>
         <div className="sheet-actions">
           <button type="button" onClick={props.onCancel}>
-            Cancel
+            {t('common.cancel')}
           </button>
           <button
             type="button"
@@ -207,7 +211,7 @@ export function GenerateWorkbookSheet(props: Props) {
             }
             onClick={() => props.onConfirm(promptChanged ? prompt : null)}
           >
-            Generate
+            {t('common.generate')}
           </button>
         </div>
       </div>
