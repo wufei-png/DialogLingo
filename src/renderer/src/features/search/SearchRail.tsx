@@ -30,24 +30,45 @@ type GenerationPromptPreview = {
 }
 
 const SEARCH_SCOPE_VALUES = ['all', 'titles', 'transcript'] as const
+type SearchTimeRange = 'last-7-days' | 'last-30-days' | 'all-time'
+type OpenFilterSection = 'platform' | 'projects' | 'groupBy'
 
 function CollapsibleFilterSection(props: {
   title: string
   summary: string
+  className?: string
   defaultExpanded?: boolean
+  expanded?: boolean
+  onExpandedChange?: (expanded: boolean) => void
   children: ReactNode
 }) {
-  const [expanded, setExpanded] = useState(props.defaultExpanded ?? false)
+  const [internalExpanded, setInternalExpanded] = useState(props.defaultExpanded ?? false)
+  const expanded = props.expanded ?? internalExpanded
   const bodyId = useId()
 
+  function toggleExpanded() {
+    const nextExpanded = !expanded
+    if (props.onExpandedChange) {
+      props.onExpandedChange(nextExpanded)
+      return
+    }
+    setInternalExpanded(nextExpanded)
+  }
+
   return (
-    <section className="collapsible-filter-section">
+    <section
+      className={
+        props.className
+          ? `collapsible-filter-section ${props.className}`
+          : 'collapsible-filter-section'
+      }
+    >
       <button
         type="button"
         className="collapsible-section-header"
         aria-expanded={expanded}
         aria-controls={bodyId}
-        onClick={() => setExpanded((current) => !current)}
+        onClick={toggleExpanded}
       >
         <span className="collapsible-section-title">
           <span className="collapsible-caret" aria-hidden="true" />
@@ -73,13 +94,13 @@ export function SearchRail(props: {
   platformFilter: SearchPlatform[]
   query: string
   queryScope: 'all' | 'titles' | 'transcript'
-  timeRange: 'last-7-days' | 'last-30-days' | 'all-time'
+  timeRange: SearchTimeRange
   groupBy: SearchGroupBy
   navigationRowId: SessionTreeNavigationId | null
   generationError: string | null
   onQueryChange: (query: string) => void
   onQueryScopeChange: (scope: 'all' | 'titles' | 'transcript') => void
-  onTimeRangeChange: (range: 'last-7-days' | 'last-30-days' | 'all-time') => void
+  onTimeRangeChange: (range: SearchTimeRange) => void
   onGroupByChange: (groupBy: SearchGroupBy) => void
   onPlatformFilterChange: (platforms: SearchPlatform[]) => void
   onProjectFilterChange: (projectIds: Set<string>) => void
@@ -94,6 +115,7 @@ export function SearchRail(props: {
 }) {
   const { t } = useTranslation()
   const [sheetOpen, setSheetOpen] = useState(false)
+  const [openFilterSection, setOpenFilterSection] = useState<OpenFilterSection | null>(null)
   const selectedSessionIds = useMemo(
     () => [...props.selectedSessionIds],
     [props.selectedSessionIds]
@@ -107,6 +129,20 @@ export function SearchRail(props: {
           ? t('search.searchInTitles')
           : t('search.searchInTranscripts')
   }))
+  const timeRangeOptions: Array<{ value: SearchTimeRange; label: string }> = [
+    {
+      value: 'last-7-days',
+      label: t('search.timeRangeWithValue', { value: t('search.last7Days') })
+    },
+    {
+      value: 'last-30-days',
+      label: t('search.timeRangeWithValue', { value: t('search.last30Days') })
+    },
+    {
+      value: 'all-time',
+      label: t('search.timeRangeWithValue', { value: t('search.allTime') })
+    }
+  ]
 
   const platformSummary = PLATFORM_OPTIONS.map((platform) => ({
     label: PLATFORM_LABELS[platform],
@@ -161,64 +197,80 @@ export function SearchRail(props: {
   return (
     <aside className="search-rail">
       <div className="search-stack">
+        <div className="search-box">
+          <input
+            placeholder={t('search.typeKeywords')}
+            value={props.query}
+            onChange={(event) => props.onQueryChange(event.currentTarget.value)}
+          />
+          <select
+            aria-label={t('search.searchScope')}
+            value={props.queryScope}
+            onChange={(event) =>
+              props.onQueryScopeChange(
+                event.currentTarget.value as 'all' | 'titles' | 'transcript'
+              )
+            }
+          >
+            {searchScopeOptions.map((option) => (
+              <option key={option.value} value={option.value}>
+                {option.label}
+              </option>
+            ))}
+          </select>
+        </div>
+
         <section className="filter-area" aria-label={t('search.filterArea')}>
           <div className="filter-area-label">{t('search.filterArea')}</div>
-          <div className="search-box">
-            <input
-              placeholder={t('search.typeKeywords')}
-              value={props.query}
-              onChange={(event) => props.onQueryChange(event.currentTarget.value)}
-            />
+
+          <div className="filter-control-stack">
             <select
-              aria-label={t('search.searchScope')}
-              value={props.queryScope}
+              aria-label={t('search.timeRange')}
+              value={props.timeRange}
               onChange={(event) =>
-                props.onQueryScopeChange(
-                  event.currentTarget.value as 'all' | 'titles' | 'transcript'
-                )
+                props.onTimeRangeChange(event.currentTarget.value as SearchTimeRange)
               }
             >
-              {searchScopeOptions.map((option) => (
+              {timeRangeOptions.map((option) => (
                 <option key={option.value} value={option.value}>
                   {option.label}
                 </option>
               ))}
             </select>
-          </div>
-
-          <div className="search-filters">
-            <select
-              aria-label={t('search.timeRange')}
-              value={props.timeRange}
-              onChange={(event) =>
-                props.onTimeRangeChange(
-                  event.currentTarget.value as 'last-7-days' | 'last-30-days' | 'all-time'
-                )
-              }
-            >
-              <option value="last-7-days">{t('search.last7Days')}</option>
-              <option value="last-30-days">{t('search.last30Days')}</option>
-              <option value="all-time">{t('search.allTime')}</option>
-            </select>
 
             <CollapsibleFilterSection
               title={t('search.platform')}
               summary={`${props.platformFilter.length}/${PLATFORM_OPTIONS.length}`}
+              expanded={openFilterSection === 'platform'}
+              onExpandedChange={(expanded) =>
+                setOpenFilterSection(expanded ? 'platform' : null)
+              }
             >
               <div className="filter-options">
                 {PLATFORM_OPTIONS.map((platform) => (
-                  <label key={platform}>
-                    <input
-                      type="checkbox"
-                      checked={props.platformFilter.includes(platform)}
-                      onChange={() =>
-                        props.onPlatformFilterChange(
-                          togglePlatformFilter(props.platformFilter, platform)
-                        )
+                  <button
+                    key={platform}
+                    type="button"
+                    className="filter-option-row"
+                    aria-pressed={props.platformFilter.includes(platform)}
+                    onClick={() =>
+                      props.onPlatformFilterChange(
+                        togglePlatformFilter(props.platformFilter, platform)
+                      )
+                    }
+                  >
+                    <span
+                      className={
+                        props.platformFilter.includes(platform)
+                          ? 'selection-button filter-option-check is-selected'
+                          : 'selection-button filter-option-check'
                       }
-                    />
+                      aria-hidden="true"
+                    >
+                      <span className="selection-button-check" aria-hidden="true" />
+                    </span>
                     <span className="filter-option-label">{PLATFORM_LABELS[platform]}</span>
-                  </label>
+                  </button>
                 ))}
               </div>
             </CollapsibleFilterSection>
@@ -226,27 +278,45 @@ export function SearchRail(props: {
             <CollapsibleFilterSection
               title={t('search.projects')}
               summary={`${selectedProjectCount}/${props.projects.length}`}
+              expanded={openFilterSection === 'projects'}
+              onExpandedChange={(expanded) =>
+                setOpenFilterSection(expanded ? 'projects' : null)
+              }
             >
               <div className="filter-options">
                 {props.projects.map((project) => (
-                  <label key={project.id} title={project.localPath}>
-                    <input
-                      type="checkbox"
-                      checked={props.selectedProjectIds.has(project.id)}
-                      onChange={() => toggleProject(project.id)}
-                    />
+                  <button
+                    key={project.id}
+                    type="button"
+                    className="filter-option-row"
+                    title={project.localPath}
+                    aria-pressed={props.selectedProjectIds.has(project.id)}
+                    onClick={() => toggleProject(project.id)}
+                  >
+                    <span
+                      className={
+                        props.selectedProjectIds.has(project.id)
+                          ? 'selection-button filter-option-check is-selected'
+                          : 'selection-button filter-option-check'
+                      }
+                      aria-hidden="true"
+                    >
+                      <span className="selection-button-check" aria-hidden="true" />
+                    </span>
                     <span className="filter-option-label">{project.name}</span>
-                  </label>
+                  </button>
                 ))}
               </div>
             </CollapsibleFilterSection>
-          </div>
 
-          <div className="search-toolbar">
             <CollapsibleFilterSection
               title={t('search.groupBy')}
               summary={activeGroupByLabel}
-              defaultExpanded
+              className="group-by-filter-section"
+              expanded={openFilterSection === 'groupBy'}
+              onExpandedChange={(expanded) =>
+                setOpenFilterSection(expanded ? 'groupBy' : null)
+              }
             >
               <div className="group-by-options" role="group" aria-label={t('search.groupBy')}>
                 {groupByOptions.map((option) => (
@@ -295,10 +365,9 @@ export function SearchRail(props: {
       </div>
 
       <footer className="search-footer">
-        <div>
-          <p className="search-footer-label">{t('search.selected')}</p>
-          <strong>{t('search.sessionsCount', { count: props.selectedSessionIds.size })}</strong>
-        </div>
+        <p className="search-footer-selection">
+          {t('search.selectedSessionsCount', { count: props.selectedSessionIds.size })}
+        </p>
         <div className="search-footer-actions">
           <button type="button" onClick={props.onRescan}>
             {t('search.rescan')}
