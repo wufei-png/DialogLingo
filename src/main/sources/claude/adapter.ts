@@ -11,6 +11,20 @@ import {
 
 type JsonMap = Record<string, unknown>
 type ParsedClaudeTurn = ConversationTurn & { row: JsonMap; timestamp: string }
+export type ClaudeAdapterPaths = {
+  cliRoot: string
+  desktopCodeSessionRoot?: string
+}
+
+type DesktopCodeSessionMetadata = {
+  transcriptSessionId: string
+  title: string | null
+  cwd: string | null
+  createdAt: string | null
+  lastActivityAt: string | null
+  archived: boolean
+  sortTimeMs: number
+}
 
 function walkProjectLogs(root: string) {
   const projectsRoot = path.join(root, 'projects')
@@ -34,12 +48,143 @@ function walkProjectLogs(root: string) {
   return files
 }
 
+function walkDesktopCodeSessionMetadata(root: string | undefined) {
+  if (!root || !fs.existsSync(root)) {
+    return []
+  }
+
+  const files: string[] = []
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    const fullPath = path.join(root, entry.name)
+    if (entry.isDirectory()) {
+      files.push(...walkDesktopCodeSessionMetadata(fullPath))
+    } else if (
+      entry.isFile() &&
+      entry.name.startsWith('local_') &&
+      entry.name.endsWith('.json')
+    ) {
+      files.push(fullPath)
+    }
+  }
+
+  return files
+}
+
 function readJsonl(filePath: string): JsonMap[] {
   return fs
     .readFileSync(filePath, 'utf8')
     .split('\n')
     .filter(Boolean)
     .map((line) => JSON.parse(line) as JsonMap)
+}
+
+function readJsonFile(filePath: string): JsonMap | null {
+  try {
+    return JSON.parse(fs.readFileSync(filePath, 'utf8')) as JsonMap
+  } catch {
+    return null
+  }
+}
+
+function toTrimmedString(value: unknown) {
+  return typeof value === 'string' && value.trim() ? value.trim() : null
+}
+
+function stripLocalPrefix(value: string) {
+  return value.startsWith('local_') ? value.slice('local_'.length) : value
+}
+
+function toTimestampMs(value: unknown) {
+  if (typeof value === 'number' && Number.isFinite(value) && value > 0) {
+    return value
+  }
+
+  if (typeof value !== 'string' || !value.trim()) {
+    return null
+  }
+
+  const trimmed = value.trim()
+  if (/^\d+$/.test(trimmed)) {
+    const numeric = Number(trimmed)
+    return Number.isFinite(numeric) && numeric > 0 ? numeric : null
+  }
+
+  const parsed = Date.parse(trimmed)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function toIsoTimestamp(value: unknown) {
+  const timestamp = toTimestampMs(value)
+  return timestamp ? new Date(timestamp).toISOString() : null
+}
+
+function resolveDesktopTranscriptSessionId(row: JsonMap, filePath: string) {
+  const cliSessionId = toTrimmedString(row.cliSessionId)
+  const normalizedCliSessionId = cliSessionId ? stripLocalPrefix(cliSessionId) : null
+  if (normalizedCliSessionId) {
+    return normalizedCliSessionId
+  }
+
+  const sessionId =
+    toTrimmedString(row.sessionId) ?? path.basename(filePath, '.json')
+  return stripLocalPrefix(sessionId) || stripLocalPrefix(path.basename(filePath, '.json'))
+}
+
+function readDesktopCodeSessionMetadata(
+  root: string | undefined
+): Map<string, DesktopCodeSessionMetadata> {
+  const sessions = new Map<string, DesktopCodeSessionMetadata>()
+
+  for (const filePath of walkDesktopCodeSessionMetadata(root)) {
+    const row = readJsonFile(filePath)
+    if (!row) {
+      continue
+    }
+
+    const transcriptSessionId = resolveDesktopTranscriptSessionId(row, filePath)
+    if (!transcriptSessionId) {
+      continue
+    }
+
+    const createdAt = toIsoTimestamp(row.createdAt)
+    const lastActivityAt = toIsoTimestamp(row.lastActivityAt)
+    const sortTimeMs =
+      toTimestampMs(row.lastActivityAt) ?? toTimestampMs(row.createdAt) ?? 0
+    const metadata: DesktopCodeSessionMetadata = {
+      transcriptSessionId,
+      title: toTrimmedString(row.title),
+      cwd: toTrimmedString(row.cwd) ?? toTrimmedString(row.originCwd),
+      createdAt,
+      lastActivityAt,
+      archived: row.isArchived === true,
+      sortTimeMs
+    }
+    const current = sessions.get(transcriptSessionId)
+
+    if (!current || metadata.sortTimeMs >= current.sortTimeMs) {
+      sessions.set(transcriptSessionId, metadata)
+    }
+  }
+
+  return sessions
+}
+
+function applyDesktopCodeMetadata(
+  summary: SessionSummary,
+  metadata: DesktopCodeSessionMetadata | undefined
+): SessionSummary {
+  if (!metadata) {
+    return summary
+  }
+
+  return {
+    ...summary,
+    title: metadata.title ?? summary.title,
+    projectPath: metadata.cwd ?? summary.projectPath,
+    startedAt: metadata.createdAt ?? summary.startedAt,
+    updatedAt: metadata.lastActivityAt ?? summary.updatedAt,
+    archived: metadata.archived
+  }
 }
 
 function extractClaudeText(row: JsonMap) {
@@ -132,10 +277,20 @@ function findSessionFile(root: string, sessionId: string) {
   })
 }
 
-export function createClaudeAdapter(root: string): SourceAdapter {
+function normalizeClaudeAdapterPaths(rootOrPaths: string | ClaudeAdapterPaths) {
+  return typeof rootOrPaths === 'string'
+    ? { cliRoot: rootOrPaths, desktopCodeSessionRoot: undefined }
+    : rootOrPaths
+}
+
+export function createClaudeAdapter(rootOrPaths: string | ClaudeAdapterPaths): SourceAdapter {
+  const paths = normalizeClaudeAdapterPaths(rootOrPaths)
+
   return {
     async listSessions(filters: SessionFilterInput) {
-      return walkProjectLogs(root)
+      const desktopMetadata = readDesktopCodeSessionMetadata(paths.desktopCodeSessionRoot)
+
+      return walkProjectLogs(paths.cliRoot)
         .map((filePath) => {
           const rows = readJsonl(filePath)
           const turns = extractClaudeTurns(filePath, rows)
@@ -163,12 +318,15 @@ export function createClaudeAdapter(root: string): SourceAdapter {
             turns: turns.map(toConversationTurn)
           }
         })
+        .map((summary) =>
+          applyDesktopCodeMetadata(summary, desktopMetadata.get(summary.id))
+        )
         .filter((summary) => matchesSessionFilters(summary, filters))
         .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
     },
 
     async readSession(sessionId: string, options?: { locator?: string }) {
-      const filePath = options?.locator ?? findSessionFile(root, sessionId)
+      const filePath = options?.locator ?? findSessionFile(paths.cliRoot, sessionId)
       if (!filePath) {
         return []
       }

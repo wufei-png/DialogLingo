@@ -403,6 +403,8 @@ Do not add same-source card clustering to v1. If later needed, treat it as a fol
 - `scan on launch` on/off
 - `include archived sessions` on/off
 
+When `include archived sessions` is off, archived rows may remain in the local SQLite index cache to preserve workbook source references, but archived sessions and archived-only projects must not appear in Search & Select results or default launch selections.
+
 Do not add background periodic scan scheduling to v1 by default. Launch-time scan plus manual `Rescan` is enough.
 
 ## UI Motion Policy

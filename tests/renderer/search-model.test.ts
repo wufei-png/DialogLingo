@@ -3,6 +3,7 @@ import {
   PLATFORM_OPTIONS,
   applySessionSelection,
   areAllSessionIdsSelected,
+  buildSessionSearchInput,
   flattenSessionTree,
   groupSessions,
   resolveSearchBootPlan,
@@ -71,6 +72,30 @@ describe('searchModel', () => {
     expect(enabled.selectedProjectIds).toEqual(['p1'])
     expect(enabled.focusedSessionId).toBe('s1')
     expect(enabled.collapsedGroupIds).toEqual(['codex'])
+  })
+
+  it('maps the archived-session setting into the search input', () => {
+    const baseInput = {
+      query: 'ranking',
+      scope: 'all' as const,
+      groupBy: 'platform' as const,
+      timeRange: null,
+      projects: ['/workspace/dialoglingo'],
+      platforms: ['codex'] as Array<'codex'>
+    }
+
+    expect(
+      buildSessionSearchInput({
+        ...baseInput,
+        includeArchivedSessions: false
+      }).includeArchived
+    ).toBe(false)
+    expect(
+      buildSessionSearchInput({
+        ...baseInput,
+        includeArchivedSessions: true
+      }).includeArchived
+    ).toBe(true)
   })
 
   it('groups by platform and keeps navigation rows title-only', () => {

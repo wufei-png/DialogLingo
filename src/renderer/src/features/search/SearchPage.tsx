@@ -1,13 +1,18 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
+import type { ScanEvent } from '../../../../shared/ipc/events'
+import type { Settings } from '../../../../shared/schemas/settings'
 import { ResizableSplitPane } from '../../components/ResizableSplitPane'
 import { trpc } from '../../lib/trpc'
 import {
   PLATFORM_OPTIONS,
   applySessionSelection,
+  buildSessionSearchInput,
   groupSessions,
   resolveSearchBootPlan,
   type ProjectOption,
   type SearchGroupBy,
+  type SearchQueryScope,
   type SearchPlatform
 } from './searchModel'
 import { SearchRail } from './SearchRail'
@@ -28,7 +33,6 @@ type SessionPreview = {
   snippet: { snippet?: string } | null
 }
 
-type QueryScope = 'all' | 'titles' | 'transcript'
 type TimeRangePreset = 'last-7-days' | 'last-30-days' | 'all-time'
 type GenerationPromptPreview = {
   prompt: string
@@ -88,7 +92,7 @@ export function SearchPage(props: {
     ...PLATFORM_OPTIONS
   ])
   const [query, setQuery] = useState('')
-  const [queryScope, setQueryScope] = useState<QueryScope>('all')
+  const [queryScope, setQueryScope] = useState<SearchQueryScope>('all')
   const [timeRange, setTimeRange] = useState<TimeRangePreset>('last-7-days')
   const [groupBy, setGroupBy] = useState<SearchGroupBy>('platform')
   const [readyToLoad, setReadyToLoad] = useState(false)
@@ -96,6 +100,12 @@ export function SearchPage(props: {
   const [preview, setPreview] = useState<SessionPreview | null>(null)
   const [activeMatchIndex, setActiveMatchIndex] = useState(0)
   const [generationError, setGenerationError] = useState<string | null>(null)
+  const settingsQuery = useQuery({
+    queryKey: ['settings'],
+    queryFn: async () => (await trpc.settingsGet.query()) as Settings
+  })
+  const includeArchivedSessions =
+    settingsQuery.data?.scan.includeArchivedSessions ?? false
 
   const focusedSession = useMemo(
     () => sessions.find((session) => session.sessionId === focusedSessionId) ?? null,
@@ -152,15 +162,17 @@ export function SearchPage(props: {
       return
     }
 
-    const rows = (await trpc.sessionSearch.query({
-      query,
-      scope: queryScope,
-      groupBy,
-      timeRange: toTimeRange(timeRange),
-      projects: [...selectedProjectIds],
-      platforms: platformFilter,
-      includeArchived: false
-    })) as SearchSession[]
+    const rows = (await trpc.sessionSearch.query(
+      buildSessionSearchInput({
+        query,
+        scope: queryScope,
+        groupBy,
+        timeRange: toTimeRange(timeRange),
+        projects: [...selectedProjectIds],
+        platforms: platformFilter,
+        includeArchivedSessions
+      })
+    )) as SearchSession[]
 
     setSessions(rows)
     setSelectedSessionIds((current) => {
@@ -174,6 +186,7 @@ export function SearchPage(props: {
     )
   }, [
     groupBy,
+    includeArchivedSessions,
     platformFilter,
     query,
     queryScope,
@@ -215,6 +228,23 @@ export function SearchPage(props: {
     platformFilter.join('|'),
     selectedProjectSignature
   ])
+
+  useEffect(() => {
+    const unsubscribe = window.dialoglingoScan?.subscribe((event: ScanEvent) => {
+      if (event.phase !== 'completed') {
+        return
+      }
+
+      void (async () => {
+        await loadProjects()
+        await loadSessions()
+      })()
+    })
+
+    return () => {
+      unsubscribe?.()
+    }
+  }, [loadProjects, loadSessions])
 
   useEffect(() => {
     if (!focusedSessionId) {

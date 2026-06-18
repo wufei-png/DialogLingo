@@ -1,0 +1,3 @@
+{"type":"system","timestamp":"2026-06-14T10:00:00.000Z","sessionId":"claude-session-archived","cwd":"/workspace/archived","message":{"content":"meta"}}
+{"type":"user","timestamp":"2026-06-14T10:00:01.000Z","sessionId":"claude-session-archived","cwd":"/workspace/archived","message":{"content":"Review the archived onboarding notes."}}
+{"type":"assistant","timestamp":"2026-06-14T10:00:03.000Z","sessionId":"claude-session-archived","cwd":"/workspace/archived","message":{"content":[{"type":"text","text":"The archived notes still contain useful phrasing practice."}]}}

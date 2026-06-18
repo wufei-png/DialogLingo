@@ -1,0 +1,15 @@
+{
+  "sessionId": "local_claude-session-archived",
+  "cliSessionId": "claude-session-archived",
+  "cwd": "/workspace/archived",
+  "originCwd": "/workspace/archived-original",
+  "createdAt": 1773143205910,
+  "lastActivityAt": 1773143685086,
+  "model": "claude-sonnet-4-6",
+  "isArchived": true,
+  "title": "Archived Claude Desktop session",
+  "titleSource": "auto",
+  "permissionMode": "acceptEdits",
+  "remoteMcpServersConfig": [],
+  "completedTurns": 2
+}

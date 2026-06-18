@@ -178,4 +178,37 @@ describe('scanSessions', () => {
       }
     ])
   })
+
+  it('passes archived-session preference to source adapters', async () => {
+    const db = createTestDb()
+    const codexListSessions = vi.fn(async () => [])
+    const claudeListSessions = vi.fn(async () => [])
+    const opencodeListSessions = vi.fn(async () => [])
+    const registry: SourceRegistry = {
+      codex: {
+        listSessions: codexListSessions,
+        readSession: async () => []
+      },
+      claude: {
+        listSessions: claudeListSessions,
+        readSession: async () => []
+      },
+      opencode: {
+        listSessions: opencodeListSessions,
+        readSession: async () => []
+      }
+    }
+
+    await scanSessions(db, registry, { includeArchived: true })
+
+    for (const listSessions of [
+      codexListSessions,
+      claudeListSessions,
+      opencodeListSessions
+    ]) {
+      expect(listSessions).toHaveBeenCalledWith(
+        expect.objectContaining({ includeArchived: true })
+      )
+    }
+  })
 })

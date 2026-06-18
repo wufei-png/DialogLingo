@@ -1,5 +1,6 @@
 export type SearchPlatform = 'codex' | 'claude' | 'opencode'
 export type SearchGroupBy = 'platform' | 'time' | 'project'
+export type SearchQueryScope = 'all' | 'titles' | 'transcript'
 export type SearchBootStatus = {
   scanOnLaunch: boolean
   launchPlan: {
@@ -77,6 +78,26 @@ export function resolveSearchBootPlan(status: SearchBootStatus) {
     selectedProjectIds: status.launchPlan?.selectedProjectIds,
     focusedSessionId: status.launchPlan?.focusedSessionId ?? null,
     collapsedGroupIds: status.launchPlan?.collapsedGroupIds
+  }
+}
+
+export function buildSessionSearchInput(input: {
+  query: string
+  scope: SearchQueryScope
+  groupBy: SearchGroupBy
+  timeRange: { from: string; to: string } | null
+  projects: string[]
+  platforms: SearchPlatform[]
+  includeArchivedSessions: boolean
+}) {
+  return {
+    query: input.query,
+    scope: input.scope,
+    groupBy: input.groupBy,
+    timeRange: input.timeRange,
+    projects: input.projects,
+    platforms: input.platforms,
+    includeArchived: input.includeArchivedSessions
   }
 }
 

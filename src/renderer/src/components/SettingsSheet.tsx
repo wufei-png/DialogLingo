@@ -63,6 +63,10 @@ function toPercentInt(value: string, fallback: number) {
   return Math.min(100, Math.max(0, parsed))
 }
 
+function getErrorMessage(error: unknown) {
+  return error instanceof Error ? error.message : String(error)
+}
+
 export function SettingsSheet(props: Props) {
   const queryClient = useQueryClient()
   const settingsQuery = useQuery({
@@ -126,9 +130,11 @@ export function SettingsSheet(props: Props) {
     return null
   }
 
-  async function saveSettings() {
-    const current = settingsQuery.data ?? ((await trpc.settingsGet.query()) as Settings)
-    const nextExpressionTarget = toPercentInt(expressionTargetPercent, 60) / 100
+    async function saveSettings() {
+      const current = settingsQuery.data ?? ((await trpc.settingsGet.query()) as Settings)
+      const includeArchivedChanged =
+        current.scan.includeArchivedSessions !== includeArchivedSessions
+      const nextExpressionTarget = toPercentInt(expressionTargetPercent, 60) / 100
     const next: Settings = {
       ...current,
       provider: {
@@ -181,10 +187,21 @@ export function SettingsSheet(props: Props) {
         includeArchivedSessions
       }
     }
-    const saved = (await trpc.settingsSave.mutate(next)) as Settings
-    queryClient.setQueryData(['settings'], saved)
-    setSaveMessage('Saved.')
-  }
+      const saved = (await trpc.settingsSave.mutate(next)) as Settings
+      queryClient.setQueryData(['settings'], saved)
+      if (!includeArchivedChanged) {
+        setSaveMessage('Saved.')
+        return
+      }
+
+      setSaveMessage('Saved. Rescanning sessions...')
+      try {
+        await trpc.sessionRescan.mutate()
+        setSaveMessage('Saved and rescanned sessions.')
+      } catch (error) {
+        setSaveMessage(`Saved, but rescan failed: ${getErrorMessage(error)}`)
+      }
+    }
 
   async function resetAllSettings() {
     const saved = (await trpc.settingsReset.mutate()) as Settings

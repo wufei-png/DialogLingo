@@ -21,4 +21,45 @@ describe('createClaudeAdapter', () => {
       )
     ).toBe(true)
   })
+
+  it('applies Claude Desktop Code archive metadata to CLI transcripts', async () => {
+    const adapter = createClaudeAdapter({
+      cliRoot: 'tests/fixtures/claude',
+      desktopCodeSessionRoot: 'tests/fixtures/claude-desktop-code'
+    })
+
+    const activeSessions = await adapter.listSessions({
+      query: '',
+      timeRange: null,
+      projects: [],
+      platforms: [],
+      includeArchived: false
+    })
+    const allSessions = await adapter.listSessions({
+      query: '',
+      timeRange: null,
+      projects: [],
+      platforms: [],
+      includeArchived: true
+    })
+    const archived = allSessions.find(
+      (session) => session.id === 'claude-session-archived'
+    )
+
+    expect(activeSessions.map((session) => session.id)).not.toContain(
+      'claude-session-archived'
+    )
+    expect(archived).toMatchObject({
+      id: 'claude-session-archived',
+      title: 'Archived Claude Desktop session',
+      projectPath: '/workspace/archived',
+      archived: true,
+      updatedAt: '2026-03-10T11:54:45.086Z'
+    })
+
+    const turns = await adapter.readSession('claude-session-archived')
+
+    expect(turns.map((turn) => turn.role)).toEqual(['user', 'assistant'])
+    expect(turns[1]?.text).toContain('useful phrasing practice')
+  })
 })

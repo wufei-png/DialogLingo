@@ -203,9 +203,19 @@ describe('createSessionSearch', () => {
       platforms: [],
       includeArchived: false
     })
+    const archivedTranscriptRows = search({
+      query: 'transcript keyword only',
+      scope: 'transcript',
+      groupBy: 'platform',
+      timeRange: null,
+      projects: [],
+      platforms: [],
+      includeArchived: true
+    })
 
     expect(titleRows.map((row) => row.sessionId)).toEqual(['s1'])
     expect(transcriptRows).toEqual([])
+    expect(archivedTranscriptRows.map((row) => row.sessionId)).toEqual(['s2'])
   })
 
   it('honors project, platform, and time filters together', () => {

@@ -68,10 +68,11 @@ export function matchesSessionFilters(
     filters.projects.length === 0 || filters.projects.includes(summary.projectPath)
   const platformPass =
     filters.platforms.length === 0 || filters.platforms.includes(summary.sourceType)
+  const archivedPass = filters.includeArchived || !summary.archived
   const timePass =
     !filters.timeRange ||
     (summary.updatedAt >= filters.timeRange.from &&
       summary.updatedAt <= filters.timeRange.to)
 
-  return queryPass && projectPass && platformPass && timePass
+  return queryPass && projectPass && platformPass && archivedPass && timePass
 }

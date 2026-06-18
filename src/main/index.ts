@@ -125,16 +125,22 @@ async function runSessionScan(source: 'launch' | 'manual') {
   activeSessionScan = (async () => {
     const startedAt = Date.now()
     try {
+      const includeArchived = settings.get().scan.includeArchivedSessions
       const result = await scanSessions(sqlite, undefined, {
-        includeArchived: settings.get().scan.includeArchivedSessions
+        includeArchived
       })
 
-      const discoveredProjects = sqlite
-        .prepare('select id from projects order by name asc')
-        .all() as Array<{ id: string }>
+      const discoveredProjects = listActiveProjects(sqlite, { includeArchived })
       const discoveredSessionIds = sqlite
-        .prepare('select id from sessions order by updated_at desc')
-        .all() as Array<{ id: string }>
+        .prepare(
+          `
+            select id
+            from sessions
+            where ? = 1 or is_archived = 0
+            order by updated_at desc
+          `
+        )
+        .all(includeArchived ? 1 : 0) as Array<{ id: string }>
 
       const launchPlan = buildLaunchPlan({
         settings: { scanOnLaunch: settings.get().scan.scanOnLaunch },
@@ -441,7 +447,10 @@ function createRouter() {
       }
     },
     projects: {
-      list: () => listActiveProjects(sqlite)
+      list: () =>
+        listActiveProjects(sqlite, {
+          includeArchived: settings.get().scan.includeArchivedSessions
+        })
     },
     scan: {
       getLaunchStatus: () => ({
