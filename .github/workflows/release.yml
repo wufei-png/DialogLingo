@@ -44,6 +44,9 @@ jobs:
     name: Package ${{ matrix.name }}
     needs: validate
     runs-on: ${{ matrix.os }}
+    env:
+      HAS_MAC_SIGNING: ${{ secrets.MAC_CSC_LINK != '' && secrets.MAC_CSC_KEY_PASSWORD != '' }}
+      HAS_WIN_SIGNING: ${{ secrets.WIN_CSC_LINK != '' && secrets.WIN_CSC_KEY_PASSWORD != '' }}
 
     strategy:
       fail-fast: false
@@ -85,22 +88,16 @@ jobs:
       - name: Verify package inputs
         run: npm run verify:package-inputs
 
-      - name: Build and publish draft release assets
-        shell: bash
-        run: |
-          if [ -z "${CSC_LINK:-}" ]; then
-            unset CSC_LINK CSC_KEY_PASSWORD APPLE_ID APPLE_APP_SPECIFIC_PASSWORD APPLE_TEAM_ID
-          fi
+      - name: Build and publish unsigned draft release assets
+        if: ${{ matrix.platform == 'linux' || (matrix.platform == 'mac' && env.HAS_MAC_SIGNING != 'true') || (matrix.platform == 'win' && env.HAS_WIN_SIGNING != 'true') }}
+        run: npx electron-builder ${{ matrix.args }} --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          CSC_IDENTITY_AUTO_DISCOVERY: false
 
-          if [ -z "${WIN_CSC_LINK:-}" ]; then
-            unset WIN_CSC_LINK WIN_CSC_KEY_PASSWORD
-          fi
-
-          if [ -z "${CSC_LINK:-}" ] && [ -z "${WIN_CSC_LINK:-}" ]; then
-            export CSC_IDENTITY_AUTO_DISCOVERY=false
-          fi
-
-          npx electron-builder ${{ matrix.args }} --publish always
+      - name: Build and publish signed macOS draft release assets
+        if: ${{ matrix.platform == 'mac' && env.HAS_MAC_SIGNING == 'true' }}
+        run: npx electron-builder ${{ matrix.args }} --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
@@ -108,5 +105,11 @@ jobs:
           APPLE_ID: ${{ secrets.APPLE_ID }}
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+
+      - name: Build and publish signed Windows draft release assets
+        if: ${{ matrix.platform == 'win' && env.HAS_WIN_SIGNING == 'true' }}
+        run: npx electron-builder ${{ matrix.args }} --publish always
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           WIN_CSC_LINK: ${{ secrets.WIN_CSC_LINK }}
           WIN_CSC_KEY_PASSWORD: ${{ secrets.WIN_CSC_KEY_PASSWORD }}
