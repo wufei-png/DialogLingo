@@ -1,8 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import { createDb } from '../../../src/main/db/client'
-import { runMigrations } from '../../../src/main/db/migrate'
+import {
+  resolveDefaultMigrationsDir,
+  runMigrations
+} from '../../../src/main/db/migrate'
 
 describe('runMigrations', () => {
+  it('resolves the source migrations directory during tests', () => {
+    expect(resolveDefaultMigrationsDir()).toContain('src/main/db/migrations')
+  })
+
   it('records applied migrations so the trigram search table is not rebuilt on every run', () => {
     const { sqlite } = createDb(':memory:')
 

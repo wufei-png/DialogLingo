@@ -22,7 +22,7 @@
     "dev": "npm run prepare:native:electron && node scripts/run-electron-vite-dev.mjs",
     "dev:debug": "npm run prepare:native:electron && node scripts/run-electron-vite-dev.mjs --debug",
     "dev:mock-llm": "npm run prepare:native:electron && node scripts/run-electron-vite-dev.mjs --mock-llm",
-    "build": "npm run prepare:native:electron && electron-vite build",
+    "build": "npm run prepare:native:electron && electron-vite build && node scripts/copy-db-migrations.mjs",
     "preview": "electron-vite preview",
     "postinstall": "npm run rebuild:native:node && npm run capture:native:node",
     "ci:verify": "npm run typecheck && npm test && npm run build",

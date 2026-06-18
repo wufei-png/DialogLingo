@@ -1,11 +1,36 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { pathToFileURL } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { createDb } from './client'
+
+export function resolveDefaultMigrationsDir() {
+  const moduleDir = path.dirname(fileURLToPath(import.meta.url))
+  const candidates = [
+    path.join(moduleDir, 'db', 'migrations'),
+    path.join(moduleDir, 'migrations'),
+    path.resolve(process.cwd(), 'src/main/db/migrations')
+  ]
+
+  const migrationsDir = candidates.find((candidate) => {
+    try {
+      return fs.statSync(candidate).isDirectory()
+    } catch {
+      return false
+    }
+  })
+
+  if (!migrationsDir) {
+    throw new Error(
+      `Database migrations directory not found. Checked: ${candidates.join(', ')}`
+    )
+  }
+
+  return migrationsDir
+}
 
 export function runMigrations(
   sqlite: ReturnType<typeof createDb>['sqlite'],
-  migrationsDir = path.resolve('src/main/db/migrations')
+  migrationsDir = resolveDefaultMigrationsDir()
 ) {
   sqlite.exec(`
     create table if not exists schema_migrations (

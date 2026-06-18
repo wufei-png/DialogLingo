@@ -45,7 +45,7 @@ jobs:
     needs: validate
     runs-on: ${{ matrix.os }}
     env:
-      HAS_MAC_SIGNING: ${{ secrets.MAC_CSC_LINK != '' && secrets.MAC_CSC_KEY_PASSWORD != '' }}
+      HAS_MAC_SIGNING: ${{ secrets.MAC_CSC_LINK != '' && secrets.MAC_CSC_KEY_PASSWORD != '' && secrets.APPLE_ID != '' && secrets.APPLE_APP_SPECIFIC_PASSWORD != '' && secrets.APPLE_TEAM_ID != '' }}
       HAS_WIN_SIGNING: ${{ secrets.WIN_CSC_LINK != '' && secrets.WIN_CSC_KEY_PASSWORD != '' }}
 
     strategy:
@@ -89,11 +89,17 @@ jobs:
         run: npm run verify:package-inputs
 
       - name: Build and publish unsigned draft release assets
-        if: ${{ matrix.platform == 'linux' || (matrix.platform == 'mac' && env.HAS_MAC_SIGNING != 'true') || (matrix.platform == 'win' && env.HAS_WIN_SIGNING != 'true') }}
+        if: ${{ matrix.platform == 'linux' || (matrix.platform == 'win' && env.HAS_WIN_SIGNING != 'true') }}
         run: npx electron-builder ${{ matrix.args }} --publish always
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: false
+
+      - name: Build and publish ad-hoc signed macOS draft release assets
+        if: ${{ matrix.platform == 'mac' && env.HAS_MAC_SIGNING != 'true' }}
+        run: npx electron-builder ${{ matrix.args }} --publish always -c.mac.identity=- -c.mac.hardenedRuntime=false
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build and publish signed macOS draft release assets
         if: ${{ matrix.platform == 'mac' && env.HAS_MAC_SIGNING == 'true' }}

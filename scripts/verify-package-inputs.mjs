@@ -10,6 +10,30 @@ const betterSqlitePackageDir = path.dirname(
 
 const requiredFiles = [
   path.join(rootDir, 'dist-electron', 'main', 'index.js'),
+  path.join(
+    rootDir,
+    'dist-electron',
+    'main',
+    'db',
+    'migrations',
+    '0000_initial.sql'
+  ),
+  path.join(
+    rootDir,
+    'dist-electron',
+    'main',
+    'db',
+    'migrations',
+    '0001_session_fts.sql'
+  ),
+  path.join(
+    rootDir,
+    'dist-electron',
+    'main',
+    'db',
+    'migrations',
+    '0002_session_search_trigram.sql'
+  ),
   path.join(rootDir, 'dist-electron', 'preload', 'index.js'),
   path.join(rootDir, 'dist-electron', 'renderer', 'index.html'),
   path.join(
