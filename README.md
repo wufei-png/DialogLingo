@@ -2,6 +2,8 @@
 
 [中文版](README_CN.md) | English
 
+![DialogLingo cover](imgs/cover/cover1.png)
+
 DialogLingo turns local AI-agent chat history into reviewable English learning workbooks and Anki-ready decks.
 
 If English is currently the smoothest way to work with AI agents, your everyday conversations with tools like Codex, Claude Code, and OpenCode already contain useful learning material. DialogLingo pulls those local conversations into a desktop app, lets you select the sessions that matter, generates `Expression` and `Sentence` study items, and exports the result to Anki or text bundles.

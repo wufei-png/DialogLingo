@@ -2,6 +2,8 @@
 
 [English](README.md) | 中文版
 
+![DialogLingo 封面](imgs/cover/cover1.png)
+
 DialogLingo 是一个本地优先的桌面应用，用来把 AI agent 的本地聊天历史转成可审核的英语学习册，并导出为 Anki 可用的卡片包或文本包。
 
 现在和 AI 聊天，用英语通常最顺畅，效果也最好。如果你已经在用 Codex、Claude Code、OpenCode 这类 agent 工具开发，那么你的日常对话里其实已经有很多真实语境。DialogLingo 会读取这些本地对话历史，让你筛选会话、生成 `Expression` 和 `Sentence` 两类学习条目，再导出到 Anki 或其他学习工具。
