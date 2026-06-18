@@ -1005,6 +1005,36 @@ button {
   gap: 12px;
 }
 
+.workbook-stopped-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 16px;
+  color: #4b5563;
+  font-size: 0.9rem;
+}
+
+.workbook-stopped-warning {
+  color: #92400e;
+}
+
+.workbook-stopped-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.workbook-stopped-actions button {
+  padding: 10px 12px;
+  border: 0;
+  border-radius: 12px;
+  background: #e5e7eb;
+}
+
+.workbook-stopped-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .workbook-page {
   display: grid;
   gap: 18px;

@@ -18,7 +18,11 @@ export function useJobSubscription() {
         failureCount: event.failureCount,
         currentSessionTitle: event.currentSessionTitle,
         currentBatchLabel: event.currentBatchLabel,
+        lastCheckpoint: event.lastCheckpoint ?? null,
+        failedBatchCount: event.failedBatchCount ?? 0,
         failureReason: event.failureReason ?? null,
+        canResume: event.canResume ?? false,
+        resumeBlockedReason: event.resumeBlockedReason ?? null,
         workbookId: null
       })
     })

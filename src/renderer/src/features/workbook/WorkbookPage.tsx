@@ -18,6 +18,7 @@ import {
   unpinWorkbookSource,
   type WorkbookSourceMode
 } from './workbookModel'
+import { getWorkbookStoppedState } from './workbookStoppedModel'
 
 type WorkbookItem = {
   id: string
@@ -68,6 +69,8 @@ export function WorkbookPage(props: {
   onWorkbookSplitRatioChange: (ratio: number) => void
   onWorkbookSplitRatioCommit: (ratio: number) => void
   onWorkbookSourcePinnedChange: (pinned: boolean) => Promise<void>
+  onWorkbookReady: (payload: { jobId: string; workbookId: string }) => void
+  onBackToSearch: () => void
   jobId: string | null
   workbookId: string | null
 }) {
@@ -81,6 +84,10 @@ export function WorkbookPage(props: {
   const [activeMatchIndex, setActiveMatchIndex] = useState(0)
   const [focusTargetRevision, setFocusTargetRevision] = useState(0)
   const [exportOpen, setExportOpen] = useState(false)
+  const [stoppedActionPending, setStoppedActionPending] = useState<
+    'resume' | 'restart' | null
+  >(null)
+  const [stoppedActionError, setStoppedActionError] = useState<string | null>(null)
 
   useJobSubscription()
 
@@ -97,7 +104,13 @@ export function WorkbookPage(props: {
         createdItemCount: number
         warningCount: number
         failureCount: number
+        currentSessionTitle?: string | null
+        currentBatchLabel?: string | null
+        lastCheckpoint?: string | null
+        failedBatchCount?: number
         failureReason?: string | null
+        canResume?: boolean
+        resumeBlockedReason?: string | null
       }
   })
 
@@ -145,6 +158,7 @@ export function WorkbookPage(props: {
     Boolean(props.jobId) &&
     (!jobQuery.data ||
       !['completed', 'failed', 'cancelled'].includes(jobQuery.data.status))
+  const stoppedState = getWorkbookStoppedState(jobQuery.data)
 
   useEffect(() => {
     if (props.workbookSourcePinned) {
@@ -252,6 +266,48 @@ export function WorkbookPage(props: {
     await invalidateWorkbook()
   }
 
+  async function resumeGeneration() {
+    if (!props.jobId || stoppedActionPending) {
+      return
+    }
+
+    setStoppedActionPending('resume')
+    setStoppedActionError(null)
+    try {
+      const response = (await trpc.generationResume.mutate({
+        jobId: props.jobId
+      })) as { jobId: string; workbookId: string }
+      props.onWorkbookReady(response)
+    } catch (error) {
+      setStoppedActionError(
+        error instanceof Error ? error.message : 'Resume failed.'
+      )
+    } finally {
+      setStoppedActionPending(null)
+    }
+  }
+
+  async function restartGeneration() {
+    if (!props.jobId || stoppedActionPending) {
+      return
+    }
+
+    setStoppedActionPending('restart')
+    setStoppedActionError(null)
+    try {
+      const response = (await trpc.generationRestart.mutate({
+        jobId: props.jobId
+      })) as { jobId: string; workbookId: string }
+      props.onWorkbookReady(response)
+    } catch (error) {
+      setStoppedActionError(
+        error instanceof Error ? error.message : 'Restart failed.'
+      )
+    } finally {
+      setStoppedActionPending(null)
+    }
+  }
+
   function selectNextItem() {
     setSelectedItemId((current) => moveWorkbookSelection(rows, current, 1))
   }
@@ -339,8 +395,53 @@ export function WorkbookPage(props: {
       ) : isTerminalFailure ? (
         <div className="workbook-progress-state boot-card">
           <p className="boot-eyebrow">Generation stopped</p>
-          <h2>{jobQuery.data?.status}</h2>
-          <p>{jobQuery.data?.failureReason ?? 'No workbook was created.'}</p>
+          <h2>{stoppedState.statusLabel}</h2>
+          <p>{stoppedState.failureText}</p>
+          <div className="workbook-stopped-details">
+            <span>
+              Last checkpoint:{' '}
+              <strong>{stoppedState.lastCheckpoint}</strong>
+            </span>
+            <span>
+              Failed batches:{' '}
+              <strong>{stoppedState.failedBatchCount}</strong>
+            </span>
+          </div>
+          {stoppedState.resumeBlockedReason ? (
+            <p className="workbook-stopped-warning">
+              {stoppedState.resumeBlockedReason}
+            </p>
+          ) : null}
+          {stoppedActionError ? (
+            <p className="workbook-stopped-warning">{stoppedActionError}</p>
+          ) : null}
+          <div className="workbook-stopped-actions">
+            <button
+              type="button"
+              disabled={!stoppedState.canResume || Boolean(stoppedActionPending)}
+              onClick={() => void resumeGeneration()}
+            >
+              {stoppedActionPending === 'resume'
+                ? 'Resuming...'
+                : 'Resume from checkpoint'}
+            </button>
+            <button
+              type="button"
+              disabled={Boolean(stoppedActionPending)}
+              onClick={() => void restartGeneration()}
+            >
+              {stoppedActionPending === 'restart'
+                ? 'Restarting...'
+                : 'Restart generation'}
+            </button>
+            <button
+              type="button"
+              disabled={Boolean(stoppedActionPending)}
+              onClick={props.onBackToSearch}
+            >
+              Back to Search &amp; Select
+            </button>
+          </div>
         </div>
       ) : (
         <>

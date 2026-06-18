@@ -23,6 +23,18 @@ import {
   type StudyItemType
 } from './export/manifest'
 import { buildWorkbookExportRows } from './export/workbookRows'
+import {
+  buildGenerationRunSnapshot,
+  createGenerationJobCheckpoint,
+  assertGenerationJobStopped,
+  getJobResumeStatus,
+  loadResumeCheckpointPayload,
+  persistGenerationCheckpointEvent,
+  readGenerationRunSnapshot,
+  resolveGenerationSettingsForRun,
+  type GenerationRunSnapshot,
+  type JobSessionSnapshot
+} from './generation/checkpointStore'
 import { runGenerationJob } from './generation/jobRunner'
 import { writeWorkbookDraft } from './generation/materializeWorkbook'
 import { buildGenerationPromptPreview } from './generation/promptPreview'
@@ -79,6 +91,13 @@ type JobSnapshot = {
   warningCount: number
   failureCount: number
   workbookId: string | null
+  currentSessionTitle?: string | null
+  currentBatchLabel?: string | null
+  lastCheckpoint?: string | null
+  failedBatchCount?: number
+  failureReason?: string | null
+  canResume?: boolean
+  resumeBlockedReason?: string | null
 }
 
 type WorkbookListItem = {
@@ -112,6 +131,35 @@ function emitScanEvent(event: ScanEvent) {
   for (const win of BrowserWindow.getAllWindows()) {
     win.webContents.send('dialoglingo:scan-event', event)
   }
+}
+
+function readJobProgress(jobId: string) {
+  const row = sqlite
+    .prepare('select progress_json as progressJson from generation_jobs where id = ?')
+    .get(jobId) as { progressJson?: string } | undefined
+
+  if (!row?.progressJson || row.progressJson === '{}') {
+    return {}
+  }
+
+  try {
+    return JSON.parse(row.progressJson) as Record<string, unknown>
+  } catch {
+    return {}
+  }
+}
+
+function mergeJobProgress(jobId: string, patch: Record<string, unknown>) {
+  const next = {
+    ...readJobProgress(jobId),
+    ...patch
+  }
+
+  sqlite
+    .prepare('update generation_jobs set progress_json = ? where id = ?')
+    .run(JSON.stringify(next), jobId)
+
+  return next
 }
 
 async function runSessionScan(source: 'launch' | 'manual') {
@@ -199,6 +247,33 @@ function emitJobEvent(event: {
     | 'model-request-failure'
     | 'invalid-structured-payload'
 }) {
+  const previousProgress = readJobProgress(event.jobId)
+  const resumeStatus =
+    event.status === 'failed' || event.status === 'cancelled'
+      ? getJobResumeStatus(sqlite, event.jobId)
+      : {
+          canResume: false,
+          checkpoint: null,
+          resumeBlockedReason: null
+        }
+  const enrichedEvent = {
+    ...event,
+    lastCheckpoint:
+      resumeStatus.checkpoint ??
+      previousProgress.lastCheckpoint ??
+      null,
+    failedBatchCount:
+      event.failedBatchCount ??
+      previousProgress.failedBatchCount ??
+      0,
+    failureReason:
+      event.failureReason ??
+      previousProgress.failureReason ??
+      null,
+    canResume: resumeStatus.canResume,
+    resumeBlockedReason: resumeStatus.resumeBlockedReason
+  }
+
   jobSnapshots.set(event.jobId, {
     id: event.jobId,
     status: event.status,
@@ -207,7 +282,16 @@ function emitJobEvent(event: {
     createdItemCount: event.createdItemCount,
     warningCount: event.warningCount,
     failureCount: event.failureCount,
-    workbookId: jobSnapshots.get(event.jobId)?.workbookId ?? null
+    workbookId: jobSnapshots.get(event.jobId)?.workbookId ?? null,
+    currentSessionTitle: event.currentSessionTitle,
+    currentBatchLabel: event.currentBatchLabel,
+    lastCheckpoint: String(enrichedEvent.lastCheckpoint ?? '') || null,
+    failedBatchCount: Number(enrichedEvent.failedBatchCount ?? 0),
+    failureReason: enrichedEvent.failureReason
+      ? String(enrichedEvent.failureReason)
+      : null,
+    canResume: enrichedEvent.canResume,
+    resumeBlockedReason: enrichedEvent.resumeBlockedReason
   })
 
   sqlite
@@ -218,10 +302,10 @@ function emitJobEvent(event: {
         where id = ?
       `
     )
-    .run(event.status, JSON.stringify(event), event.jobId)
+    .run(event.status, JSON.stringify(enrichedEvent), event.jobId)
 
   for (const win of BrowserWindow.getAllWindows()) {
-    win.webContents.send('dialoglingo:job-event', event)
+    win.webContents.send('dialoglingo:job-event', enrichedEvent)
   }
 }
 
@@ -265,6 +349,143 @@ function querySessionRows(sessionIds: string[]) {
       }))
     }
   })
+}
+
+function querySessionSnapshots(sessionIds: string[]): JobSessionSnapshot[] {
+  const query = sqlite.prepare(
+    `
+      select
+        id as sessionId,
+        title,
+        hash
+      from sessions
+      where id = ?
+    `
+  )
+
+  return sessionIds.map((sessionId) => {
+    const row = query.get(sessionId) as JobSessionSnapshot | undefined
+    if (!row) {
+      throw new Error(`Selected session ${sessionId} is no longer indexed.`)
+    }
+
+    return row
+  })
+}
+
+async function startGenerationRun(input: {
+  snapshot: GenerationRunSnapshot
+  runtimeSettings: Pick<Settings, 'modelBackend'> & {
+    provider: Settings['provider']
+    generation: Settings['generation']
+  }
+  resumeCheckpoint?: Parameters<typeof runGenerationJob>[0]['resumeCheckpoint']
+}) {
+  validateGenerationRequest({
+    sessionIds: input.snapshot.sessionIds,
+    settings: input.runtimeSettings
+  })
+
+  const jobId = crypto.randomUUID()
+  const workbookId = `workbook-${jobId}`
+  const sessionSnapshots = querySessionSnapshots(input.snapshot.sessionIds)
+
+  createGenerationJobCheckpoint({
+    db: sqlite,
+    jobId,
+    createdAt: new Date().toISOString(),
+    snapshot: input.snapshot,
+    sessionSnapshots
+  })
+
+  jobSnapshots.set(jobId, {
+    id: jobId,
+    status: 'pending',
+    selectedSessionCount: input.snapshot.sessionIds.length,
+    processedSessionCount: 0,
+    createdItemCount: 0,
+    warningCount: 0,
+    failureCount: 0,
+    workbookId,
+    lastCheckpoint: 'generation_job_sessions',
+    failedBatchCount: 0,
+    failureReason: null,
+    canResume: false,
+    resumeBlockedReason: null
+  })
+
+  const sessionsForGeneration = querySessionRows(input.snapshot.sessionIds)
+  let completedItems: Array<{
+    id: string
+    itemType: 'Expression' | 'Sentence'
+    generatedSnapshot: unknown
+    currentSnapshot: unknown
+    sourceRefs: Array<{
+      sessionId: string
+      sourceSpanRef: string
+      excerpt: string
+    }>
+  }> = []
+  let workbookWritten = false
+
+  const worker = await runGenerationJob({
+    jobId,
+    sessions: sessionsForGeneration,
+    settings: input.runtimeSettings,
+    promptOverride: input.snapshot.promptOverride ?? undefined,
+    resumeCheckpoint: input.resumeCheckpoint ?? null,
+    onCheckpoint: (event) => {
+      const lastCheckpoint = persistGenerationCheckpointEvent(sqlite, event)
+      mergeJobProgress(jobId, { lastCheckpoint })
+    },
+    onCompletedItems: (items) => {
+      completedItems = items
+    },
+    emit: (event) => {
+      const typedEvent = event as Parameters<typeof emitJobEvent>[0]
+
+      if (typedEvent.status === 'completed' && !workbookWritten) {
+        writeWorkbookDraft(sqlite, {
+          workbookId,
+          jobId,
+          items: completedItems
+        })
+        workbookWritten = true
+
+        const current = jobSnapshots.get(jobId)
+        if (current) {
+          jobSnapshots.set(jobId, {
+            ...current,
+            status: 'completed',
+            createdItemCount: completedItems.length,
+            workbookId
+          })
+        }
+      }
+
+      emitJobEvent(typedEvent)
+    }
+  })
+
+  jobWorkers.set(jobId, worker)
+
+  return {
+    jobId,
+    workbookId,
+    requestedSessionIds: input.snapshot.sessionIds
+  }
+}
+
+function childSnapshotFromSource(input: {
+  source: GenerationRunSnapshot
+  runKind: 'resume' | 'restart'
+  parentJobId: string
+}): GenerationRunSnapshot {
+  return {
+    ...input.source,
+    runKind: input.runKind,
+    parentJobId: input.parentJobId
+  }
 }
 
 function listWorkbookItems(input: {
@@ -381,7 +602,14 @@ function createRouter() {
                 id,
                 status,
                 selected_session_count as selectedSessionCount,
-                progress_json as progressJson
+                progress_json as progressJson,
+                (
+                  select w.id
+                  from workbooks w
+                  where w.job_id = generation_jobs.id
+                  order by w.created_at desc
+                  limit 1
+                ) as workbookId
               from generation_jobs
               where id = ?
             `
@@ -392,6 +620,7 @@ function createRouter() {
               status: JobSnapshot['status']
               selectedSessionCount: number
               progressJson: string
+              workbookId: string | null
             }
           | undefined
 
@@ -415,8 +644,16 @@ function createRouter() {
                 createdItemCount?: number
                 warningCount?: number
                 failureCount?: number
+                currentSessionTitle?: string | null
+                currentBatchLabel?: string | null
+                lastCheckpoint?: string | null
+                failedBatchCount?: number
+                failureReason?: string | null
+                canResume?: boolean
+                resumeBlockedReason?: string | null
               })
             : {}
+        const resumeStatus = getJobResumeStatus(sqlite, jobId)
 
         return {
           id: row.id,
@@ -426,7 +663,15 @@ function createRouter() {
           createdItemCount: progress.createdItemCount ?? 0,
           warningCount: progress.warningCount ?? 0,
           failureCount: progress.failureCount ?? 0,
-          workbookId: null
+          currentSessionTitle: progress.currentSessionTitle ?? null,
+          currentBatchLabel: progress.currentBatchLabel ?? null,
+          lastCheckpoint:
+            progress.lastCheckpoint ?? resumeStatus.checkpoint ?? null,
+          failedBatchCount: progress.failedBatchCount ?? 0,
+          failureReason: progress.failureReason ?? null,
+          canResume: resumeStatus.canResume,
+          resumeBlockedReason: resumeStatus.resumeBlockedReason,
+          workbookId: row.workbookId
         }
       }
     },
@@ -479,104 +724,63 @@ function createRouter() {
       start: async (input: { sessionIds: string[]; promptOverride?: string | null }) => {
         const currentSettings = settings.get() as Settings
         const promptOverride = input.promptOverride?.trim()
-          ? input.promptOverride
-          : undefined
-        validateGenerationRequest({
-          sessionIds: input.sessionIds,
-          settings: currentSettings
+          ? input.promptOverride.trim()
+          : null
+
+        return startGenerationRun({
+          snapshot: buildGenerationRunSnapshot({
+            sessionIds: input.sessionIds,
+            settings: currentSettings,
+            promptOverride,
+            runKind: 'start'
+          }),
+          runtimeSettings: currentSettings
         })
-
-        const jobId = crypto.randomUUID()
-        const workbookId = `workbook-${jobId}`
-
-        sqlite
-          .prepare(
-            `
-              insert into generation_jobs (
-                id,
-                created_at,
-                status,
-                selected_filters_json,
-                selected_session_count,
-                progress_json
-              )
-              values (?, ?, 'pending', ?, ?, ?)
-            `
-          )
-          .run(
-            jobId,
-            new Date().toISOString(),
-            JSON.stringify({ sessionIds: input.sessionIds }),
-            input.sessionIds.length,
-            JSON.stringify({})
-          )
-
-        jobSnapshots.set(jobId, {
-          id: jobId,
-          status: 'pending',
-          selectedSessionCount: input.sessionIds.length,
-          processedSessionCount: 0,
-          createdItemCount: 0,
-          warningCount: 0,
-          failureCount: 0,
-          workbookId
-        })
-
-        const sessionsForGeneration = querySessionRows(input.sessionIds)
-        let completedItems: Array<{
-          id: string
-          itemType: 'Expression' | 'Sentence'
-          generatedSnapshot: unknown
-          currentSnapshot: unknown
-          sourceRefs: Array<{
-            sessionId: string
-            sourceSpanRef: string
-            excerpt: string
-          }>
-        }> = []
-        let workbookWritten = false
-
-        const worker = await runGenerationJob({
-          jobId,
-          sessions: sessionsForGeneration,
-          settings: currentSettings,
-          promptOverride,
-          onCompletedItems: (items) => {
-            completedItems = items
-          },
-          emit: (event) => {
-            const typedEvent = event as Parameters<typeof emitJobEvent>[0]
-
-            if (typedEvent.status === 'completed' && !workbookWritten) {
-              writeWorkbookDraft(sqlite, {
-                workbookId,
-                jobId,
-                items: completedItems
-              })
-              workbookWritten = true
-
-              const current = jobSnapshots.get(jobId)
-              if (current) {
-                jobSnapshots.set(jobId, {
-                  ...current,
-                  status: 'completed',
-                  createdItemCount: completedItems.length,
-                  workbookId
-                })
-              }
-            }
-
-            emitJobEvent(typedEvent)
-          }
-        })
-
-        jobWorkers.set(jobId, worker)
-
-        return {
-          jobId,
-          workbookId,
-          requestedSessionIds: input.sessionIds
+      },
+      resume: async (input: { jobId: string }) => {
+        assertGenerationJobStopped(sqlite, input.jobId)
+        const sourceSnapshot = readGenerationRunSnapshot(sqlite, input.jobId)
+        if (!sourceSnapshot) {
+          throw new Error('No generation snapshot is available for this job.')
         }
+
+        const currentSettings = settings.get() as Settings
+        const runtimeSettings = resolveGenerationSettingsForRun({
+          snapshot: sourceSnapshot,
+          currentSettings
+        })
+
+        return startGenerationRun({
+          snapshot: childSnapshotFromSource({
+            source: sourceSnapshot,
+            runKind: 'resume',
+            parentJobId: input.jobId
+          }),
+          runtimeSettings,
+          resumeCheckpoint: loadResumeCheckpointPayload(sqlite, input.jobId)
+        })
+      },
+      restart: async (input: { jobId: string }) => {
+        assertGenerationJobStopped(sqlite, input.jobId)
+        const sourceSnapshot = readGenerationRunSnapshot(sqlite, input.jobId)
+        if (!sourceSnapshot) {
+          throw new Error('No generation snapshot is available for this job.')
+        }
+
+        const currentSettings = settings.get() as Settings
+        const runtimeSettings = resolveGenerationSettingsForRun({
+          snapshot: sourceSnapshot,
+          currentSettings
+        })
+
+        return startGenerationRun({
+          snapshot: childSnapshotFromSource({
+            source: sourceSnapshot,
+            runKind: 'restart',
+            parentJobId: input.jobId
+          }),
+          runtimeSettings
+        })
       },
       cancel: async (input: { jobId: string }) => ({
         ok: true as const,

@@ -12,6 +12,9 @@ export const jobEventSchema = z.object({
   failureCount: z.number().int().nonnegative(),
   currentSessionTitle: z.string().nullable(),
   currentBatchLabel: z.string().nullable(),
+  lastCheckpoint: z.string().nullable().optional(),
+  canResume: z.boolean().optional(),
+  resumeBlockedReason: z.string().nullable().optional(),
   failedBatchCount: z.number().int().nonnegative().optional(),
   failureReason: z
     .enum([

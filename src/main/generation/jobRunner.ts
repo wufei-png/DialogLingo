@@ -1,5 +1,10 @@
 import { jobEventSchema } from '../../shared/ipc/events'
 import type { Settings } from '../../shared/schemas/settings'
+import {
+  isGenerationCheckpointEvent,
+  type GenerationCheckpointEvent,
+  type ResumeCheckpointPayload
+} from './checkpointEvents'
 import { spawnGenerationWorker } from './spawnGenerationWorker'
 
 export async function runGenerationJob(input: {
@@ -24,7 +29,9 @@ export async function runGenerationJob(input: {
     }
   }
   promptOverride?: string
+  resumeCheckpoint?: ResumeCheckpointPayload | null
   emit: (event: unknown) => void
+  onCheckpoint?: (event: GenerationCheckpointEvent) => void
   onCompletedItems: (
     items: Array<{
       id: string
@@ -40,6 +47,11 @@ export async function runGenerationJob(input: {
   ) => void
 }) {
   const worker = spawnGenerationWorker((event) => {
+    if (isGenerationCheckpointEvent(event)) {
+      input.onCheckpoint?.(event)
+      return
+    }
+
     const payload = event as {
       items?: Parameters<typeof input.onCompletedItems>[0]
     }
@@ -76,7 +88,8 @@ export async function runGenerationJob(input: {
     provider: input.settings.provider,
     modelBackend: input.settings.modelBackend,
     generation: input.settings.generation,
-    promptOverride: input.promptOverride
+    promptOverride: input.promptOverride,
+    resumeCheckpoint: input.resumeCheckpoint ?? null
   })
 
   return worker

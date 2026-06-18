@@ -19,7 +19,14 @@ export const generationJobSnapshotSchema = z.object({
   processedSessionCount: z.number().int().nonnegative(),
   createdItemCount: z.number().int().nonnegative(),
   warningCount: z.number().int().nonnegative(),
-  failureCount: z.number().int().nonnegative()
+  failureCount: z.number().int().nonnegative(),
+  currentSessionTitle: z.string().nullable().optional(),
+  currentBatchLabel: z.string().nullable().optional(),
+  lastCheckpoint: z.string().nullable().optional(),
+  failedBatchCount: z.number().int().nonnegative().optional(),
+  failureReason: z.string().nullable().optional(),
+  canResume: z.boolean().optional(),
+  resumeBlockedReason: z.string().nullable().optional()
 })
 
 export type GenerationJobSnapshot = z.infer<typeof generationJobSnapshotSchema>

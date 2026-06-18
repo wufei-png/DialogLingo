@@ -1,15 +1,18 @@
 import { parentPort } from 'node:worker_threads'
 import type { Settings } from '../../shared/schemas/settings'
 import { mineCandidateGroups } from './candidates'
+import {
+  type EnrichmentBatchRequestArtifact,
+  type GenerationCheckpointEvent,
+  type PersistedCandidate,
+  type ResumeCheckpointPayload
+} from './checkpointEvents'
 import { enrichCandidateBatch } from './enrichCandidateBatch'
 import { finalizeWorkbookItems } from './finalizeWorkbookItems'
 import { ModelAdapterError, type LearningItemDraft } from './modelAdapter'
 import { createMockLearningItemDrafts, isMockLlmEnabled } from './mockLlm'
 import { precleanTurns } from './preclean'
-import {
-  collectGenerationPromptCandidates,
-  type GenerationPromptCandidate
-} from './promptPreview'
+import { collectGenerationPromptCandidates } from './promptPreview'
 import { buildGenerationPrompt } from './prompts'
 import { rankWorkbookItems } from './ranking'
 
@@ -51,6 +54,7 @@ type StartMessage = {
     typeBalanceProfile: Settings['generation']['typeBalanceProfile']
   }
   promptOverride?: string | null
+  resumeCheckpoint?: ResumeCheckpointPayload | null
 }
 
 let cancelled = false
@@ -84,6 +88,86 @@ function emit(input: {
   parentPort?.postMessage(input)
 }
 
+function emitCheckpoint(event: GenerationCheckpointEvent) {
+  parentPort?.postMessage(event)
+}
+
+type CandidateWithSession = PersistedCandidate & {
+  session: WorkerSession
+}
+
+function candidateArtifactId(input: {
+  jobId: string
+  sessionIndex: number
+  candidateIndex: number
+}) {
+  return `candidate-${input.jobId}-${input.sessionIndex}-${input.candidateIndex}`
+}
+
+function toPersistedCandidate(input: {
+  jobId: string
+  session: WorkerSession
+  sessionIndex: number
+  candidateIndex: number
+  sourceSpanRef: string
+  promptText: string
+  role?: 'user' | 'assistant'
+}): CandidateWithSession {
+  return {
+    id: candidateArtifactId({
+      jobId: input.jobId,
+      sessionIndex: input.sessionIndex,
+      candidateIndex: input.candidateIndex
+    }),
+    sessionId: input.session.sessionId,
+    sessionTitle: input.session.title,
+    sourceSpanRef: input.sourceSpanRef,
+    promptText: input.promptText,
+    ...(input.role ? { role: input.role } : {}),
+    status: 'pending',
+    session: input.session
+  }
+}
+
+function rebaseCheckpointCandidates(input: {
+  jobId: string
+  sessions: WorkerSession[]
+  candidates: PersistedCandidate[]
+}): CandidateWithSession[] {
+  const sessionIndexById = new Map(
+    input.sessions.map((session, index) => [session.sessionId, index])
+  )
+  const nextCandidateIndexBySession = new Map<string, number>()
+
+  return input.candidates.flatMap((candidate, index) => {
+    const session = input.sessions.find((row) => row.sessionId === candidate.sessionId)
+    if (!session) {
+      return []
+    }
+    const candidateIndex =
+      nextCandidateIndexBySession.get(candidate.sessionId) ?? 0
+    nextCandidateIndexBySession.set(candidate.sessionId, candidateIndex + 1)
+
+    return [
+      {
+        ...candidate,
+        id: candidateArtifactId({
+          jobId: input.jobId,
+          sessionIndex: sessionIndexById.get(session.sessionId) ?? index,
+          candidateIndex
+        }),
+        sessionTitle: session.title,
+        session
+      }
+    ]
+  })
+}
+
+function toRequestCandidate(candidate: CandidateWithSession): PersistedCandidate {
+  const { session: _session, ...persisted } = candidate
+  return persisted
+}
+
 function toWorkerItem(input: {
   jobId: string
   session: WorkerSession
@@ -107,6 +191,77 @@ function toWorkerItem(input: {
       }
     ]
   }
+}
+
+function buildBatchRequest(input: {
+  batchIndex: number
+  prompt: string
+  candidates: CandidateWithSession[]
+}): EnrichmentBatchRequestArtifact {
+  return {
+    batchIndex: input.batchIndex,
+    prompt: input.prompt,
+    candidates: input.candidates.map(toRequestCandidate)
+  }
+}
+
+function itemsFromDrafts(input: {
+  jobId: string
+  batch: CandidateWithSession[]
+  drafts: LearningItemDraft[]
+  startIndex: number
+}) {
+  return input.drafts.map((draft, draftIndex) => {
+    const sourceCandidate = input.batch[draftIndex % Math.max(input.batch.length, 1)]
+    const fallbackSession =
+      sourceCandidate?.session ??
+      ({
+        sessionId: 'checkpoint',
+        title: 'Checkpoint',
+        turns: []
+      } satisfies WorkerSession)
+
+    return toWorkerItem({
+      jobId: input.jobId,
+      session: fallbackSession,
+      draft,
+      itemIndex: input.startIndex + draftIndex,
+      sourceSpanRef: sourceCandidate?.sourceSpanRef ?? 'checkpoint',
+      excerpt: sourceCandidate?.promptText ?? ''
+    })
+  })
+}
+
+function rebasePersistedOrder(input: {
+  orderedIds: string[]
+  sourceJobId: string
+  jobId: string
+}) {
+  return input.orderedIds.map((id) =>
+    id.replace(`-${input.sourceJobId}-`, `-${input.jobId}-`)
+  )
+}
+
+function applyPersistedOrder<T extends WorkerItem>(input: {
+  items: T[]
+  orderedIds: string[]
+  dropUnordered?: boolean
+}) {
+  if (input.orderedIds.length === 0) {
+    return input.dropUnordered ? [] : input.items
+  }
+
+  const orderById = new Map(input.orderedIds.map((id, index) => [id, index]))
+  const sourceItems = input.dropUnordered
+    ? input.items.filter((item) => orderById.has(item.id))
+    : input.items
+  const ordered = [...sourceItems].sort((left, right) => {
+    const leftOrder = orderById.get(left.id) ?? Number.MAX_SAFE_INTEGER
+    const rightOrder = orderById.get(right.id) ?? Number.MAX_SAFE_INTEGER
+    return leftOrder - rightOrder
+  })
+
+  return ordered
 }
 
 function mockSourceForSession(input: {
@@ -171,6 +326,18 @@ async function runMockStart(message: StartMessage) {
       turns: []
     } satisfies WorkerSession)
   const drafts = createMockLearningItemDrafts()
+  const mockCandidates = drafts.map((draft, itemIndex) => {
+    const source = mockSourceForSession({ session, itemIndex })
+    return toPersistedCandidate({
+      jobId: message.jobId,
+      session,
+      sessionIndex: 0,
+      candidateIndex: itemIndex,
+      sourceSpanRef: source.sourceSpanRef,
+      promptText: source.excerpt,
+      role: 'assistant'
+    })
+  })
   const items = finalizeAndRankItems(
     drafts.map((draft, itemIndex) => {
       const source = mockSourceForSession({ session, itemIndex })
@@ -185,6 +352,13 @@ async function runMockStart(message: StartMessage) {
     }),
     message.generation
   )
+
+  emitCheckpoint({
+    kind: 'checkpoint',
+    jobId: message.jobId,
+    checkpoint: 'candidate_groups',
+    candidates: mockCandidates.map(toRequestCandidate)
+  })
 
   emit({
     kind: 'phase',
@@ -212,6 +386,29 @@ async function runMockStart(message: StartMessage) {
     currentBatchLabel: 'mock llm'
   })
 
+  emitCheckpoint({
+    kind: 'checkpoint',
+    jobId: message.jobId,
+    checkpoint: 'enrichment_batch_completed',
+    batchIndex: 0,
+    request: {
+      batchIndex: 0,
+      prompt: 'mock llm',
+      candidates: mockCandidates.map(toRequestCandidate)
+    },
+    response: {
+      drafts,
+      items
+    }
+  })
+  emitCheckpoint({
+    kind: 'checkpoint',
+    jobId: message.jobId,
+    checkpoint: 'ranked_orders',
+    rankProfile: message.generation.typeBalanceProfile,
+    orderedIds: items.map((item) => item.id)
+  })
+
   emitTerminalPhases({
     jobId: message.jobId,
     totalSelectedSessionCount: message.sessions.length,
@@ -234,98 +431,58 @@ async function runMockStart(message: StartMessage) {
   })
 }
 
-async function runStart(message: StartMessage) {
-  if (isMockLlmEnabled()) {
-    await runMockStart(message)
-    return
-  }
-
-  if (message.promptOverride?.trim()) {
-    await runPromptOverrideStart(message, message.promptOverride)
-    return
-  }
-
+async function runEnrichmentFromCandidates(input: {
+  message: StartMessage
+  candidates: CandidateWithSession[]
+  customPrompt?: string | null
+  completedBatches?: ResumeCheckpointPayload['completedBatches']
+  rankedOrderIds?: string[]
+  sourceJobId?: string | null
+}) {
   const items: WorkerItem[] = []
-  const promptCandidates: Array<GenerationPromptCandidate & { session: WorkerSession }> = []
+  const completedByIndex = new Map(
+    (input.completedBatches ?? []).map((batch) => [batch.batchIndex, batch])
+  )
   let failedBatchCount = 0
+  const batchSize = input.customPrompt
+    ? Math.max(input.candidates.length, 1)
+    : input.message.generation.batchSize
+  const batchCount =
+    input.customPrompt
+      ? 1
+      : input.candidates.length === 0
+        ? 0
+        : Math.ceil(input.candidates.length / batchSize)
 
-  for (let index = 0; index < message.sessions.length; index += 1) {
-    const session = message.sessions[index]
-    if (cancelled) {
-      parentPort?.postMessage({
-        kind: 'snapshot',
-        jobId: message.jobId,
-        status: 'cancelled',
-        totalSelectedSessionCount: message.sessions.length,
-        processedSessionCount: index,
-        createdItemCount: items.length,
-        warningCount: 0,
-        failureCount: 0,
-        currentSessionTitle: session.title,
-        currentBatchLabel: null,
-        items
+  for (let batchIndex = 0; batchIndex < batchCount; batchIndex += 1) {
+    const batchStart = batchIndex * batchSize
+    const batch = input.candidates.slice(batchStart, batchStart + batchSize)
+    const batchLabel = input.customPrompt
+      ? 'custom prompt'
+      : `llm batch ${batchIndex + 1}`
+    const prompt =
+      input.customPrompt ??
+      buildGenerationPrompt({
+        sessionTitle:
+          input.message.sessions.length === 1
+            ? input.message.sessions[0]?.title ?? 'Selected session'
+            : `${input.message.sessions.length} selected sessions`,
+        expressionDifficulty: input.message.generation.expressionDifficulty,
+        candidates: batch
       })
-      return
-    }
-
-    emit({
-      kind: 'phase',
-      jobId: message.jobId,
-      status: 'normalizing',
-      totalSelectedSessionCount: message.sessions.length,
-      processedSessionCount: index,
-      createdItemCount: items.length,
-      warningCount: 0,
-      failureCount: 0,
-      currentSessionTitle: session.title,
-      currentBatchLabel: null
+    const request = buildBatchRequest({
+      batchIndex,
+      prompt,
+      candidates: batch
     })
-
-    const cleanedTurns = precleanTurns(session.turns)
-    const candidates = mineCandidateGroups(cleanedTurns).slice(
-      0,
-      message.generation.maxItemsPerSession
-    )
-    promptCandidates.push(
-      ...candidates.map((candidate) => ({
-        sessionId: session.sessionId,
-        sessionTitle: session.title,
-        sourceSpanRef: candidate.sourceSpanRef,
-        promptText: candidate.promptText,
-        ...(candidate.role ? { role: candidate.role } : {}),
-        session
-      }))
-    )
-
-    emit({
-      kind: 'phase',
-      jobId: message.jobId,
-      status: 'mining',
-      totalSelectedSessionCount: message.sessions.length,
-      processedSessionCount: index + 1,
-      createdItemCount: items.length,
-      warningCount: 0,
-      failureCount: 0,
-      currentSessionTitle: session.title,
-      currentBatchLabel: `${candidates.length} candidates`
-    })
-  }
-
-  for (
-    let batchStart = 0;
-    batchStart < promptCandidates.length;
-    batchStart += message.generation.batchSize
-  ) {
-    const batch = promptCandidates.slice(batchStart, batchStart + message.generation.batchSize)
-    const batchLabel = `llm batch ${Math.floor(batchStart / message.generation.batchSize) + 1}`
 
     if (cancelled) {
       parentPort?.postMessage({
         kind: 'snapshot',
-        jobId: message.jobId,
+        jobId: input.message.jobId,
         status: 'cancelled',
-        totalSelectedSessionCount: message.sessions.length,
-        processedSessionCount: message.sessions.length,
+        totalSelectedSessionCount: input.message.sessions.length,
+        processedSessionCount: input.message.sessions.length,
         createdItemCount: items.length,
         warningCount: 0,
         failureCount: failedBatchCount,
@@ -338,10 +495,10 @@ async function runStart(message: StartMessage) {
 
     emit({
       kind: 'phase',
-      jobId: message.jobId,
+      jobId: input.message.jobId,
       status: 'enriching',
-      totalSelectedSessionCount: message.sessions.length,
-      processedSessionCount: message.sessions.length,
+      totalSelectedSessionCount: input.message.sessions.length,
+      processedSessionCount: input.message.sessions.length,
       createdItemCount: items.length,
       warningCount: 0,
       failureCount: failedBatchCount,
@@ -349,32 +506,62 @@ async function runStart(message: StartMessage) {
       currentBatchLabel: batchLabel
     })
 
+    const completed = completedByIndex.get(batchIndex)
+    if (completed) {
+      const reusedItems = itemsFromDrafts({
+        jobId: input.message.jobId,
+        batch,
+        drafts: completed.response.drafts,
+        startIndex: items.length + 1
+      })
+      items.push(...reusedItems)
+      emitCheckpoint({
+        kind: 'checkpoint',
+        jobId: input.message.jobId,
+        checkpoint: 'enrichment_batch_completed',
+        batchIndex,
+        request,
+        response: {
+          drafts: completed.response.drafts,
+          items: reusedItems,
+          reusedFromJobId: input.sourceJobId ?? undefined
+        }
+      })
+      continue
+    }
+
+    emitCheckpoint({
+      kind: 'checkpoint',
+      jobId: input.message.jobId,
+      checkpoint: 'enrichment_batch_started',
+      batchIndex,
+      request
+    })
+
     try {
       const drafts = await enrichCandidateBatch({
-        provider: message.provider,
-        modelBackend: message.modelBackend,
-        prompt: buildGenerationPrompt({
-          sessionTitle:
-            message.sessions.length === 1
-              ? message.sessions[0]?.title ?? 'Selected session'
-              : `${message.sessions.length} selected sessions`,
-          expressionDifficulty: message.generation.expressionDifficulty,
-          candidates: batch
-        })
+        provider: input.message.provider,
+        modelBackend: input.message.modelBackend,
+        prompt
+      })
+      const batchItems = itemsFromDrafts({
+        jobId: input.message.jobId,
+        batch,
+        drafts,
+        startIndex: items.length + 1
       })
 
-      drafts.forEach((draft, draftIndex) => {
-        const sourceCandidate = batch[draftIndex % batch.length]
-        items.push(
-          toWorkerItem({
-            jobId: message.jobId,
-            session: sourceCandidate.session,
-            draft,
-            itemIndex: items.length + 1,
-            sourceSpanRef: sourceCandidate.sourceSpanRef,
-            excerpt: sourceCandidate.promptText
-          })
-        )
+      items.push(...batchItems)
+      emitCheckpoint({
+        kind: 'checkpoint',
+        jobId: input.message.jobId,
+        checkpoint: 'enrichment_batch_completed',
+        batchIndex,
+        request,
+        response: {
+          drafts,
+          items: batchItems
+        }
       })
     } catch (error) {
       failedBatchCount += 1
@@ -382,13 +569,26 @@ async function runStart(message: StartMessage) {
         error instanceof ModelAdapterError
           ? error.reason
           : 'model-request-failure'
+      const message =
+        error instanceof Error ? error.message : 'Model request failed.'
 
+      emitCheckpoint({
+        kind: 'checkpoint',
+        jobId: input.message.jobId,
+        checkpoint: 'enrichment_batch_failed',
+        batchIndex,
+        request,
+        error: {
+          reason,
+          message
+        }
+      })
       emit({
         kind: 'failure',
-        jobId: message.jobId,
+        jobId: input.message.jobId,
         status: 'failed',
-        totalSelectedSessionCount: message.sessions.length,
-        processedSessionCount: message.sessions.length,
+        totalSelectedSessionCount: input.message.sessions.length,
+        processedSessionCount: input.message.sessions.length,
         createdItemCount: items.length,
         warningCount: 0,
         failureCount: failedBatchCount,
@@ -401,21 +601,42 @@ async function runStart(message: StartMessage) {
     }
   }
 
-  const completedItems = finalizeAndRankItems(items, message.generation)
+  const completedItems = input.rankedOrderIds
+    ? applyPersistedOrder({
+        items,
+        orderedIds: rebasePersistedOrder({
+          orderedIds: input.rankedOrderIds,
+          sourceJobId: input.sourceJobId ?? input.message.jobId,
+          jobId: input.message.jobId
+        }),
+        dropUnordered: true
+      })
+    : rankWorkbookItems(
+        finalizeWorkbookItems(items),
+        input.message.generation.typeBalanceProfile
+      )
+
+  emitCheckpoint({
+    kind: 'checkpoint',
+    jobId: input.message.jobId,
+    checkpoint: 'ranked_orders',
+    rankProfile: input.message.generation.typeBalanceProfile,
+    orderedIds: completedItems.map((item) => item.id)
+  })
 
   emitTerminalPhases({
-    jobId: message.jobId,
-    totalSelectedSessionCount: message.sessions.length,
+    jobId: input.message.jobId,
+    totalSelectedSessionCount: input.message.sessions.length,
     createdItemCount: completedItems.length,
     failedBatchCount
   })
 
   parentPort?.postMessage({
     kind: 'completed',
-    jobId: message.jobId,
+    jobId: input.message.jobId,
     status: 'completed',
-    totalSelectedSessionCount: message.sessions.length,
-    processedSessionCount: message.sessions.length,
+    totalSelectedSessionCount: input.message.sessions.length,
+    processedSessionCount: input.message.sessions.length,
     createdItemCount: completedItems.length,
     warningCount: 0,
     failureCount: failedBatchCount,
@@ -425,10 +646,162 @@ async function runStart(message: StartMessage) {
   })
 }
 
+async function runResumeStart(
+  message: StartMessage,
+  checkpoint: ResumeCheckpointPayload
+) {
+  if (checkpoint.checkpoint === 'generation_job_sessions') {
+    await (message.promptOverride?.trim()
+      ? runPromptOverrideStart(message, message.promptOverride)
+      : runFreshStart(message))
+    return
+  }
+
+  const candidates = rebaseCheckpointCandidates({
+    jobId: message.jobId,
+    sessions: message.sessions,
+    candidates: checkpoint.candidates
+  })
+
+  emitCheckpoint({
+    kind: 'checkpoint',
+    jobId: message.jobId,
+    checkpoint: 'candidate_groups',
+    candidates: candidates.map(toRequestCandidate)
+  })
+
+  emit({
+    kind: 'phase',
+    jobId: message.jobId,
+    status: 'mining',
+    totalSelectedSessionCount: message.sessions.length,
+    processedSessionCount: message.sessions.length,
+    createdItemCount: 0,
+    warningCount: 0,
+    failureCount: 0,
+    currentSessionTitle: null,
+    currentBatchLabel: `${candidates.length} checkpoint candidates`
+  })
+
+  await runEnrichmentFromCandidates({
+    message,
+    candidates,
+    customPrompt: message.promptOverride,
+    completedBatches:
+      checkpoint.checkpoint === 'enrichment_batches' ||
+      checkpoint.checkpoint === 'ranked_orders'
+        ? checkpoint.completedBatches
+        : [],
+    rankedOrderIds:
+      checkpoint.checkpoint === 'ranked_orders'
+        ? checkpoint.rankedOrderIds
+        : undefined,
+    sourceJobId: checkpoint.sourceJobId
+  })
+}
+
+async function runStart(message: StartMessage) {
+  if (isMockLlmEnabled()) {
+    await runMockStart(message)
+    return
+  }
+
+  if (message.resumeCheckpoint) {
+    await runResumeStart(message, message.resumeCheckpoint)
+    return
+  }
+
+  if (message.promptOverride?.trim()) {
+    await runPromptOverrideStart(message, message.promptOverride)
+    return
+  }
+
+  await runFreshStart(message)
+}
+
+async function runFreshStart(message: StartMessage) {
+  const promptCandidates: CandidateWithSession[] = []
+
+  for (let index = 0; index < message.sessions.length; index += 1) {
+    const session = message.sessions[index]
+    if (cancelled) {
+      parentPort?.postMessage({
+        kind: 'snapshot',
+        jobId: message.jobId,
+        status: 'cancelled',
+        totalSelectedSessionCount: message.sessions.length,
+        processedSessionCount: index,
+        createdItemCount: 0,
+        warningCount: 0,
+        failureCount: 0,
+        currentSessionTitle: session.title,
+        currentBatchLabel: null,
+        items: []
+      })
+      return
+    }
+
+    emit({
+      kind: 'phase',
+      jobId: message.jobId,
+      status: 'normalizing',
+      totalSelectedSessionCount: message.sessions.length,
+      processedSessionCount: index,
+      createdItemCount: 0,
+      warningCount: 0,
+      failureCount: 0,
+      currentSessionTitle: session.title,
+      currentBatchLabel: null
+    })
+
+    const cleanedTurns = precleanTurns(session.turns)
+    const candidates = mineCandidateGroups(cleanedTurns).slice(
+      0,
+      message.generation.maxItemsPerSession
+    )
+    promptCandidates.push(
+      ...candidates.map((candidate, candidateIndex) =>
+        toPersistedCandidate({
+          jobId: message.jobId,
+          session,
+          sessionIndex: index,
+          candidateIndex,
+          sourceSpanRef: candidate.sourceSpanRef,
+          promptText: candidate.promptText,
+          ...(candidate.role ? { role: candidate.role } : {})
+        })
+      )
+    )
+
+    emit({
+      kind: 'phase',
+      jobId: message.jobId,
+      status: 'mining',
+      totalSelectedSessionCount: message.sessions.length,
+      processedSessionCount: index + 1,
+      createdItemCount: 0,
+      warningCount: 0,
+      failureCount: 0,
+      currentSessionTitle: session.title,
+      currentBatchLabel: `${candidates.length} candidates`
+    })
+  }
+
+  emitCheckpoint({
+    kind: 'checkpoint',
+    jobId: message.jobId,
+    checkpoint: 'candidate_groups',
+    candidates: promptCandidates.map(toRequestCandidate)
+  })
+
+  await runEnrichmentFromCandidates({
+    message,
+    candidates: promptCandidates
+  })
+}
+
 async function runPromptOverrideStart(message: StartMessage, promptOverride: string) {
-  const items: WorkerItem[] = []
-  const promptCandidates: GenerationPromptCandidate[] = []
-  let failedBatchCount = 0
+  const promptCandidates: CandidateWithSession[] = []
 
   for (let index = 0; index < message.sessions.length; index += 1) {
     const session = message.sessions[index]
@@ -440,12 +813,12 @@ async function runPromptOverrideStart(message: StartMessage, promptOverride: str
         status: 'cancelled',
         totalSelectedSessionCount: message.sessions.length,
         processedSessionCount: index,
-        createdItemCount: items.length,
+        createdItemCount: 0,
         warningCount: 0,
         failureCount: 0,
         currentSessionTitle: session.title,
         currentBatchLabel: null,
-        items
+        items: []
       })
       return
     }
@@ -456,7 +829,7 @@ async function runPromptOverrideStart(message: StartMessage, promptOverride: str
       status: 'normalizing',
       totalSelectedSessionCount: message.sessions.length,
       processedSessionCount: index,
-      createdItemCount: items.length,
+      createdItemCount: 0,
       warningCount: 0,
       failureCount: 0,
       currentSessionTitle: session.title,
@@ -467,7 +840,19 @@ async function runPromptOverrideStart(message: StartMessage, promptOverride: str
       sessions: [session],
       maxItemsPerSession: message.generation.maxItemsPerSession
     })
-    promptCandidates.push(...sessionCandidates)
+    promptCandidates.push(
+      ...sessionCandidates.map((candidate, candidateIndex) =>
+        toPersistedCandidate({
+          jobId: message.jobId,
+          session,
+          sessionIndex: index,
+          candidateIndex,
+          sourceSpanRef: candidate.sourceSpanRef,
+          promptText: candidate.promptText,
+          ...(candidate.role ? { role: candidate.role } : {})
+        })
+      )
+    )
 
     emit({
       kind: 'phase',
@@ -475,7 +860,7 @@ async function runPromptOverrideStart(message: StartMessage, promptOverride: str
       status: 'mining',
       totalSelectedSessionCount: message.sessions.length,
       processedSessionCount: index + 1,
-      createdItemCount: items.length,
+      createdItemCount: 0,
       warningCount: 0,
       failureCount: 0,
       currentSessionTitle: session.title,
@@ -483,98 +868,17 @@ async function runPromptOverrideStart(message: StartMessage, promptOverride: str
     })
   }
 
-  emit({
-    kind: 'phase',
+  emitCheckpoint({
+    kind: 'checkpoint',
     jobId: message.jobId,
-    status: 'enriching',
-    totalSelectedSessionCount: message.sessions.length,
-    processedSessionCount: message.sessions.length,
-    createdItemCount: items.length,
-    warningCount: 0,
-    failureCount: failedBatchCount,
-    currentSessionTitle: null,
-    currentBatchLabel: 'custom prompt'
+    checkpoint: 'candidate_groups',
+    candidates: promptCandidates.map(toRequestCandidate)
   })
 
-  try {
-    const drafts = await enrichCandidateBatch({
-      provider: message.provider,
-      modelBackend: message.modelBackend,
-      prompt: promptOverride
-    })
-    const fallbackSession =
-      message.sessions[0] ??
-      ({
-        sessionId: 'custom-prompt',
-        title: 'Custom prompt',
-        turns: []
-      } satisfies WorkerSession)
-
-    drafts.forEach((draft, draftIndex) => {
-      const sourceCandidate =
-        promptCandidates.length > 0
-          ? promptCandidates[draftIndex % promptCandidates.length]
-          : null
-      const session =
-        message.sessions.find((row) => row.sessionId === sourceCandidate?.sessionId) ??
-        fallbackSession
-
-      items.push(
-        toWorkerItem({
-          jobId: message.jobId,
-          session,
-          draft,
-          itemIndex: items.length + 1,
-          sourceSpanRef: sourceCandidate?.sourceSpanRef ?? 'custom-prompt',
-          excerpt: sourceCandidate?.promptText ?? promptOverride.slice(0, 500)
-        })
-      )
-    })
-  } catch (error) {
-    failedBatchCount += 1
-    const reason =
-      error instanceof ModelAdapterError
-        ? error.reason
-        : 'model-request-failure'
-
-    emit({
-      kind: 'failure',
-      jobId: message.jobId,
-      status: 'failed',
-      totalSelectedSessionCount: message.sessions.length,
-      processedSessionCount: message.sessions.length,
-      createdItemCount: items.length,
-      warningCount: 0,
-      failureCount: failedBatchCount,
-      failedBatchCount,
-      failureReason: reason,
-      currentSessionTitle: null,
-      currentBatchLabel: 'custom prompt'
-    })
-    return
-  }
-
-  const completedItems = finalizeAndRankItems(items, message.generation)
-
-  emitTerminalPhases({
-    jobId: message.jobId,
-    totalSelectedSessionCount: message.sessions.length,
-    createdItemCount: completedItems.length,
-    failedBatchCount
-  })
-
-  parentPort?.postMessage({
-    kind: 'completed',
-    jobId: message.jobId,
-    status: 'completed',
-    totalSelectedSessionCount: message.sessions.length,
-    processedSessionCount: message.sessions.length,
-    createdItemCount: completedItems.length,
-    warningCount: 0,
-    failureCount: failedBatchCount,
-    currentSessionTitle: null,
-    currentBatchLabel: null,
-    items: completedItems
+  await runEnrichmentFromCandidates({
+    message,
+    candidates: promptCandidates,
+    customPrompt: promptOverride
   })
 }
 

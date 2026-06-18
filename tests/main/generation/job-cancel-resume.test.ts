@@ -17,4 +17,20 @@ describe('reduceJobEvent', () => {
     expect(next.status).toBe('cancelled')
     expect(next.lastCheckpoint).toBe('ranked_orders')
   })
+
+  it('updates last checkpoint from job events', () => {
+    const next = reduceJobEvent(
+      {
+        status: 'mining',
+        lastCheckpoint: 'candidate_groups'
+      },
+      {
+        kind: 'phase',
+        status: 'enriching',
+        lastCheckpoint: 'enrichment_batches'
+      }
+    )
+
+    expect(next.lastCheckpoint).toBe('enrichment_batches')
+  })
 })

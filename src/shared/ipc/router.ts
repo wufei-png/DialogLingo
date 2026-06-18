@@ -38,6 +38,8 @@ export type RouterDeps = {
   generation: {
     previewPrompt: (input: any) => Promise<unknown>
     start: (input: any) => Promise<unknown>
+    resume: (input: any) => Promise<unknown>
+    restart: (input: any) => Promise<unknown>
     cancel: (input: any) => Promise<unknown>
   }
   workbook: {
@@ -99,6 +101,12 @@ export function buildRouter(deps: RouterDeps) {
         })
       )
       .mutation(({ input }) => deps.generation.start(input)),
+    generationResume: t.procedure
+      .input(z.object({ jobId: z.string() }))
+      .mutation(({ input }) => deps.generation.resume(input)),
+    generationRestart: t.procedure
+      .input(z.object({ jobId: z.string() }))
+      .mutation(({ input }) => deps.generation.restart(input)),
     generationCancel: t.procedure
       .input(z.object({ jobId: z.string() }))
       .mutation(({ input }) => deps.generation.cancel(input)),

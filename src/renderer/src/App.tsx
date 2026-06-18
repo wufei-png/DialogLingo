@@ -50,6 +50,16 @@ function AppSurface() {
             onWorkbookSplitRatioChange={layoutSettings.setWorkbookSplitRatio}
             onWorkbookSplitRatioCommit={layoutSettings.saveWorkbookSplitRatio}
             onWorkbookSourcePinnedChange={layoutSettings.saveWorkbookSourcePinned}
+            onWorkbookReady={(payload) => {
+              setActiveJobId(payload.jobId)
+              setActiveWorkbookId(payload.workbookId)
+              setActiveSection('workbook')
+            }}
+            onBackToSearch={() => {
+              setActiveJobId(null)
+              setActiveWorkbookId(null)
+              setActiveSection('search')
+            }}
             jobId={activeJobId}
             workbookId={activeWorkbookId}
           />
