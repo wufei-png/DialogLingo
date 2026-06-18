@@ -1,5 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react'
+import { ChevronRight, FileSearch, RotateCcw, Trash2, Undo2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { IconLabel } from '../../components/IconLabel'
 import { MeasuredCollapse } from '../../components/MeasuredCollapse'
 
 type WorkbookSnapshotDraft = {
@@ -158,19 +160,19 @@ export function WorkbookCard(props: Props) {
             <div className="workbook-card-actions">
               {props.modified ? (
                 <button type="button" onClick={props.onRevert}>
-                  {t('common.revert')}
+                  <IconLabel icon={Undo2}>{t('common.revert')}</IconLabel>
                 </button>
               ) : null}
               <button type="button" onClick={props.onOpenSource}>
-                {t('workbook.actions.viewSource')}
+                <IconLabel icon={FileSearch}>{t('workbook.actions.viewSource')}</IconLabel>
               </button>
               {props.deleted ? (
                 <button type="button" onClick={props.onRestore}>
-                  {t('workbook.actions.restore')}
+                  <IconLabel icon={RotateCcw}>{t('workbook.actions.restore')}</IconLabel>
                 </button>
               ) : (
                 <button type="button" onClick={props.onDelete}>
-                  {t('workbook.actions.delete')}
+                  <IconLabel icon={Trash2}>{t('workbook.actions.delete')}</IconLabel>
                 </button>
               )}
             </div>
@@ -222,9 +224,12 @@ export function WorkbookCard(props: Props) {
         aria-controls={secondaryFieldsId}
         onClick={() => setExpanded((current) => !current)}
       >
-        <span className="workbook-disclosure-icon" aria-hidden="true">
-          &gt;
-        </span>
+        <ChevronRight
+          className="workbook-disclosure-icon"
+          aria-hidden="true"
+          size={14}
+          strokeWidth={2}
+        />
       </button>
 
       <MeasuredCollapse

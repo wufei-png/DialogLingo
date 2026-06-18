@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
+import { FolderTree, Monitor, WandSparkles } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { IconLabel } from '../../components/IconLabel'
 import { useEscapeToClose } from '../../lib/useEscapeToClose'
 
 type SummaryRow = {
@@ -128,11 +130,15 @@ export function GenerateWorkbookSheet(props: Props) {
     <div className="sheet-backdrop">
       <div className="sheet">
         <p className="sheet-kicker">{t('generateWorkbook.kicker')}</p>
-        <h2>{t('generateWorkbook.title')}</h2>
+        <h2>
+          <IconLabel icon={WandSparkles}>{t('generateWorkbook.title')}</IconLabel>
+        </h2>
         <p>{t('generateWorkbook.selectedSessions', { count: props.selectedCount })}</p>
         <div className="sheet-grid">
           <section>
-            <h3>{t('generateWorkbook.platform')}</h3>
+            <h3>
+              <IconLabel icon={Monitor}>{t('generateWorkbook.platform')}</IconLabel>
+            </h3>
             <ul>
               {props.platformSummary.map((row) => (
                 <li key={row.label}>
@@ -142,7 +148,9 @@ export function GenerateWorkbookSheet(props: Props) {
             </ul>
           </section>
           <section>
-            <h3>{t('generateWorkbook.project')}</h3>
+            <h3>
+              <IconLabel icon={FolderTree}>{t('generateWorkbook.project')}</IconLabel>
+            </h3>
             <ul>
               {props.projectSummary.map((row) => (
                 <li key={row.label}>
@@ -211,7 +219,7 @@ export function GenerateWorkbookSheet(props: Props) {
             }
             onClick={() => props.onConfirm(promptChanged ? prompt : null)}
           >
-            {t('common.generate')}
+            <IconLabel icon={WandSparkles}>{t('common.generate')}</IconLabel>
           </button>
         </div>
       </div>

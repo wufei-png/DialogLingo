@@ -1,5 +1,7 @@
+import { BookOpen, ListFilter, type LucideIcon } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { NAV_SECTIONS, type NavSectionId } from '../../../shared/navigation'
+import { IconLabel } from './IconLabel'
 
 type Props = {
   activeSection: NavSectionId
@@ -8,6 +10,10 @@ type Props = {
 
 export function SectionTabs(props: Props) {
   const { t } = useTranslation()
+  const sectionIcons: Record<NavSectionId, LucideIcon> = {
+    search: ListFilter,
+    workbook: BookOpen
+  }
 
   return (
     <nav className="section-tabs" aria-label={t('navigation.sections')}>
@@ -18,7 +24,9 @@ export function SectionTabs(props: Props) {
           type="button"
           onClick={() => props.onChangeSection(section.id)}
         >
-          {t(`navigation.${section.id}`)}
+          <IconLabel icon={sectionIcons[section.id]}>
+            {t(`navigation.${section.id}`)}
+          </IconLabel>
         </button>
       ))}
     </nav>

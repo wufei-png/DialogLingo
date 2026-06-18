@@ -1,5 +1,17 @@
 import { useId, useMemo, useState, type ReactNode } from 'react'
+import {
+  CalendarClock,
+  Folder,
+  Monitor,
+  RefreshCw,
+  Rows3,
+  Search,
+  Settings as SettingsIcon,
+  Sparkles,
+  type LucideIcon
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { IconLabel } from '../../components/IconLabel'
 import { MeasuredCollapse } from '../../components/MeasuredCollapse'
 import { GenerateWorkbookSheet } from './GenerateWorkbookSheet'
 import {
@@ -36,6 +48,7 @@ type OpenFilterSection = 'platform' | 'projects' | 'groupBy'
 function CollapsibleFilterSection(props: {
   title: string
   summary: string
+  icon?: LucideIcon
   className?: string
   defaultExpanded?: boolean
   expanded?: boolean
@@ -72,7 +85,11 @@ function CollapsibleFilterSection(props: {
       >
         <span className="collapsible-section-title">
           <span className="collapsible-caret" aria-hidden="true" />
-          <span>{props.title}</span>
+          {props.icon ? (
+            <IconLabel icon={props.icon}>{props.title}</IconLabel>
+          ) : (
+            <span>{props.title}</span>
+          )}
         </span>
         <span className="collapsible-section-summary">{props.summary}</span>
       </button>
@@ -198,11 +215,14 @@ export function SearchRail(props: {
     <aside className="search-rail">
       <div className="search-stack">
         <div className="search-box">
-          <input
-            placeholder={t('search.typeKeywords')}
-            value={props.query}
-            onChange={(event) => props.onQueryChange(event.currentTarget.value)}
-          />
+          <div className="search-input-shell">
+            <Search className="field-icon" aria-hidden="true" size={15} strokeWidth={2} />
+            <input
+              placeholder={t('search.typeKeywords')}
+              value={props.query}
+              onChange={(event) => props.onQueryChange(event.currentTarget.value)}
+            />
+          </div>
           <select
             aria-label={t('search.searchScope')}
             value={props.queryScope}
@@ -224,21 +244,25 @@ export function SearchRail(props: {
           <div className="filter-area-label">{t('search.filterArea')}</div>
 
           <div className="filter-control-stack">
-            <select
-              aria-label={t('search.timeRange')}
-              value={props.timeRange}
-              onChange={(event) =>
-                props.onTimeRangeChange(event.currentTarget.value as SearchTimeRange)
-              }
-            >
-              {timeRangeOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
+            <div className="select-with-icon">
+              <CalendarClock className="field-icon" aria-hidden="true" size={15} strokeWidth={2} />
+              <select
+                aria-label={t('search.timeRange')}
+                value={props.timeRange}
+                onChange={(event) =>
+                  props.onTimeRangeChange(event.currentTarget.value as SearchTimeRange)
+                }
+              >
+                {timeRangeOptions.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            </div>
 
             <CollapsibleFilterSection
+              icon={Monitor}
               title={t('search.platform')}
               summary={`${props.platformFilter.length}/${PLATFORM_OPTIONS.length}`}
               expanded={openFilterSection === 'platform'}
@@ -276,6 +300,7 @@ export function SearchRail(props: {
             </CollapsibleFilterSection>
 
             <CollapsibleFilterSection
+              icon={Folder}
               title={t('search.projects')}
               summary={`${selectedProjectCount}/${props.projects.length}`}
               expanded={openFilterSection === 'projects'}
@@ -310,6 +335,7 @@ export function SearchRail(props: {
             </CollapsibleFilterSection>
 
             <CollapsibleFilterSection
+              icon={Rows3}
               title={t('search.groupBy')}
               summary={activeGroupByLabel}
               className="group-by-filter-section"
@@ -370,17 +396,17 @@ export function SearchRail(props: {
         </p>
         <div className="search-footer-actions">
           <button type="button" onClick={props.onRescan}>
-            {t('search.rescan')}
+            <IconLabel icon={RefreshCw}>{t('search.rescan')}</IconLabel>
           </button>
           <button type="button" onClick={() => setSheetOpen(true)}>
-            {t('search.generateWorkbook')}
+            <IconLabel icon={Sparkles}>{t('search.generateWorkbook')}</IconLabel>
           </button>
         </div>
         {props.generationError ? (
           <p className="search-footer-error">{props.generationError}</p>
         ) : null}
         <button className="settings-utility-button" type="button" onClick={props.onOpenSettings}>
-          {t('common.settings')}
+          <IconLabel icon={SettingsIcon}>{t('common.settings')}</IconLabel>
         </button>
       </footer>
 

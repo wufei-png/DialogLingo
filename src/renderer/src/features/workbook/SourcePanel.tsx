@@ -1,4 +1,6 @@
+import { ChevronLeft, ChevronRight, Pin, PinOff, X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { IconLabel } from '../../components/IconLabel'
 import { SessionPreviewPane } from '../search/SessionPreviewPane'
 
 type WorkbookSourcePreview = {
@@ -72,27 +74,27 @@ export function SourcePanel(props: Props) {
         {props.sourceRefCount > 1 ? (
           <>
             <button type="button" onClick={props.onPrevSourceRef}>
-              {t('workbook.source.previousRef')}
+              <IconLabel icon={ChevronLeft}>{t('workbook.source.previousRef')}</IconLabel>
             </button>
             <span className="source-panel-counter">
               {props.sourceRefIndex + 1}/{props.sourceRefCount}
             </span>
             <button type="button" onClick={props.onNextSourceRef}>
-              {t('workbook.source.nextRef')}
+              <IconLabel icon={ChevronRight}>{t('workbook.source.nextRef')}</IconLabel>
             </button>
           </>
         ) : null}
         {props.pinned ? (
           <button type="button" onClick={props.onUnpin}>
-            {t('workbook.source.unpin')}
+            <IconLabel icon={PinOff}>{t('workbook.source.unpin')}</IconLabel>
           </button>
         ) : (
           <button type="button" onClick={props.onPin}>
-            {t('workbook.source.pin')}
+            <IconLabel icon={Pin}>{t('workbook.source.pin')}</IconLabel>
           </button>
         )}
         <button type="button" onClick={props.onClose}>
-          {t('common.close')}
+          <IconLabel icon={X}>{t('common.close')}</IconLabel>
         </button>
       </div>
       {props.loading ? (

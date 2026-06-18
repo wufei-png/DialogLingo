@@ -23,6 +23,33 @@ button {
   font: inherit;
 }
 
+.icon-label {
+  display: inline-flex;
+  max-width: 100%;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  line-height: 1.1;
+  vertical-align: middle;
+}
+
+.icon-label-glyph {
+  flex: 0 0 auto;
+  opacity: 0.82;
+}
+
+.icon-label-text {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+h2 .icon-label,
+h3 .icon-label {
+  line-height: 1.2;
+}
+
 #root {
   height: 100vh;
   min-height: 100vh;
@@ -220,6 +247,7 @@ button {
 
 .search-box input,
 .search-box select,
+.select-with-icon select,
 .filter-control-stack > select,
 .search-filters select,
 .search-toolbar select {
@@ -235,6 +263,31 @@ button {
   line-height: 1.2;
 }
 
+.search-input-shell,
+.select-with-icon {
+  position: relative;
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  align-items: center;
+}
+
+.search-input-shell input,
+.select-with-icon select {
+  padding-left: 32px;
+}
+
+.field-icon {
+  position: absolute;
+  top: 50%;
+  left: 10px;
+  z-index: 1;
+  color: #6b7280;
+  pointer-events: none;
+  transform: translateY(-50%);
+}
+
 .filter-control-stack {
   display: grid;
   grid-template-rows: repeat(5, minmax(32px, 1fr));
@@ -244,13 +297,15 @@ button {
 }
 
 .filter-control-stack > select,
+.filter-control-stack > .select-with-icon,
 .filter-control-stack > .collapsible-filter-section,
 .filter-control-stack > .search-selection-actions {
   min-width: 0;
   min-height: 0;
 }
 
-.filter-control-stack > select {
+.filter-control-stack > select,
+.filter-control-stack > .select-with-icon select {
   height: 100%;
   overflow: hidden;
   color: #111827;
@@ -962,6 +1017,7 @@ button {
 
 .sheet-actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 12px;
 }

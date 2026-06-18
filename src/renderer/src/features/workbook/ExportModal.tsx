@@ -1,5 +1,14 @@
 import { useEffect, useState } from 'react'
+import {
+  ArrowLeftRight,
+  FileText,
+  FolderOpen,
+  Layers,
+  Package as PackageIcon,
+  Tag as TagIcon
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { IconLabel } from '../../components/IconLabel'
 import { trpc } from '../../lib/trpc'
 import { useEscapeToClose } from '../../lib/useEscapeToClose'
 
@@ -149,7 +158,9 @@ export function ExportModal({ open, onClose, onConfirm }: Props) {
         <div className="export-field-list">
           <label className="export-field">
             <span className="export-field-copy">
-              <span className="export-field-label">{t('export.deckName')}</span>
+              <span className="export-field-label">
+                <IconLabel icon={Layers}>{t('export.deckName')}</IconLabel>
+              </span>
               <span className="export-field-description">
                 {t('export.deckNameDescription')}
               </span>
@@ -162,7 +173,9 @@ export function ExportModal({ open, onClose, onConfirm }: Props) {
           </label>
           <label className="export-field">
             <span className="export-field-copy">
-              <span className="export-field-label">{t('export.tagPrefix')}</span>
+              <span className="export-field-label">
+                <IconLabel icon={TagIcon}>{t('export.tagPrefix')}</IconLabel>
+              </span>
               <span className="export-field-description">
                 {t('export.tagPrefixDescription')}
               </span>
@@ -175,7 +188,9 @@ export function ExportModal({ open, onClose, onConfirm }: Props) {
           </label>
           <label className="export-field">
             <span className="export-field-copy">
-              <span className="export-field-label">{t('export.outputFolder')}</span>
+              <span className="export-field-label">
+                <IconLabel icon={FolderOpen}>{t('export.outputFolder')}</IconLabel>
+              </span>
               <span className="export-field-description">
                 {t('export.outputFolderDescription')}
               </span>
@@ -188,7 +203,9 @@ export function ExportModal({ open, onClose, onConfirm }: Props) {
           </label>
           <label className="export-field">
             <span className="export-field-copy">
-              <span className="export-field-label">{t('export.cardDirection')}</span>
+              <span className="export-field-label">
+                <IconLabel icon={ArrowLeftRight}>{t('export.cardDirection')}</IconLabel>
+              </span>
               <span className="export-field-description">
                 {t('export.cardDirectionDescription')}
               </span>
@@ -258,7 +275,7 @@ export function ExportModal({ open, onClose, onConfirm }: Props) {
           >
             {exportingFormat === 'anki-package'
               ? t('export.exporting')
-              : t('export.exportAnkiPackage')}
+              : <IconLabel icon={PackageIcon}>{t('export.exportAnkiPackage')}</IconLabel>}
           </button>
           <button
             type="button"
@@ -267,7 +284,7 @@ export function ExportModal({ open, onClose, onConfirm }: Props) {
           >
             {exportingFormat === 'anki-text-bundle'
               ? t('export.exporting')
-              : t('export.exportAnkiTextBundle')}
+              : <IconLabel icon={FileText}>{t('export.exportAnkiTextBundle')}</IconLabel>}
           </button>
           <button
             type="button"
@@ -276,7 +293,7 @@ export function ExportModal({ open, onClose, onConfirm }: Props) {
           >
             {exportingFormat === 'generic-text-bundle'
               ? t('export.exporting')
-              : t('export.exportGenericTextBundle')}
+              : <IconLabel icon={FileText}>{t('export.exportGenericTextBundle')}</IconLabel>}
           </button>
         </div>
         {exportMessage ? (

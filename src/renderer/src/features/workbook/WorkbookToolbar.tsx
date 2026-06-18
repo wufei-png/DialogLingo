@@ -1,4 +1,6 @@
+import { Download, List, Quote, Text, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { IconLabel } from '../../components/IconLabel'
 
 type WorkbookTab = 'all' | 'expressions' | 'sentences' | 'deleted'
 
@@ -27,33 +29,33 @@ export function WorkbookToolbar({
           aria-pressed={activeTab === 'all'}
           onClick={() => onChangeTab('all')}
         >
-          {t('workbook.tabs.all')}
+          <IconLabel icon={List}>{t('workbook.tabs.all')}</IconLabel>
         </button>
         <button
           type="button"
           aria-pressed={activeTab === 'expressions'}
           onClick={() => onChangeTab('expressions')}
         >
-          {t('workbook.tabs.expressions')}
+          <IconLabel icon={Quote}>{t('workbook.tabs.expressions')}</IconLabel>
         </button>
         <button
           type="button"
           aria-pressed={activeTab === 'sentences'}
           onClick={() => onChangeTab('sentences')}
         >
-          {t('workbook.tabs.sentences')}
+          <IconLabel icon={Text}>{t('workbook.tabs.sentences')}</IconLabel>
         </button>
         <button
           type="button"
           aria-pressed={activeTab === 'deleted'}
           onClick={() => onChangeTab('deleted')}
         >
-          {t('workbook.tabs.deleted')}
+          <IconLabel icon={Trash2}>{t('workbook.tabs.deleted')}</IconLabel>
         </button>
       </div>
       <div className="workbook-stats">{t('workbook.itemsCount', { count: itemCount })}</div>
       <button type="button" disabled={exportDisabled} onClick={onExport}>
-        {t('workbook.export')}
+        <IconLabel icon={Download}>{t('workbook.export')}</IconLabel>
       </button>
     </header>
   )

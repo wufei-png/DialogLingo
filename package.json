@@ -48,6 +48,7 @@
     "drizzle-orm": "^0.45.2",
     "electron-trpc": "0.7.1",
     "i18next": "^26.3.1",
+    "lucide-react": "^1.21.0",
     "motion": "^12.23.12",
     "react": "^19.1.0",
     "react-dom": "^19.1.0",

@@ -1,7 +1,16 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import {
+  ScanSearch,
+  Settings as SettingsIcon,
+  Shield,
+  SlidersHorizontal,
+  Sparkles,
+  X
+} from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { AppLocale, Settings } from '../../../shared/schemas/settings'
+import { IconLabel } from './IconLabel'
 import appI18n from '../i18n/i18n'
 import { trpc } from '../lib/trpc'
 import { useEscapeToClose } from '../lib/useEscapeToClose'
@@ -229,14 +238,18 @@ export function SettingsSheet(props: Props) {
         <header className="settings-sheet-header">
           <div>
             <p className="sheet-kicker">{t('settings.title')}</p>
-            <h2>{t('settings.title')}</h2>
+            <h2>
+              <IconLabel icon={SettingsIcon}>{t('settings.title')}</IconLabel>
+            </h2>
           </div>
           <button type="button" onClick={props.onClose}>
-            {t('common.close')}
+            <IconLabel icon={X}>{t('common.close')}</IconLabel>
           </button>
         </header>
         <div className="settings-form">
-          <h3 className="settings-section-heading">{t('settings.interface')}</h3>
+          <h3 className="settings-section-heading">
+            <IconLabel icon={SlidersHorizontal}>{t('settings.interface')}</IconLabel>
+          </h3>
           <label>
             <span>{t('settings.language')}</span>
             <select
@@ -310,7 +323,9 @@ export function SettingsSheet(props: Props) {
           <p className="settings-help">
             {t('settings.liteLlmHelp')}
           </p>
-          <h3 className="settings-section-heading">{t('settings.generation')}</h3>
+          <h3 className="settings-section-heading">
+            <IconLabel icon={Sparkles}>{t('settings.generation')}</IconLabel>
+          </h3>
           <label>
             <span>{t('settings.expressionDifficulty')}</span>
             <select
@@ -397,7 +412,9 @@ export function SettingsSheet(props: Props) {
               onChange={(event) => setBalanceStrength(event.currentTarget.value)}
             />
           </label>
-          <h3 className="settings-section-heading">{t('settings.privacy')}</h3>
+          <h3 className="settings-section-heading">
+            <IconLabel icon={Shield}>{t('settings.privacy')}</IconLabel>
+          </h3>
           <label>
             <span>{t('settings.flaggedItemExportPolicy')}</span>
             <select
@@ -412,7 +429,9 @@ export function SettingsSheet(props: Props) {
               <option value="block">{t('settings.blockFlaggedItems')}</option>
             </select>
           </label>
-          <h3 className="settings-section-heading">{t('settings.scan')}</h3>
+          <h3 className="settings-section-heading">
+            <IconLabel icon={ScanSearch}>{t('settings.scan')}</IconLabel>
+          </h3>
           <label className="settings-toggle-row">
             <span>{t('settings.scanOnLaunch')}</span>
             <span className="settings-switch-control">
