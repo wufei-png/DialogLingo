@@ -1019,6 +1019,11 @@ button {
   gap: 12px;
 }
 
+.workbook-progress-detail {
+  color: #6b7280;
+  font-size: 13px;
+}
+
 .workbook-stopped-details {
   display: flex;
   flex-wrap: wrap;

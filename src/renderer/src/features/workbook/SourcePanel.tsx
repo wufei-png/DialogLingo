@@ -1,3 +1,4 @@
+import { useTranslation } from 'react-i18next'
 import { SessionPreviewPane } from '../search/SessionPreviewPane'
 
 type WorkbookSourcePreview = {
@@ -30,7 +31,7 @@ type Props = {
   onNextMatch: () => void
 }
 
-function formatSourceType(value: string) {
+function formatSourceType(value: string, unknownSource: string) {
   if (value === 'codex') {
     return 'Codex'
   }
@@ -40,25 +41,27 @@ function formatSourceType(value: string) {
   if (value === 'opencode') {
     return 'OpenCode'
   }
-  return value || 'Unknown source'
+  return value || unknownSource
 }
 
 export function SourcePanel(props: Props) {
+  const { t } = useTranslation()
+
   if (!props.open) {
     return null
   }
 
   const headerMeta = props.preview ? (
     <>
-      <span>{formatSourceType(props.preview.session.sourceType)}</span>
+      <span>{formatSourceType(props.preview.session.sourceType, t('common.unknownSource'))}</span>
       {props.preview.session.projectPath ? <span>{props.preview.session.projectPath}</span> : null}
       {props.preview.session.updatedAt ? <span>{props.preview.session.updatedAt}</span> : null}
       <span>
         {props.preview.matchedBy === 'source-span'
-          ? 'Source span'
+          ? t('workbook.source.sourceSpan')
           : props.preview.matchedBy === 'highlight-text'
-            ? 'Text match'
-            : 'No match'}
+            ? t('workbook.source.textMatch')
+            : t('workbook.source.noMatch')}
       </span>
     </>
   ) : null
@@ -69,38 +72,38 @@ export function SourcePanel(props: Props) {
         {props.sourceRefCount > 1 ? (
           <>
             <button type="button" onClick={props.onPrevSourceRef}>
-              Prev ref
+              {t('workbook.source.previousRef')}
             </button>
             <span className="source-panel-counter">
               {props.sourceRefIndex + 1}/{props.sourceRefCount}
             </span>
             <button type="button" onClick={props.onNextSourceRef}>
-              Next ref
+              {t('workbook.source.nextRef')}
             </button>
           </>
         ) : null}
         {props.pinned ? (
           <button type="button" onClick={props.onUnpin}>
-            Unpin
+            {t('workbook.source.unpin')}
           </button>
         ) : (
           <button type="button" onClick={props.onPin}>
-            Pin
+            {t('workbook.source.pin')}
           </button>
         )}
         <button type="button" onClick={props.onClose}>
-          Close
+          {t('common.close')}
         </button>
       </div>
       {props.loading ? (
-        <div className="source-panel-placeholder">Loading source...</div>
+        <div className="source-panel-placeholder">{t('workbook.source.loading')}</div>
       ) : props.preview ? (
         <SessionPreviewPane
           className="source-preview"
-          kicker="Source Context"
+          kicker={t('workbook.source.context')}
           sessionTitle={props.preview.session.title}
           turns={props.preview.turns}
-          fallbackPreview="No source content available."
+          fallbackPreview={t('workbook.source.noContent')}
           enableHighlights
           matchCount={props.matchCount}
           activeMatchIndex={props.activeMatchIndex}
@@ -110,8 +113,8 @@ export function SourcePanel(props: Props) {
         />
       ) : (
         <div className="source-panel-placeholder">
-          <h3>Workbook Overview</h3>
-          <p>Select a card or use View source to inspect the full conversation context.</p>
+          <h3>{t('workbook.source.overview')}</h3>
+          <p>{t('workbook.source.overviewHelp')}</p>
         </div>
       )}
     </aside>

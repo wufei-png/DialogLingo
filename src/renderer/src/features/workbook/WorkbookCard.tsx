@@ -1,4 +1,5 @@
 import { useEffect, useId, useRef, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { MeasuredCollapse } from '../../components/MeasuredCollapse'
 
 type WorkbookSnapshotDraft = {
@@ -78,6 +79,7 @@ function hasDraftChanged(draft: ReturnType<typeof toDraft>, props: Props) {
   )
 }
 export function WorkbookCard(props: Props) {
+  const { t } = useTranslation()
   const secondaryFieldsId = useId()
   const targetRef = useRef<HTMLInputElement | null>(null)
   const [expanded, setExpanded] = useState(false)
@@ -150,23 +152,25 @@ export function WorkbookCard(props: Props) {
       <div className="workbook-card-header">
         <div>
           <div className="workbook-card-title-row">
-            <span className="workbook-card-kicker">{props.itemType}</span>
+            <span className="workbook-card-kicker">
+              {t(`workbook.itemTypes.${props.itemType}`)}
+            </span>
             <div className="workbook-card-actions">
               {props.modified ? (
                 <button type="button" onClick={props.onRevert}>
-                  Revert
+                  {t('common.revert')}
                 </button>
               ) : null}
               <button type="button" onClick={props.onOpenSource}>
-                View source
+                {t('workbook.actions.viewSource')}
               </button>
               {props.deleted ? (
                 <button type="button" onClick={props.onRestore}>
-                  Restore
+                  {t('workbook.actions.restore')}
                 </button>
               ) : (
                 <button type="button" onClick={props.onDelete}>
-                  Delete
+                  {t('workbook.actions.delete')}
                 </button>
               )}
             </div>
@@ -174,13 +178,13 @@ export function WorkbookCard(props: Props) {
           <p className="workbook-card-source">{draft.source}</p>
         </div>
         <div className="workbook-card-status">
-          {props.modified ? <span>Modified</span> : null}
-          {props.deleted ? <span>Deleted</span> : null}
+          {props.modified ? <span>{t('workbook.status.modified')}</span> : null}
+          {props.deleted ? <span>{t('workbook.status.deleted')}</span> : null}
         </div>
       </div>
 
       <label className="workbook-field">
-        <span>Target</span>
+        <span>{t('workbook.fields.target')}</span>
         <input
           ref={targetRef}
           value={draft.target}
@@ -194,7 +198,7 @@ export function WorkbookCard(props: Props) {
       </label>
 
       <label className="workbook-field">
-        <span>Gloss</span>
+        <span>{t('workbook.fields.gloss')}</span>
         <input
           value={draft.gloss}
           readOnly={props.deleted}
@@ -209,7 +213,11 @@ export function WorkbookCard(props: Props) {
       <button
         type="button"
         className="workbook-disclosure-row"
-        aria-label={expanded ? 'Hide additional workbook fields' : 'Show additional workbook fields'}
+        aria-label={
+          expanded
+            ? t('workbook.additionalFields.hide')
+            : t('workbook.additionalFields.show')
+        }
         aria-expanded={expanded}
         aria-controls={secondaryFieldsId}
         onClick={() => setExpanded((current) => !current)}
@@ -226,7 +234,7 @@ export function WorkbookCard(props: Props) {
         open={expanded}
       >
         <label className="workbook-field">
-          <span>Explanation</span>
+          <span>{t('workbook.fields.explanation')}</span>
           <textarea
             value={draft.explanation}
             readOnly={props.deleted}
@@ -238,7 +246,7 @@ export function WorkbookCard(props: Props) {
           />
         </label>
         <label className="workbook-field">
-          <span>Quiz</span>
+          <span>{t('workbook.fields.quiz')}</span>
           <textarea
             value={draft.quiz}
             readOnly={props.deleted}
@@ -250,7 +258,7 @@ export function WorkbookCard(props: Props) {
           />
         </label>
         <label className="workbook-field">
-          <span>Quiz answer</span>
+          <span>{t('workbook.fields.quizAnswer')}</span>
           <input
             value={draft.quizAnswer}
             readOnly={props.deleted}
@@ -262,7 +270,7 @@ export function WorkbookCard(props: Props) {
           />
         </label>
         <label className="workbook-field">
-          <span>Tags</span>
+          <span>{t('workbook.fields.tags')}</span>
           <input
             value={draft.tags}
             readOnly={props.deleted}

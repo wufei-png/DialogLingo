@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
+import { useTranslation } from 'react-i18next'
 import { WorkbookCard } from './WorkbookCard'
 
 type WorkbookSnapshotPatch = {
@@ -47,6 +48,7 @@ export function CardStream(props: {
   onRevertItem: (itemId: string) => void
   onOpenSource: (itemId: string) => void
 }) {
+  const { t } = useTranslation()
   const parentRef = useRef<HTMLDivElement | null>(null)
   const selectedIndex = useMemo(
     () => props.rows.findIndex((row) => row.id === props.selectedItemId),
@@ -66,7 +68,7 @@ export function CardStream(props: {
   }, [selectedIndex, virtualizer])
 
   if (props.rows.length === 0) {
-    return <div className="workbook-empty-list">No workbook items in this view.</div>
+    return <div className="workbook-empty-list">{t('workbook.noItemsInView')}</div>
   }
 
   return (

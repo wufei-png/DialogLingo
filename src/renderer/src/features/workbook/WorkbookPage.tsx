@@ -1,5 +1,8 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useMemo, useState } from 'react'
+import type { TFunction } from 'i18next'
+import { useTranslation } from 'react-i18next'
+import { countHighlightMarkers } from '../../../../shared/highlight'
 import { ResizableSplitPane } from '../../components/ResizableSplitPane'
 import { trpc } from '../../lib/trpc'
 import { useJobSubscription } from '../../lib/useJobSubscription'
@@ -47,10 +50,6 @@ type WorkbookSourcePreview = {
   matchedBy: 'source-span' | 'highlight-text' | 'none'
 }
 
-function countHighlights(value: string) {
-  return value.match(/<mark>/g)?.length ?? 0
-}
-
 function getMarkedText(preview: WorkbookSourcePreview | null) {
   return preview?.turns.map((turn) => turn.text).join('\n\n') ?? ''
 }
@@ -63,6 +62,28 @@ function isTextEditingTarget(target: EventTarget | null) {
       target.isContentEditable)
   )
 }
+
+function formatJobStatus(status: string | null | undefined, t: TFunction) {
+  switch (status) {
+    case 'pending':
+    case 'normalizing':
+    case 'mining':
+    case 'enriching':
+    case 'ranking':
+    case 'materializing':
+    case 'completed':
+    case 'failed':
+    case 'cancelled':
+    case 'stopped':
+      return t(`workbook.status.${status}`)
+    case null:
+    case undefined:
+      return t('workbook.status.starting')
+    default:
+      return status
+  }
+}
+
 export function WorkbookPage(props: {
   workbookSplitRatio: number
   workbookSourcePinned: boolean
@@ -74,6 +95,7 @@ export function WorkbookPage(props: {
   jobId: string | null
   workbookId: string | null
 }) {
+  const { t } = useTranslation()
   const queryClient = useQueryClient()
   const [activeTab, setActiveTab] = useState<'all' | 'expressions' | 'sentences' | 'deleted'>('all')
   const [selectedItemId, setSelectedItemId] = useState<string | null>(null)
@@ -149,7 +171,7 @@ export function WorkbookPage(props: {
       })) as WorkbookSourcePreview
   })
   const sourcePreview = sourcePreviewQuery.data ?? null
-  const sourceMatchCount = countHighlights(getMarkedText(sourcePreview))
+  const sourceMatchCount = countHighlightMarkers(getMarkedText(sourcePreview))
 
   const hasNoWorkbook = !props.workbookId && !props.jobId
   const isTerminalFailure =
@@ -158,7 +180,11 @@ export function WorkbookPage(props: {
     Boolean(props.jobId) &&
     (!jobQuery.data ||
       !['completed', 'failed', 'cancelled'].includes(jobQuery.data.status))
-  const stoppedState = getWorkbookStoppedState(jobQuery.data)
+  const stoppedState = getWorkbookStoppedState(jobQuery.data, {
+    statusLabel: t('workbook.status.stopped'),
+    failureText: t('workbook.defaults.noWorkbookCreated'),
+    lastCheckpoint: t('workbook.defaults.none')
+  })
 
   useEffect(() => {
     if (props.workbookSourcePinned) {
@@ -280,7 +306,7 @@ export function WorkbookPage(props: {
       props.onWorkbookReady(response)
     } catch (error) {
       setStoppedActionError(
-        error instanceof Error ? error.message : 'Resume failed.'
+        error instanceof Error ? error.message : t('workbook.resumeFailed')
       )
     } finally {
       setStoppedActionPending(null)
@@ -301,7 +327,7 @@ export function WorkbookPage(props: {
       props.onWorkbookReady(response)
     } catch (error) {
       setStoppedActionError(
-        error instanceof Error ? error.message : 'Restart failed.'
+        error instanceof Error ? error.message : t('workbook.restartFailed')
       )
     } finally {
       setStoppedActionPending(null)
@@ -380,30 +406,39 @@ export function WorkbookPage(props: {
     <section className="workbook-main-pane">
       {hasNoWorkbook ? (
         <div className="boot-card workbook-empty-state">
-          <p className="boot-eyebrow">Workbook</p>
-          <h2>Generate a workbook from Search &amp; Select.</h2>
+          <p className="boot-eyebrow">{t('workbook.title')}</p>
+          <h2>{t('workbook.emptyTitle')}</h2>
         </div>
       ) : isProgress ? (
         <div className="workbook-progress-state boot-card">
-          <p className="boot-eyebrow">Generation Progress</p>
-          <h2>{jobQuery.data?.status ?? 'starting'}</h2>
+          <p className="boot-eyebrow">{t('workbook.progress')}</p>
+          <h2>{formatJobStatus(jobQuery.data?.status, t)}</h2>
           <p>
-            {jobQuery.data?.processedSessionCount ?? 0} /{' '}
-            {jobQuery.data?.selectedSessionCount ?? 0} sessions
+            {t('workbook.progressSessions', {
+              processed: jobQuery.data?.processedSessionCount ?? 0,
+              total: jobQuery.data?.selectedSessionCount ?? 0
+            })}
           </p>
+          {jobQuery.data?.currentSessionTitle || jobQuery.data?.currentBatchLabel ? (
+            <p className="workbook-progress-detail">
+              {[jobQuery.data.currentSessionTitle, jobQuery.data.currentBatchLabel]
+                .filter(Boolean)
+                .join(' - ')}
+            </p>
+          ) : null}
         </div>
       ) : isTerminalFailure ? (
         <div className="workbook-progress-state boot-card">
-          <p className="boot-eyebrow">Generation stopped</p>
-          <h2>{stoppedState.statusLabel}</h2>
+          <p className="boot-eyebrow">{t('workbook.generationStopped')}</p>
+          <h2>{formatJobStatus(stoppedState.statusLabel, t)}</h2>
           <p>{stoppedState.failureText}</p>
           <div className="workbook-stopped-details">
             <span>
-              Last checkpoint:{' '}
+              {t('workbook.lastCheckpoint')}{' '}
               <strong>{stoppedState.lastCheckpoint}</strong>
             </span>
             <span>
-              Failed batches:{' '}
+              {t('workbook.failedBatches')}{' '}
               <strong>{stoppedState.failedBatchCount}</strong>
             </span>
           </div>
@@ -422,8 +457,8 @@ export function WorkbookPage(props: {
               onClick={() => void resumeGeneration()}
             >
               {stoppedActionPending === 'resume'
-                ? 'Resuming...'
-                : 'Resume from checkpoint'}
+                ? t('workbook.resuming')
+                : t('workbook.resumeFromCheckpoint')}
             </button>
             <button
               type="button"
@@ -431,15 +466,15 @@ export function WorkbookPage(props: {
               onClick={() => void restartGeneration()}
             >
               {stoppedActionPending === 'restart'
-                ? 'Restarting...'
-                : 'Restart generation'}
+                ? t('workbook.restarting')
+                : t('workbook.restartGeneration')}
             </button>
             <button
               type="button"
               disabled={Boolean(stoppedActionPending)}
               onClick={props.onBackToSearch}
             >
-              Back to Search &amp; Select
+              {t('workbook.backToSearch')}
             </button>
           </div>
         </div>
@@ -447,7 +482,7 @@ export function WorkbookPage(props: {
         <>
           <WorkbookToolbar
             activeTab={activeTab}
-            stats={`${rows.length} items`}
+            itemCount={rows.length}
             exportDisabled={!props.workbookId}
             onChangeTab={setActiveTab}
             onExport={() => setExportOpen(true)}
@@ -503,19 +538,27 @@ export function WorkbookPage(props: {
       <ExportModal
         open={exportOpen}
         onClose={() => setExportOpen(false)}
-        onConfirm={(payload) => {
+        onConfirm={async (payload) => {
           if (!props.workbookId) {
-            return
+            return {
+              ok: false as const,
+              message: t('export.noWorkbookSelected')
+            }
           }
 
-          void trpc.exportRun
-            .mutate({
-              workbookId: props.workbookId,
-              request: payload
-            })
-            .finally(() => {
-              setExportOpen(false)
-            })
+          return (await trpc.exportRun.mutate({
+            workbookId: props.workbookId,
+            request: payload
+          })) as
+            | {
+                ok: true
+                outputLocation: string
+                outputPath?: string
+              }
+            | {
+                ok: false
+                message?: string
+              }
         }}
       />
     </div>

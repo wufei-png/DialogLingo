@@ -7,11 +7,18 @@ export type WorkbookStoppedJob = {
   resumeBlockedReason?: string | null
 }
 
-export function getWorkbookStoppedState(job: WorkbookStoppedJob | null | undefined) {
+export function getWorkbookStoppedState(
+  job: WorkbookStoppedJob | null | undefined,
+  labels = {
+    statusLabel: 'stopped',
+    failureText: 'No workbook was created.',
+    lastCheckpoint: 'none'
+  }
+) {
   return {
-    statusLabel: job?.status ?? 'stopped',
-    failureText: job?.failureReason ?? 'No workbook was created.',
-    lastCheckpoint: job?.lastCheckpoint ?? 'none',
+    statusLabel: job?.status ?? labels.statusLabel,
+    failureText: job?.failureReason ?? labels.failureText,
+    lastCheckpoint: job?.lastCheckpoint ?? labels.lastCheckpoint,
     failedBatchCount: job?.failedBatchCount ?? 0,
     canResume: Boolean(job?.canResume),
     resumeBlockedReason: job?.resumeBlockedReason ?? null
