@@ -8,6 +8,7 @@ import {
   type SessionSummary,
   type SourceAdapter
 } from '../types'
+import { logger } from '../../logging'
 
 type JsonMap = Record<string, unknown>
 type ParsedClaudeTurn = ConversationTurn & { row: JsonMap; timestamp: string }
@@ -29,6 +30,7 @@ type DesktopCodeSessionMetadata = {
 function walkProjectLogs(root: string) {
   const projectsRoot = path.join(root, 'projects')
   if (!fs.existsSync(projectsRoot)) {
+    logger.debug('source-adapter', 'claude project log directory missing')
     return []
   }
 
@@ -50,6 +52,9 @@ function walkProjectLogs(root: string) {
 
 function walkDesktopCodeSessionMetadata(root: string | undefined) {
   if (!root || !fs.existsSync(root)) {
+    if (root) {
+      logger.debug('source-adapter', 'claude desktop metadata directory missing')
+    }
     return []
   }
 
@@ -328,6 +333,9 @@ export function createClaudeAdapter(rootOrPaths: string | ClaudeAdapterPaths): S
     async readSession(sessionId: string, options?: { locator?: string }) {
       const filePath = options?.locator ?? findSessionFile(paths.cliRoot, sessionId)
       if (!filePath) {
+        logger.debug('source-adapter', 'claude session file missing', {
+          sessionId
+        })
         return []
       }
 

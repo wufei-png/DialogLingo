@@ -26,6 +26,8 @@ type CandidateRow = CandidateGroup & {
 const MIN_CANDIDATE_LENGTH = 12
 const MIN_CJK_CANDIDATE_LENGTH = 6
 const MAX_CANDIDATE_LENGTH = 700
+// Candidate chunks need enough context for the model without letting one long
+// assistant answer consume an entire enrichment batch.
 const CHUNK_TARGET_LENGTH = 360
 
 const URL_ONLY_PATTERN = /^(https?:\/\/|file:\/\/)\S+$/i
@@ -85,6 +87,8 @@ function splitCandidateText(text: string) {
 }
 
 function normalizeCandidateFingerprint(text: string) {
+  // Fingerprints intentionally remove volatile paths and URLs; provenance is
+  // stored separately, while dedupe should focus on the learnable wording.
   return text
     .toLowerCase()
     .replace(/[’']/g, '')
@@ -107,6 +111,8 @@ function isNearDuplicateFingerprint(left: string, right: string) {
 
   const shorter = left.length < right.length ? left : right
   const longer = left.length < right.length ? right : left
+  // Only collapse long near-substrings so short expressions do not erase
+  // distinct but related phrases.
   return shorter.length >= 24 && longer.includes(shorter) && shorter.length / longer.length > 0.85
 }
 
@@ -148,6 +154,8 @@ function scoreCandidateText(text: string) {
   const lengthScore = Math.min(text.length / 160, 1)
   const languageScore = hasCjk || wordCount >= 4 ? 0.35 : 0.15
   const termScore = hasTechnicalTerm ? 0.15 : 0
+  // Symbols are useful in technical conversations, but a high density usually
+  // means code or shell output rather than language-learning material.
   const symbolPenalty =
     ((text.match(/[{}[\]();=<>|]/g) ?? []).length / Math.max(text.length, 1)) * 0.5
 
@@ -186,6 +194,8 @@ export function mineCandidateGroups(
   })
 
   return rows
+    // Ranking here is only a prompt-budget filter. Final workbook ordering is
+    // handled after enrichment, when item type and provenance are known.
     .sort((left, right) => right.score - left.score || left.originIndex - right.originIndex)
     .map(({ score: _score, originIndex: _originIndex, ...candidate }) => candidate)
 }

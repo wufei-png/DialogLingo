@@ -1086,6 +1086,19 @@ function createRouter() {
         })
       },
       resume: async (input: { jobId: string }) => {
+        const resumeStatus = getJobResumeStatus(sqlite, input.jobId)
+        logger.info('generation', 'resume requested', {
+          sourceJobId: input.jobId,
+          canResume: resumeStatus.canResume,
+          checkpoint: resumeStatus.checkpoint,
+          blockedReason: resumeStatus.resumeBlockedReason
+        })
+        if (!resumeStatus.canResume) {
+          logger.warn('generation', 'resume may be blocked', {
+            sourceJobId: input.jobId,
+            blockedReason: resumeStatus.resumeBlockedReason
+          })
+        }
         assertGenerationJobStopped(sqlite, input.jobId)
         const sourceSnapshot = readGenerationRunSnapshot(sqlite, input.jobId)
         if (!sourceSnapshot) {
@@ -1109,6 +1122,9 @@ function createRouter() {
         })
       },
       restart: async (input: { jobId: string }) => {
+        logger.info('generation', 'restart requested', {
+          sourceJobId: input.jobId
+        })
         assertGenerationJobStopped(sqlite, input.jobId)
         const sourceSnapshot = readGenerationRunSnapshot(sqlite, input.jobId)
         if (!sourceSnapshot) {
@@ -1130,16 +1146,26 @@ function createRouter() {
           runtimeSettings
         })
       },
-      cancel: async (input: { jobId: string }) => ({
-        ok: true as const,
-        jobId: input.jobId,
-        cancelled: Boolean(
-          jobWorkers.get(input.jobId)?.postMessage({
+      cancel: async (input: { jobId: string }) => {
+        const worker = jobWorkers.get(input.jobId)
+        const cancelled = Boolean(
+          worker?.postMessage({
             type: 'cancel',
             jobId: input.jobId
           })
         )
-      })
+        logger.info('generation', 'cancel requested', {
+          jobId: input.jobId,
+          workerFound: Boolean(worker),
+          cancelled
+        })
+
+        return {
+          ok: true as const,
+          jobId: input.jobId,
+          cancelled
+        }
+      }
     },
     workbook: {
       list: (input: {
@@ -1151,29 +1177,41 @@ function createRouter() {
         sourceSpanRef?: string | null
         highlightText?: string | null
       }) => previewWorkbookSource(input),
-      saveItem: async (input: { itemId: string; currentSnapshot: unknown }) => ({
-        ok: true as const,
-        itemId: input.itemId,
-        currentSnapshot: workbookService.saveCurrentSnapshot(
-          input.itemId,
-          input.currentSnapshot
-        )
-      }),
-      deleteItem: async (input: { itemId: string }) => ({
-        ok: true as const,
-        itemId: input.itemId,
-        result: workbookService.deleteItem(input.itemId)
-      }),
-      restoreItem: async (input: { itemId: string }) => ({
-        ok: true as const,
-        itemId: input.itemId,
-        result: workbookService.restoreItem(input.itemId)
-      }),
-      revertItem: async (input: { itemId: string }) => ({
-        ok: true as const,
-        itemId: input.itemId,
-        result: workbookService.revertItem(input.itemId)
-      })
+      saveItem: async (input: { itemId: string; currentSnapshot: unknown }) => {
+        logger.debug('workbook', 'save item requested', { itemId: input.itemId })
+        return {
+          ok: true as const,
+          itemId: input.itemId,
+          currentSnapshot: workbookService.saveCurrentSnapshot(
+            input.itemId,
+            input.currentSnapshot
+          )
+        }
+      },
+      deleteItem: async (input: { itemId: string }) => {
+        logger.debug('workbook', 'delete item requested', { itemId: input.itemId })
+        return {
+          ok: true as const,
+          itemId: input.itemId,
+          result: workbookService.deleteItem(input.itemId)
+        }
+      },
+      restoreItem: async (input: { itemId: string }) => {
+        logger.debug('workbook', 'restore item requested', { itemId: input.itemId })
+        return {
+          ok: true as const,
+          itemId: input.itemId,
+          result: workbookService.restoreItem(input.itemId)
+        }
+      },
+      revertItem: async (input: { itemId: string }) => {
+        logger.debug('workbook', 'revert item requested', { itemId: input.itemId })
+        return {
+          ok: true as const,
+          itemId: input.itemId,
+          result: workbookService.revertItem(input.itemId)
+        }
+      }
     },
     exportRuns: {
       defaultOutputLocation: () => getDefaultExportDirectory(),
@@ -1227,6 +1265,19 @@ function createRouter() {
           expressions: expressionRows.items,
           sentences: sentenceRows.items
         }
+        const exportedItemCounts = countExportRows(
+          exportInput.expressions,
+          exportInput.sentences
+        )
+        const exportWarnings = [...expressionRows.warnings, ...sentenceRows.warnings]
+        logger.info('export', 'run requested', {
+          workbookId: input.workbookId,
+          format: input.request.format,
+          outputLocation,
+          selectedItemCounts,
+          exportedItemCounts,
+          warningCount: exportWarnings.length
+        })
 
         try {
           if (input.request.format === 'anki-text-bundle') {
@@ -1268,11 +1319,19 @@ function createRouter() {
                 direction: input.request.direction,
                 keepFlaggedItems: input.request.keepFlaggedItems ?? false,
                 selectedItemCounts,
-                exportedItemCounts: countExportRows(exportInput.expressions, exportInput.sentences),
+                exportedItemCounts,
                 includedItemTypes: exportInput.includedItemTypes,
-                warnings: [...expressionRows.warnings, ...sentenceRows.warnings]
+                warnings: exportWarnings
               })
             )
+
+          logger.info('export', 'run complete', {
+            workbookId: input.workbookId,
+            format: input.request.format,
+            outputPath,
+            exportedItemCounts,
+            warningCount: exportWarnings.length
+          })
 
           return {
             ok: true as const,
@@ -1282,6 +1341,12 @@ function createRouter() {
             outputPath
           }
         } catch (error) {
+          logger.error('export', 'run failed', {
+            workbookId: input.workbookId,
+            format: input.request.format,
+            outputLocation,
+            message: error instanceof Error ? error.message : String(error)
+          })
           return {
             ok: false as const,
             workbookId: input.workbookId,

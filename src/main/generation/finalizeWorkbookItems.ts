@@ -24,6 +24,8 @@ function itemKey(item: FinalizableWorkbookItem) {
 }
 
 function canonicalNearDuplicateText(value: string) {
+  // Keep this narrower than the exact item key: near-duplicate merging should
+  // combine learning-equivalent wording, not broad semantic neighbors.
   return normalizeLearningItemSourceText(value)
     .replace(/\bthere's\b/g, 'there is')
     .replace(/\bit's\b/g, 'it is')
@@ -133,6 +135,8 @@ function areNearDuplicateItems(
     return overlap >= 0.85 && similarity >= 0.9
   }
 
+  // Sentences need stricter similarity because a small wording change can
+  // carry different grammar or pragmatic context.
   return shorterLength >= 24 && overlap >= 0.85 && similarity >= 0.92
 }
 
@@ -182,6 +186,8 @@ export function finalizeWorkbookItems<T extends FinalizableWorkbookItem>(items: 
     const key = itemKey(item)
     const existing = byKey.get(key) ?? findNearDuplicate(finalizedItems, item)
     if (existing) {
+      // Preserve every source occurrence even when the displayed learning item
+      // is merged down to one card.
       existing.sourceRefs = mergeSourceRefs(existing.sourceRefs, item.sourceRefs)
       continue
     }

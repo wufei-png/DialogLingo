@@ -3,6 +3,7 @@ import type Database from 'better-sqlite3'
 import { createSourceRegistry } from '../sources'
 import type { SessionFilterInput, SourceRegistry } from '../sources/types'
 import { isTurnToolNoise } from '../text/turnNoise'
+import { logger } from '../logging'
 import { discoverProjects } from './discoverProjects'
 
 function yieldToEventLoop() {
@@ -24,11 +25,21 @@ export async function scanSessions(
     includeArchived: options?.includeArchived ?? false
   }
 
+  const codexSummaries = await registry.codex.listSessions(baseFilters)
+  const claudeSummaries = await registry.claude.listSessions(baseFilters)
+  const opencodeSummaries = await registry.opencode.listSessions(baseFilters)
   const allSummaries = [
-    ...(await registry.codex.listSessions(baseFilters)),
-    ...(await registry.claude.listSessions(baseFilters)),
-    ...(await registry.opencode.listSessions(baseFilters))
+    ...codexSummaries,
+    ...claudeSummaries,
+    ...opencodeSummaries
   ]
+  logger.debug('session-scan', 'adapter sessions listed', {
+    includeArchived: baseFilters.includeArchived,
+    codexSessionCount: codexSummaries.length,
+    claudeSessionCount: claudeSummaries.length,
+    opencodeSessionCount: opencodeSummaries.length,
+    totalSessionCount: allSummaries.length
+  })
 
   for (const project of discoverProjects(allSummaries)) {
     db.prepare(

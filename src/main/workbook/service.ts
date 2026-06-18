@@ -23,6 +23,8 @@ function resolveNativeBinding() {
     return undefined
   }
 
+  // Keep workbook tests on the default Node binding while Electron uses the
+  // rebuilt native module captured by the app startup scripts.
   const packageDir = path.dirname(require.resolve('better-sqlite3/package.json'))
   const bindingPath = path.join(
     packageDir,

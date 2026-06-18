@@ -1,5 +1,7 @@
 export const SECRET_PATTERN = /\bsk-[A-Za-z0-9_-]+\b/g
 
+// These rules protect generation prompts only. Search indexing keeps the raw
+// transcript text so users can still find code/log-heavy sessions.
 const FENCED_CODE_BLOCK_PATTERN = /```[\s\S]*?```/g
 const TOOL_ENVELOPE_PATTERN =
   /^<(environment_context|local-command|command-name|command-message|command-args|local-command-stdout)\b/i
@@ -116,6 +118,8 @@ export function isLikelyPureNoiseText(text: string) {
     (line) => hasNaturalLanguageSignal(line) && !isNoisyLine(line)
   ).length
 
+  // Prefer keeping mixed natural-language turns unless the noisy structure
+  // clearly dominates and there is no usable learning signal left.
   if (noisyCount === lines.length) {
     return true
   }
@@ -142,6 +146,8 @@ export function cleanNaturalLanguageText(text: string) {
     return normalizeNaturalText(withoutBlocks)
   }
 
+  // Once a turn has at least one useful line, drop surrounding tool/log clutter
+  // instead of discarding the whole turn.
   return normalizeNaturalText(
     lines
       .filter((line) => {

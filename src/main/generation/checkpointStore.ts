@@ -116,6 +116,8 @@ export function resolveGenerationSettingsForRun(input: {
   return {
     provider: {
       baseUrl: input.snapshot.provider.baseUrl,
+      // Keep API keys out of persisted job snapshots; resume uses the current
+      // secret while preserving the original non-secret generation contract.
       apiKey: input.currentSettings.provider.apiKey,
       defaultModel: input.snapshot.provider.defaultModel
     },
@@ -417,6 +419,8 @@ function expectedBatchCountForSnapshot(input: {
   candidateCount: number
 }) {
   if (input.snapshot.promptOverride?.trim()) {
+    // Prompt override bypasses candidate batching and is sent as one custom
+    // enrichment request.
     return 1
   }
 
@@ -482,6 +486,9 @@ function isRankedCheckpointComplete(input: {
       .filter((id): id is string => typeof id === 'string')
   )
 
+  // A ranked order is resumable only when every ordered item still exists in a
+  // completed enrichment response; otherwise materialization would silently drop
+  // cards.
   return orderedIds.every((id) => completedItemIds.has(id))
 }
 
@@ -515,6 +522,8 @@ export function getJobResumeStatus(
     }
   }
 
+  // Resume from the latest durable artifact. Later checkpoints include more
+  // work and should take precedence over earlier session/candidate snapshots.
   const completedBatchCount = countRows(
     db,
     "select count(*) as count from enrichment_batches where job_id = ? and status = 'completed'",

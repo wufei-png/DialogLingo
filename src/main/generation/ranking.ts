@@ -40,6 +40,8 @@ function clamp01(value: number) {
 }
 
 function scoreExpression(item: RankedInput) {
+  // Expressions favor recurrence and domain language because repeated terms are
+  // more likely to become reusable Anki cards.
   return (
     0.25 * clamp01(item.recurrenceScore) +
     0.25 * clamp01(item.domainScore) +
@@ -53,6 +55,8 @@ function scoreExpression(item: RankedInput) {
 }
 
 function scoreSentence(item: RankedInput) {
+  // Sentences favor context and language-gap coverage so longer examples teach
+  // usage instead of just surfacing repeated vocabulary.
   return (
     0.1 * clamp01(item.recurrenceScore) +
     0.15 * clamp01(item.domainScore) +
@@ -125,6 +129,8 @@ export function applyTypeBalanceRerank(input: {
       nextSentenceScore +
       input.lambda * (input.targetSentence - currentSentenceRatio)
 
+    // The balance term nudges, but does not override, base quality scores.
+    // This keeps a weak item type from filling the stream just to hit a ratio.
     if (expressionAdjusted >= sentenceAdjusted) {
       const next = expressionQueue.shift()
       if (!next) {
@@ -195,6 +201,8 @@ function calculateDomainScore(item: RankableWorkbookItem) {
     item.generatedSnapshot.explanation,
     item.generatedSnapshot.tags.join(' ')
   ].join(' ').toLowerCase()
+  // v1 is optimized for agent-workflow conversations, so technical/product
+  // signals are positive ranking hints rather than generic topic detection.
   const domainSignals = [
     'api',
     'app',
@@ -246,6 +254,8 @@ function calculateNoisePenalty(item: RankableWorkbookItem) {
   const lowered = sourceText.toLowerCase()
   let penalty = 0
 
+  // Noise should demote suspicious generated items without deleting them; final
+  // removal already happened in pre-clean and finalize stages.
   if (lowered === '[collapsed code block]' || lowered.includes('```')) {
     penalty += 0.9
   }

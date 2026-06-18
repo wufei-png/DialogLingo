@@ -9,6 +9,7 @@ import {
   parseLearningItemContent,
   parseLearningItemPayload
 } from './modelAdapter'
+import { logger } from '../logging'
 
 export type CliBackendKind = Extract<
   ModelBackendKind,
@@ -144,6 +145,7 @@ export function buildCliCommand(input: {
 }
 
 export async function runCliCommand(input: {
+  kind?: CliBackendKind
   executable: string
   args: string[]
   cwd: string
@@ -188,6 +190,10 @@ export async function runCliCommand(input: {
       stderr += chunk
     })
     child.on('error', (error) => {
+      logger.debug('generation-cli', 'command spawn failed', {
+        backendKind: input.kind ?? 'unknown',
+        errorName: error instanceof Error ? error.name : 'unknown'
+      })
       settle(() => {
         reject(
           new ModelAdapterError(
@@ -200,11 +206,21 @@ export async function runCliCommand(input: {
     child.on('close', (exitCode, signal) => {
       settle(() => {
         if (timedOut) {
+          logger.debug('generation-cli', 'command timed out', {
+            backendKind: input.kind ?? 'unknown',
+            timeoutMs: input.timeoutMs
+          })
           reject(new ModelAdapterError('CLI command timed out.', 'provider-timeout'))
           return
         }
 
         if (exitCode !== 0) {
+          logger.debug('generation-cli', 'command exited non-zero', {
+            backendKind: input.kind ?? 'unknown',
+            exitCode,
+            signal,
+            stderrBytes: Buffer.byteLength(stderr, 'utf8')
+          })
           reject(
             new ModelAdapterError(
               `CLI command failed with exit code ${exitCode ?? signal ?? 'unknown'}: ${stderr.trim()}`,
@@ -242,6 +258,8 @@ function collectStringCandidates(value: unknown): string[] {
 
   const record = value as Record<string, unknown>
   const candidates: string[] = []
+  // CLI tools wrap final text differently; collect common wrapper fields before
+  // falling back to raw JSON slice extraction.
   for (const key of ['result', 'content', 'text', 'message', 'output', 'response']) {
     candidates.push(...collectStringCandidates(record[key]))
   }
@@ -357,6 +375,7 @@ export async function enrichCliCandidateBatch(input: {
       promptPath
     })
     const result = await runCliCommand({
+      kind: input.kind,
       executable: command.executable,
       args: command.args,
       cwd: tempDir,

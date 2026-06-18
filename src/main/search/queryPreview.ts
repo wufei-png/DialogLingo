@@ -40,6 +40,8 @@ function isEnvironmentContextText(text: string) {
 function filterInitialEnvironmentContextTurn(turns: PreviewTurn[]) {
   const [firstTurn] = turns
   if (firstTurn?.role === 'user' && isEnvironmentContextText(firstTurn.text)) {
+    // Codex rollout files often start with machine context. It remains indexed,
+    // but hiding it here keeps preview navigation focused on the conversation.
     return turns.slice(1)
   }
 

@@ -8,12 +8,14 @@ import {
   type SessionSummary,
   type SourceAdapter
 } from '../types'
+import { logger } from '../../logging'
 
 type JsonMap = Record<string, unknown>
 
 function walkSessionFiles(root: string) {
   const sessionsRoot = path.join(root, 'storage', 'session')
   if (!fs.existsSync(sessionsRoot)) {
+    logger.debug('source-adapter', 'opencode session directory missing')
     return []
   }
 
@@ -41,6 +43,9 @@ function readJson(filePath: string): JsonMap {
 function readMessageText(root: string, messageId: string) {
   const partsDir = path.join(root, 'storage', 'part', messageId)
   if (!fs.existsSync(partsDir)) {
+    logger.debug('source-adapter', 'opencode message parts missing', {
+      messageId
+    })
     return ''
   }
 
@@ -103,11 +108,17 @@ export function createOpenCodeAdapter(root: string): SourceAdapter {
     async readSession(sessionId: string, options?: { locator?: string }) {
       const sessionFile = options?.locator ?? findSessionFile(root, sessionId)
       if (!sessionFile) {
+        logger.debug('source-adapter', 'opencode session file missing', {
+          sessionId
+        })
         return []
       }
 
       const messagesDir = path.join(root, 'storage', 'message', sessionId)
       if (!fs.existsSync(messagesDir)) {
+        logger.debug('source-adapter', 'opencode message directory missing', {
+          sessionId
+        })
         return []
       }
 

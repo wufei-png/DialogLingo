@@ -3,6 +3,7 @@ import {
   learningItemJsonSchema,
   parseLearningItemContent
 } from './modelAdapter'
+import { logger } from '../logging'
 
 export function normalizeOpenAiChatCompletionsUrl(baseUrl: string) {
   const trimmed = baseUrl.trim()
@@ -125,6 +126,12 @@ export async function enrichOpenAiCompatibleCandidateBatch(input: {
       throw error
     }
 
+    // Some OpenAI-compatible gateways reject strict json_schema even when they
+    // support JSON mode. Retry once with a looser contract before failing.
+    logger.debug('generation-openai', 'retrying with json_object response format', {
+      model: input.model,
+      reason: error instanceof ModelAdapterError ? error.reason : 'unknown'
+    })
     const content = await requestCompletion({
       url,
       apiKey: input.apiKey,

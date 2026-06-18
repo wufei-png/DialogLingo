@@ -166,6 +166,8 @@ export function filterExportableItems<T extends ExportPolicyItem>(
     )
   }
 
+  // Keep array compatibility for existing callers while exposing a named
+  // property for code that wants an explicit result shape.
   Object.defineProperty(result, 'items', {
     value: Array.from(result),
     enumerable: false

@@ -27,6 +27,8 @@ export function buildSearchQueryPlan(query: string): SearchQueryPlan {
   return {
     trimmed,
     variants,
+    // SQLite FTS tokenization drops very short or punctuation-heavy queries.
+    // LIKE fallback keeps searches such as "ui", "j/k", and Chinese fragments useful.
     useLikeFallback: strippedSeparators.length > 0 && strippedSeparators.length < 3
   }
 }
@@ -141,6 +143,8 @@ export function buildHighlightedText(value: string, variants: string[]) {
   let cursor = 0
   let highlighted = ''
 
+  // Use one pass over the source string so overlapping variants cannot nest
+  // highlight markers inside each other.
   while (cursor < value.length) {
     const match = findNextVariantMatch(loweredValue, usableVariants, cursor)
     if (!match) {

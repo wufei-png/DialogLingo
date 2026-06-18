@@ -8,12 +8,16 @@ import {
   type SessionSummary,
   type SourceAdapter
 } from '../types'
+import { logger } from '../../logging'
 
 type JsonMap = Record<string, unknown>
 type ParsedCodexTurn = ConversationTurn & { timestamp: string }
 
 function walkJsonlFiles(dir: string): string[] {
   if (!fs.existsSync(dir)) {
+    logger.debug('source-adapter', 'codex transcript directory missing', {
+      collection: path.basename(dir)
+    })
     return []
   }
 
@@ -223,6 +227,9 @@ export function createCodexAdapter(root: string): SourceAdapter {
     async readSession(sessionId: string, options?: { locator?: string }) {
       const filePath = options?.locator ?? findSessionFile(root, sessionId)
       if (!filePath) {
+        logger.debug('source-adapter', 'codex session file missing', {
+          sessionId
+        })
         return []
       }
 

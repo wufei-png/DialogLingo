@@ -21,6 +21,8 @@ function resolveNativeBinding() {
     return undefined
   }
 
+  // Electron and Node need separate better-sqlite3 ABI builds; the dev/build
+  // scripts prepare this Electron-specific copy before the app starts.
   const packageDir = path.dirname(require.resolve('better-sqlite3/package.json'))
   const bindingPath = path.join(
     packageDir,

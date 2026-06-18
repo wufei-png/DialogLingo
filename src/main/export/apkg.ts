@@ -84,6 +84,8 @@ export async function writeApkg(
 }
 
 async function createDefaultDeck(deckName: string): Promise<AnkiDeckWriter> {
+  // The APKG package is CJS-shaped and confused by Vite's static import rewrite;
+  // dynamic loading keeps Electron packaging from bundling the wrong wrapper.
   const module = (await import(
     /* @vite-ignore */ ankiApkgExporterSpecifier
   )) as {
