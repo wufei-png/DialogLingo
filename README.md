@@ -51,6 +51,28 @@ You review and clean the generated workbook in DialogLingo, then study it in Ank
 - **Local-first privacy posture**: indexing stays local; remote generation requires explicit provider configuration.
 - **English and Simplified Chinese UI**: the app includes both English and Chinese interface text.
 
+## Related Projects
+
+Research snapshot: 2026-06-19. I did not find another open-source project with the same full workflow as DialogLingo: local AI-agent session discovery, search and selection, noise-aware extraction, workbook review with source provenance, and Anki-first export. The closest overlap is [voidash/chatGPT-to-Anki](https://github.com/voidash/chatGPT-to-Anki).
+
+| Project | Main workflow | Overlap with DialogLingo | Choose it when | Choose DialogLingo when |
+| --- | --- | --- | --- | --- |
+| [voidash/chatGPT-to-Anki](https://github.com/voidash/chatGPT-to-Anki) | Browser extension plus Anki add-on for turning ChatGPT, Claude.ai, Perplexity.ai chats, and highlighted web text into Anki cards without API keys. | High: AI conversations -> reviewed flashcards -> Anki-oriented export/import. | You mostly work inside web chat products and want quick capture into Anki Desktop. | You want to mine local Codex, Claude Code, or OpenCode history by project/time/search, preserve provenance, and review a workbook before export. |
+| [nilsreichardt/AnkiGPT](https://github.com/nilsreichardt/AnkiGPT) | Web app / GPT flow for generating flashcards from PDF slides or pasted text, editing them, and exporting CSV to Anki. | Medium: AI-generated flashcards with a review step and Anki export. | Your source material is lectures, slides, PDFs, or pasted study notes. | Your source material is local agent chat history and the learning target is expressions/sentences from real AI work conversations. |
+| [AlexToumayan/Chat-GPT-Flashcards-To-Anki-Converter](https://github.com/AlexToumayan/Chat-GPT-Flashcards-To-Anki-Converter) | Python converter for paste-in ChatGPT-generated `Front` / `Back` cards into an Anki-compatible import format. | Medium-low: ChatGPT output -> Anki import format. | You already prompted ChatGPT manually and only need a lightweight format converter. | You want automatic session ingestion, extraction, deduping, editing, and export from a selected corpus. |
+| [taabishm2/copy-to-anki](https://github.com/taabishm2/copy-to-anki) | Browser extension for saving highlighted web-page text to Anki via AnkiConnect, with optional ChatGPT question generation. | Medium: selected text -> AI-assisted Anki card creation. | You are clipping individual web passages while browsing. | You want to process stored multi-session agent conversations in batches. |
+| [pictoune/AnkiLingoFlash](https://github.com/pictoune/AnkiLingoFlash) | Browser extension for language-learning cards from web content, including definitions, mnemonics, pronunciation guidance, and AnkiConnect integration. | Medium: language-learning flashcards with AI assistance and Anki integration. | You want vocabulary mining directly from websites across Chrome, Edge, or Firefox. | You want a desktop review console for agent-session-derived English learning material. |
+| [raine/anki-llm](https://github.com/raine/anki-llm) | CLI/TUI toolkit for processing existing Anki decks with OpenAI-compatible LLMs, generating cards from terms, retrying/resuming batch jobs, and updating Anki through AnkiConnect. | Medium: LLM-assisted Anki workflows with review and automation. | You already have Anki decks and want to improve, batch-process, or extend them. | You want to create new workbook material from local chat transcripts before it reaches Anki. |
+| [thiswillbeyourgithub/AnkiAIUtils](https://github.com/thiswillbeyourgithub/AnkiAIUtils) | AI utilities for enhancing existing Anki cards with explanations, mnemonics, illustrations, and adaptive follow-up. | Low: improves Anki learning with AI, but starts from existing cards. | You want AI help after cards are already in Anki. | You need the upstream pipeline that turns local AI work conversations into reviewable cards. |
+
+Selection guide:
+
+- Use DialogLingo for local agent-history mining: `local sessions -> selection -> generation -> review workbook -> export`.
+- Use `chatGPT-to-Anki` for the fastest browser-chat-to-Anki path.
+- Use browser clippers such as `copy-to-anki` or `AnkiLingoFlash` for one-off web-page vocabulary/card capture.
+- Use `AnkiGPT` for slide/PDF/text study-note generation.
+- Use `anki-llm` or `AnkiAIUtils` when your main object is an existing Anki collection rather than source transcript ingestion.
+
 ## Installation
 
 Recommended: download the installer for your platform from the GitHub Releases page:
