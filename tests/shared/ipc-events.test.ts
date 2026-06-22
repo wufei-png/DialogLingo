@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { jobEventSchema } from '../../src/shared/ipc/events'
+import { jobEventSchema, launchScanStatusSchema } from '../../src/shared/ipc/events'
 
 describe('jobEventSchema', () => {
   it('accepts enriched job events without a failure reason', () => {
@@ -22,5 +22,19 @@ describe('jobEventSchema', () => {
     })
 
     expect(parsed.failureReason).toBeNull()
+  })
+})
+
+describe('launchScanStatusSchema', () => {
+  it('accepts cached-index availability for background launch scans', () => {
+    const parsed = launchScanStatusSchema.parse({
+      phase: 'scanning',
+      scanOnLaunch: true,
+      hasIndexedSessions: true,
+      failureMessage: null,
+      launchPlan: null
+    })
+
+    expect(parsed.hasIndexedSessions).toBe(true)
   })
 })

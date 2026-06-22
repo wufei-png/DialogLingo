@@ -2,28 +2,10 @@ import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { LaunchScanStatus, ScanEvent } from '../../../shared/ipc/events'
 import { trpc } from './trpc'
-
-export type LaunchScanGatePhase = 'loading' | 'scanning' | 'ready' | 'error'
-
-function resolvePhaseFromStatus(status: LaunchScanStatus): LaunchScanGatePhase {
-  if (!status.scanOnLaunch) {
-    return 'ready'
-  }
-
-  if (status.phase === 'completed') {
-    return 'ready'
-  }
-
-  if (status.phase === 'failed') {
-    return 'error'
-  }
-
-  if (status.phase === 'scanning') {
-    return 'scanning'
-  }
-
-  return 'scanning'
-}
+import {
+  resolveLaunchScanGatePhase,
+  type LaunchScanGatePhase
+} from './launchScanGateModel'
 
 function failureMessageFromStatus(status: LaunchScanStatus, fallback: string) {
   return status.failureMessage ?? fallback
@@ -45,7 +27,7 @@ export function useLaunchScanGate() {
     void (async () => {
       try {
         const status = await trpc.launchScanStatus.query()
-        const nextPhase = resolvePhaseFromStatus(status)
+        const nextPhase = resolveLaunchScanGatePhase(status)
         setPhase(nextPhase)
 
         if (nextPhase === 'error') {
@@ -70,7 +52,7 @@ export function useLaunchScanGate() {
         })
 
         const latest = await trpc.launchScanStatus.query()
-        const latestPhase = resolvePhaseFromStatus(latest)
+        const latestPhase = resolveLaunchScanGatePhase(latest)
         setPhase(latestPhase)
 
         if (latestPhase === 'error') {

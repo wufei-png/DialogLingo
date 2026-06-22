@@ -54,6 +54,7 @@ export type ScanEvent = z.infer<typeof scanEventSchema>
 export const launchScanStatusSchema = z.object({
   phase: scanPhaseSchema,
   scanOnLaunch: z.boolean(),
+  hasIndexedSessions: z.boolean(),
   failureMessage: z.string().nullable(),
   launchPlan: launchPlanSchema.nullable()
 })

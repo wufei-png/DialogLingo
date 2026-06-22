@@ -34,6 +34,14 @@ const requiredFiles = [
     'migrations',
     '0002_session_search_trigram.sql'
   ),
+  path.join(
+    rootDir,
+    'dist-electron',
+    'main',
+    'db',
+    'migrations',
+    '0003_scan_loading_indexes.sql'
+  ),
   path.join(rootDir, 'dist-electron', 'preload', 'index.js'),
   path.join(rootDir, 'dist-electron', 'renderer', 'index.html'),
   path.join(

@@ -56,7 +56,29 @@ describe('runMigrations', () => {
       .prepare("select count(*) as count from session_search where session_id = 's1'")
       .get() as { count: number }
 
-    expect(migrationCount.count).toBe(3)
+    expect(migrationCount.count).toBe(4)
     expect(searchRows.count).toBe(1)
+
+    const indexes = sqlite
+      .prepare(
+        `
+          select name
+          from sqlite_master
+          where type = 'index'
+            and name in (
+              'session_turns_session_id_seq_idx',
+              'sessions_updated_at_idx',
+              'sessions_project_updated_at_idx'
+            )
+          order by name asc
+        `
+      )
+      .all() as Array<{ name: string }>
+
+    expect(indexes.map((row) => row.name)).toEqual([
+      'session_turns_session_id_seq_idx',
+      'sessions_project_updated_at_idx',
+      'sessions_updated_at_idx'
+    ])
   })
 })

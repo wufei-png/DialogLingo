@@ -40,6 +40,15 @@ export function createTestDb(): InstanceType<typeof BetterSqlite3> {
       is_tool_noise integer not null
     );
 
+    create index session_turns_session_id_seq_idx
+    on session_turns(session_id, seq);
+
+    create index sessions_updated_at_idx
+    on sessions(updated_at desc);
+
+    create index sessions_project_updated_at_idx
+    on sessions(project_id, updated_at desc);
+
     create virtual table session_search using fts5(
       session_id UNINDEXED,
       title,

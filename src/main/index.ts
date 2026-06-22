@@ -179,6 +179,23 @@ function emitScanEvent(event: ScanEvent) {
   }
 }
 
+function hasIndexedSessions(includeArchived: boolean) {
+  const row = sqlite
+    .prepare(
+      `
+        select exists(
+          select 1
+          from sessions
+          where ? = 1 or is_archived = 0
+          limit 1
+        ) as hasIndexedSessions
+      `
+    )
+    .get(includeArchived ? 1 : 0) as { hasIndexedSessions: number }
+
+  return row.hasIndexedSessions === 1
+}
+
 function readJobProgress(jobId: string) {
   const row = sqlite
     .prepare('select progress_json as progressJson from generation_jobs where id = ?')
@@ -1042,12 +1059,19 @@ function createRouter() {
         })
     },
     scan: {
-      getLaunchStatus: () => ({
-        phase: launchScanPhase,
-        scanOnLaunch: settings.get().scan.scanOnLaunch,
-        failureMessage: lastScanFailureMessage,
-        launchPlan: lastLaunchPlan
-      })
+      getLaunchStatus: () => {
+        const currentSettings = settings.get()
+
+        return {
+          phase: launchScanPhase,
+          scanOnLaunch: currentSettings.scan.scanOnLaunch,
+          hasIndexedSessions: hasIndexedSessions(
+            currentSettings.scan.includeArchivedSessions
+          ),
+          failureMessage: lastScanFailureMessage,
+          launchPlan: lastLaunchPlan
+        }
+      }
     },
     generation: {
       previewPrompt: async (input: { sessionIds: string[] }) => {

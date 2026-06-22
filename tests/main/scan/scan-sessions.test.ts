@@ -100,6 +100,83 @@ describe('scanSessions', () => {
     })
   })
 
+  it('skips unchanged session and turn writes on repeated scans', async () => {
+    const db = createTestDb()
+    let summary = {
+      id: 'codex-repeat',
+      sourceType: 'codex' as const,
+      title: 'Repeated Codex scan',
+      projectPath: '/workspace/dialoglingo',
+      startedAt: '2026-06-15T12:00:00.000Z',
+      updatedAt: '2026-06-15T12:00:05.000Z',
+      preview: 'Need faster launch scans.',
+      locator: '/fixtures/codex-repeat.jsonl',
+      turns: [
+        {
+          id: 'codex-turn-1',
+          role: 'user' as const,
+          text: 'Need faster launch scans.',
+          languageHint: 'en' as const,
+          sourceSpanRef: '/fixtures/codex-repeat.jsonl:2'
+        }
+      ]
+    }
+    const registry: SourceRegistry = {
+      codex: {
+        listSessions: async () => [summary],
+        readSession: async () => []
+      },
+      claude: {
+        listSessions: async () => [],
+        readSession: async () => []
+      },
+      opencode: {
+        listSessions: async () => [],
+        readSession: async () => []
+      }
+    }
+
+    const firstScan = await scanSessions(db, registry)
+    db.exec(`
+      create table turn_write_log (kind text not null);
+
+      create trigger turn_write_log_insert after insert on session_turns begin
+        insert into turn_write_log(kind) values ('insert');
+      end;
+
+      create trigger turn_write_log_delete after delete on session_turns begin
+        insert into turn_write_log(kind) values ('delete');
+      end;
+    `)
+    const countTurnWrites = () =>
+      (
+        db.prepare('select count(*) as count from turn_write_log').get() as {
+          count: number
+        }
+      ).count
+
+    const secondScan = await scanSessions(db, registry)
+
+    expect(firstScan.rewrittenTurnSessionCount).toBe(1)
+    expect(secondScan.skippedSessionCount).toBe(1)
+    expect(secondScan.rewrittenTurnSessionCount).toBe(0)
+    expect(countTurnWrites()).toBe(0)
+
+    summary = {
+      ...summary,
+      title: 'Renamed Codex scan'
+    }
+    const metadataOnlyScan = await scanSessions(db, registry)
+    const renamed = db
+      .prepare("select title from sessions where id = 'codex:codex-repeat'")
+      .get() as { title: string }
+
+    expect(metadataOnlyScan.updatedSessionCount).toBe(1)
+    expect(metadataOnlyScan.rewrittenTurnSessionCount).toBe(0)
+    expect(renamed.title).toBe('Renamed Codex scan')
+    expect(countTurnWrites()).toBe(0)
+  })
+
   it('persists adapter-provided and heuristic tool-noise flags', async () => {
     const db = createTestDb()
     const summary = {
