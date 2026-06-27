@@ -10,7 +10,9 @@ This v1 is not a general transcript browser, not a provider router, and not a lo
 
 ## Product Frame
 
-DialogLingo is a standalone desktop app for macOS, Windows, and Linux. It should feel visually adjacent to Codex Desktop: light white/gray surfaces, restrained motion, and selective glass/translucent treatment on chrome and modal surfaces rather than dense list content.
+DialogLingo is a standalone desktop app for macOS, Windows, and Linux. Its visual direction is an evidence workbench: a calm local productivity tool where local agent sessions, extracted learning items, source provenance, review state, and Anki export feel connected. Codex Desktop remains a reference for restraint and desktop utility, but it is not a visual hard constraint.
+
+The interface may use a stronger DialogLingo-specific identity when it supports the core review workflow. Current direction: light porcelain canvas, ink text, quiet gray structure, restrained motion, amber evidence accents for source/search positioning, and sage review accents for modified/saved state. Glass/translucent treatment should remain selective on chrome, sheets, drawers, and modal surfaces rather than dense list content.
 
 The product is a review-and-export console for learning material derived from daily AI conversations. Users do not study inside DialogLingo long-term. They generate a workbook, optionally clean it up, then export it to Anki or text formats for downstream learning tools.
 
