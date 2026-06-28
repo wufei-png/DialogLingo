@@ -24,7 +24,7 @@ type WorkerTurn = {
   isToolNoise?: boolean
 }
 
-type WorkerSession = {
+export type WorkerSession = {
   sessionId: string
   title: string
   turns: WorkerTurn[]
@@ -42,7 +42,7 @@ type WorkerItem = {
   }>
 }
 
-type StartMessage = {
+export type StartMessage = {
   type: 'start'
   jobId: string
   sessions: WorkerSession[]
@@ -87,7 +87,7 @@ function summarizeWorkerSessions(sessions: WorkerSession[]) {
   )
 }
 
-function emit(input: {
+type WorkerJobEvent = {
   kind: 'snapshot' | 'phase' | 'warning' | 'failure' | 'completed'
   jobId: string
   status:
@@ -112,7 +112,13 @@ function emit(input: {
     | 'provider-timeout'
     | 'model-request-failure'
     | 'invalid-structured-payload'
-}) {
+}
+
+type WorkerJobMessage = WorkerJobEvent & {
+  items?: WorkerItem[]
+}
+
+function emit(input: WorkerJobEvent) {
   logger.debug('generation-worker', 'post job event to main', {
     jobId: input.jobId,
     kind: input.kind,
@@ -122,6 +128,10 @@ function emit(input: {
     currentBatchLabel: input.currentBatchLabel
   })
   parentPort?.postMessage(input)
+}
+
+function postWorkerJobMessage(message: WorkerJobMessage) {
+  parentPort?.postMessage(message)
 }
 
 function emitCheckpoint(event: GenerationCheckpointEvent) {
@@ -137,8 +147,31 @@ function emitCheckpoint(event: GenerationCheckpointEvent) {
   parentPort?.postMessage(event)
 }
 
-type CandidateWithSession = PersistedCandidate & {
+export type CandidateWithSession = PersistedCandidate & {
   session: WorkerSession
+}
+
+export type WorkerRuntime = {
+  isCancelled: () => boolean
+  emit: (event: WorkerJobEvent) => void
+  emitCheckpoint: (event: GenerationCheckpointEvent) => void
+  postJobMessage: (message: WorkerJobMessage) => void
+  enrichCandidateBatch: typeof enrichCandidateBatch
+}
+
+const defaultWorkerRuntime: WorkerRuntime = {
+  isCancelled: () => cancelled,
+  emit,
+  emitCheckpoint,
+  postJobMessage: postWorkerJobMessage,
+  enrichCandidateBatch
+}
+
+function resolveWorkerRuntime(overrides?: Partial<WorkerRuntime>): WorkerRuntime {
+  return {
+    ...defaultWorkerRuntime,
+    ...overrides
+  }
 }
 
 function candidateArtifactId(input: {
@@ -327,8 +360,10 @@ function emitTerminalPhases(input: {
   totalSelectedSessionCount: number
   createdItemCount: number
   failedBatchCount: number
+  emitEvent?: WorkerRuntime['emit']
 }) {
-  emit({
+  const emitEvent = input.emitEvent ?? emit
+  emitEvent({
     kind: 'phase',
     jobId: input.jobId,
     status: 'ranking',
@@ -341,7 +376,7 @@ function emitTerminalPhases(input: {
     currentBatchLabel: 'dedup + type-balance rerank'
   })
 
-  emit({
+  emitEvent({
     kind: 'phase',
     jobId: input.jobId,
     status: 'materializing',
@@ -353,6 +388,49 @@ function emitTerminalPhases(input: {
     currentSessionTitle: null,
     currentBatchLabel: 'write workbook items'
   })
+}
+
+function emitCancelledSnapshot(input: {
+  message: Pick<StartMessage, 'jobId' | 'sessions'>
+  processedSessionCount: number
+  createdItemCount: number
+  failedBatchCount: number
+  currentSessionTitle: string | null
+  currentBatchLabel: string | null
+  items: WorkerItem[]
+  runtime: Pick<WorkerRuntime, 'postJobMessage'>
+}) {
+  input.runtime.postJobMessage({
+    kind: 'snapshot',
+    jobId: input.message.jobId,
+    status: 'cancelled',
+    totalSelectedSessionCount: input.message.sessions.length,
+    processedSessionCount: input.processedSessionCount,
+    createdItemCount: input.createdItemCount,
+    warningCount: 0,
+    failureCount: input.failedBatchCount,
+    currentSessionTitle: input.currentSessionTitle,
+    currentBatchLabel: input.currentBatchLabel,
+    items: input.items
+  })
+}
+
+function maybeEmitCancelledSnapshot(input: {
+  message: Pick<StartMessage, 'jobId' | 'sessions'>
+  processedSessionCount: number
+  createdItemCount: number
+  failedBatchCount: number
+  currentSessionTitle: string | null
+  currentBatchLabel: string | null
+  items: WorkerItem[]
+  runtime: Pick<WorkerRuntime, 'isCancelled' | 'postJobMessage'>
+}) {
+  if (!input.runtime.isCancelled()) {
+    return false
+  }
+
+  emitCancelledSnapshot(input)
+  return true
 }
 
 function finalizeAndRankItems(items: WorkerItem[], generation: StartMessage['generation']) {
@@ -492,14 +570,16 @@ async function runMockStart(message: StartMessage) {
   })
 }
 
-async function runEnrichmentFromCandidates(input: {
+export async function runEnrichmentFromCandidates(input: {
   message: StartMessage
   candidates: CandidateWithSession[]
   customPrompt?: string | null
   completedBatches?: ResumeCheckpointPayload['completedBatches']
   rankedOrderIds?: string[]
   sourceJobId?: string | null
+  runtime?: Partial<WorkerRuntime>
 }) {
+  const runtime = resolveWorkerRuntime(input.runtime)
   const startedAt = Date.now()
   const items: WorkerItem[] = []
   const completedByIndex = new Map(
@@ -546,24 +626,22 @@ async function runEnrichmentFromCandidates(input: {
       candidates: batch
     })
 
-    if (cancelled) {
-      parentPort?.postMessage({
-        kind: 'snapshot',
-        jobId: input.message.jobId,
-        status: 'cancelled',
-        totalSelectedSessionCount: input.message.sessions.length,
+    if (
+      maybeEmitCancelledSnapshot({
+        message: input.message,
         processedSessionCount: input.message.sessions.length,
         createdItemCount: items.length,
-        warningCount: 0,
-        failureCount: failedBatchCount,
+        failedBatchCount,
         currentSessionTitle: null,
         currentBatchLabel: batchLabel,
-        items
+        items,
+        runtime
       })
+    ) {
       return
     }
 
-    emit({
+    runtime.emit({
       kind: 'phase',
       jobId: input.message.jobId,
       status: 'enriching',
@@ -592,7 +670,7 @@ async function runEnrichmentFromCandidates(input: {
         startIndex: items.length + 1
       })
       items.push(...reusedItems)
-      emitCheckpoint({
+      runtime.emitCheckpoint({
         kind: 'checkpoint',
         jobId: input.message.jobId,
         checkpoint: 'enrichment_batch_completed',
@@ -610,10 +688,24 @@ async function runEnrichmentFromCandidates(input: {
         itemCount: reusedItems.length,
         durationMs: elapsedMs(batchStartedAt)
       })
+      if (
+        maybeEmitCancelledSnapshot({
+          message: input.message,
+          processedSessionCount: input.message.sessions.length,
+          createdItemCount: items.length,
+          failedBatchCount,
+          currentSessionTitle: null,
+          currentBatchLabel: batchLabel,
+          items,
+          runtime
+        })
+      ) {
+        return
+      }
       continue
     }
 
-    emitCheckpoint({
+    runtime.emitCheckpoint({
       kind: 'checkpoint',
       jobId: input.message.jobId,
       checkpoint: 'enrichment_batch_started',
@@ -622,11 +714,25 @@ async function runEnrichmentFromCandidates(input: {
     })
 
     try {
-      const drafts = await enrichCandidateBatch({
+      const drafts = await runtime.enrichCandidateBatch({
         provider: input.message.provider,
         modelBackend: input.message.modelBackend,
         prompt
       })
+      if (
+        maybeEmitCancelledSnapshot({
+          message: input.message,
+          processedSessionCount: input.message.sessions.length,
+          createdItemCount: items.length,
+          failedBatchCount,
+          currentSessionTitle: null,
+          currentBatchLabel: batchLabel,
+          items,
+          runtime
+        })
+      ) {
+        return
+      }
       const batchItems = itemsFromDrafts({
         jobId: input.message.jobId,
         batch,
@@ -635,7 +741,7 @@ async function runEnrichmentFromCandidates(input: {
       })
 
       items.push(...batchItems)
-      emitCheckpoint({
+      runtime.emitCheckpoint({
         kind: 'checkpoint',
         jobId: input.message.jobId,
         checkpoint: 'enrichment_batch_completed',
@@ -661,7 +767,7 @@ async function runEnrichmentFromCandidates(input: {
       const message =
         error instanceof Error ? error.message : 'Model request failed.'
 
-      emitCheckpoint({
+      runtime.emitCheckpoint({
         kind: 'checkpoint',
         jobId: input.message.jobId,
         checkpoint: 'enrichment_batch_failed',
@@ -672,7 +778,7 @@ async function runEnrichmentFromCandidates(input: {
           message
         }
       })
-      emit({
+      runtime.emit({
         kind: 'failure',
         jobId: input.message.jobId,
         status: 'failed',
@@ -695,6 +801,21 @@ async function runEnrichmentFromCandidates(input: {
       })
       return
     }
+  }
+
+  if (
+    maybeEmitCancelledSnapshot({
+      message: input.message,
+      processedSessionCount: input.message.sessions.length,
+      createdItemCount: items.length,
+      failedBatchCount,
+      currentSessionTitle: null,
+      currentBatchLabel: 'dedup + type-balance rerank',
+      items,
+      runtime
+    })
+  ) {
+    return
   }
 
   const rankingStartedAt = Date.now()
@@ -724,7 +845,7 @@ async function runEnrichmentFromCandidates(input: {
     elapsedSinceEnrichmentStartMs: elapsedMs(startedAt)
   })
 
-  emitCheckpoint({
+  runtime.emitCheckpoint({
     kind: 'checkpoint',
     jobId: input.message.jobId,
     checkpoint: 'ranked_orders',
@@ -736,10 +857,11 @@ async function runEnrichmentFromCandidates(input: {
     jobId: input.message.jobId,
     totalSelectedSessionCount: input.message.sessions.length,
     createdItemCount: completedItems.length,
-    failedBatchCount
+    failedBatchCount,
+    emitEvent: runtime.emit
   })
 
-  parentPort?.postMessage({
+  runtime.postJobMessage({
     kind: 'completed',
     jobId: input.message.jobId,
     status: 'completed',
@@ -838,20 +960,18 @@ async function runFreshStart(message: StartMessage) {
   for (let index = 0; index < message.sessions.length; index += 1) {
     const session = message.sessions[index]
     const sessionStartedAt = Date.now()
-    if (cancelled) {
-      parentPort?.postMessage({
-        kind: 'snapshot',
-        jobId: message.jobId,
-        status: 'cancelled',
-        totalSelectedSessionCount: message.sessions.length,
+    if (
+      maybeEmitCancelledSnapshot({
+        message,
         processedSessionCount: index,
         createdItemCount: 0,
-        warningCount: 0,
-        failureCount: 0,
+        failedBatchCount: 0,
         currentSessionTitle: session.title,
         currentBatchLabel: null,
-        items: []
+        items: [],
+        runtime: defaultWorkerRuntime
       })
+    ) {
       return
     }
 
@@ -948,20 +1068,18 @@ async function runPromptOverrideStart(message: StartMessage, promptOverride: str
     const session = message.sessions[index]
     const sessionStartedAt = Date.now()
 
-    if (cancelled) {
-      parentPort?.postMessage({
-        kind: 'snapshot',
-        jobId: message.jobId,
-        status: 'cancelled',
-        totalSelectedSessionCount: message.sessions.length,
+    if (
+      maybeEmitCancelledSnapshot({
+        message,
         processedSessionCount: index,
         createdItemCount: 0,
-        warningCount: 0,
-        failureCount: 0,
+        failedBatchCount: 0,
         currentSessionTitle: session.title,
         currentBatchLabel: null,
-        items: []
+        items: [],
+        runtime: defaultWorkerRuntime
       })
+    ) {
       return
     }
 

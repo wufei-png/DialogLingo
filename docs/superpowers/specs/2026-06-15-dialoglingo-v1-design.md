@@ -134,7 +134,7 @@ Use this section to orient maintenance against the current code. It does not clo
 - Search preview follows the current code contract: session navigation rows are title-only, while snippets/highlights belong in the focused preview pane. Empty search should not render transcript literal `<mark>` text as a highlight; preview highlighting is active only when the query is non-empty.
 - Workbook source/provenance is no longer just a placeholder. `SourcePanel` shows source platform, project/workspace, timestamp, source-span/text-match status, source-ref navigation, normalized highlighting, and `Prev / Next` match navigation. Optional raw excerpt fallback controls are still planned work.
 - Generation docs should describe the current model layer as OpenAI-compatible API plus explicit CLI backends and mock LLM mode. Older references to a dedicated `litellmClient.ts` are historical; LiteLLM remains usable as an OpenAI-compatible local gateway, not as a special provider-router surface.
-- Current generation pre-clean uses persisted and heuristic tool-noise signals, redacts obvious API-key-like secrets, drops pure tool/code/log/path/error noise, and strips noisy blocks from otherwise useful natural-language turns before model prompting. Search indexing still keeps raw transcript text; search preview code/log collapse remains follow-up work. See [generation pre-clean and candidate mining](../../architecture/2026-06-18-generation-preclean-candidate-mining.md).
+- Current generation pre-clean uses persisted and heuristic tool-noise signals, redacts obvious API-key-like secrets, drops pure tool/code/log/path/error noise, and strips noisy blocks from otherwise useful natural-language turns before model prompting. Search indexing also excludes pure tool-noise turns from `sessions.search_text`, and search preview does not render `is_tool_noise` turns. Mixed natural-language turns remain raw in search for now; a code/log folding UI is not part of v1. See [generation pre-clean and candidate mining](../../architecture/2026-06-18-generation-preclean-candidate-mining.md).
 - Current candidate mining splits cleaned natural-language turns into local candidate excerpts, filters trivial/pure fragment/noisy/near-duplicate candidates, and applies `maxItemsPerSession` after filtering. Durable `candidate_groups` persistence is still planned work. Pipeline diagram and module map: [generation pre-clean and candidate mining](../../architecture/2026-06-18-generation-preclean-candidate-mining.md).
 - Current generation post-processing performs exact normalized dedup, conservative near-duplicate source-text merging, trivial expression filtering, in-memory heuristic base ranking, and type-balance rerank before workbook materialization. Durable `ranked_orders` checkpoint persistence is still planned work.
 - Database docs should be checked against `src/main/db/schema.ts` and migrations before DB work. Current code includes fields/tables such as `sessions.search_text`, `sessions.is_archived`, `workbook_items.source_refs_json`, `candidate_groups`, `enrichment_batches`, and `ranked_orders` that older prose may omit.
@@ -223,8 +223,7 @@ When search is active:
 
 - matching groups auto-expand
 - matching sessions surface through the filtered/grouped session tree, while snippet detail stays in the focused preview pane
-- the preview pane auto-scrolls to the first visible match
-- if the first match is inside a collapsed code/log block, that local block expands before scrolling
+- the preview pane auto-scrolls to the first visible match after pure-noise filtering
 
 If the current query has multiple matches in the focused preview, show lightweight `Prev / Next match` navigation near the preview context area.
 
@@ -263,12 +262,10 @@ The main pane displays the focused session:
 - source platform
 - project/workspace path
 - timestamps
-- normalized conversation preview
+- normalized conversation preview with pure `is_tool_noise` turns filtered out
 - highlighted snippets when relevant
 
-The preview pane is for relevance checking before generation, not full transcript inspection. Code/log blocks should be collapsed by default in preview. Raw transcript excerpts should remain available only as a fallback drill-down, not as the primary reading layer.
-
-Do not add a separate `Highlight Natural Language` toggle in v1. Normalized preview plus default code/log collapsing is the single preview-denoise model.
+The preview pane is for relevance checking before generation, not full transcript inspection. It should show normalized evidence by filtering pure tool/code/log/path/error noise out of the default preview. Do not add a separate noise-folding UI or `Highlight Natural Language` toggle in v1.
 
 The `Generate Workbook` action lives in the left-rail footer because selection happens there. Triggering generation opens a lightweight confirmation sheet that shows:
 

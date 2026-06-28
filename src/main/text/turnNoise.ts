@@ -1,7 +1,7 @@
 export const SECRET_PATTERN = /\bsk-[A-Za-z0-9_-]+\b/g
 
-// These rules protect generation prompts only. Search indexing keeps the raw
-// transcript text so users can still find code/log-heavy sessions.
+// These rules protect generation prompts and search indexing. Search keeps
+// raw non-noise turns, but pure tool/log/code noise is not indexed.
 const FENCED_CODE_BLOCK_PATTERN = /```[\s\S]*?```/g
 const TOOL_ENVELOPE_PATTERN =
   /^<(environment_context|local-command|command-name|command-message|command-args|local-command-stdout)\b/i

@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
 import { countHighlightMarkers } from '../../../../shared/highlight'
+import type { Settings } from '../../../../shared/schemas/settings'
 import { ResizableSplitPane } from '../../components/ResizableSplitPane'
 import { trpc } from '../../lib/trpc'
 import { useJobSubscription } from '../../lib/useJobSubscription'
@@ -84,6 +85,14 @@ function formatJobStatus(status: string | null | undefined, t: TFunction) {
   }
 }
 
+function getProgressPercent(processed: number, total: number) {
+  if (total <= 0) {
+    return 0
+  }
+
+  return Math.max(0, Math.min(100, Math.round((processed / total) * 100)))
+}
+
 export function WorkbookPage(props: {
   workbookSplitRatio: number
   workbookSourcePinned: boolean
@@ -110,6 +119,8 @@ export function WorkbookPage(props: {
     'resume' | 'restart' | null
   >(null)
   const [stoppedActionError, setStoppedActionError] = useState<string | null>(null)
+  const [cancelPending, setCancelPending] = useState(false)
+  const [cancelError, setCancelError] = useState<string | null>(null)
 
   useJobSubscription()
 
@@ -149,6 +160,24 @@ export function WorkbookPage(props: {
   })
 
   const rows = workbookQuery.data ?? []
+  const settingsQuery = useQuery({
+    enabled: exportOpen,
+    queryKey: ['settings'],
+    queryFn: async () => (await trpc.settingsGet.query()) as Settings
+  })
+  const exportRowsQuery = useQuery({
+    enabled: Boolean(props.workbookId) && exportOpen,
+    queryKey: ['workbook-export-counts', props.workbookId],
+    queryFn: async () =>
+      (await trpc.workbookList.query({
+        workbookId: props.workbookId!,
+        tab: 'all'
+      })) as WorkbookItem[]
+  })
+  const exportRows =
+    exportRowsQuery.data ?? (activeTab === 'all' ? rows : null)
+  const flaggedItemExportPolicy =
+    settingsQuery.data?.privacy.flaggedItemExportPolicy ?? null
   const selectedItem = useMemo(
     () => rows.find((item) => item.id === selectedItemId) ?? null,
     [rows, selectedItemId]
@@ -185,6 +214,9 @@ export function WorkbookPage(props: {
     failureText: t('workbook.defaults.noWorkbookCreated'),
     lastCheckpoint: t('workbook.defaults.none')
   })
+  const progressProcessed = jobQuery.data?.processedSessionCount ?? 0
+  const progressTotal = jobQuery.data?.selectedSessionCount ?? 0
+  const progressPercent = getProgressPercent(progressProcessed, progressTotal)
 
   useEffect(() => {
     if (props.workbookSourcePinned) {
@@ -204,6 +236,21 @@ export function WorkbookPage(props: {
       queryKey: ['workbook', props.workbookId]
     })
   }, [jobQuery.data?.status, props.workbookId, queryClient])
+
+  useEffect(() => {
+    setCancelPending(false)
+    setCancelError(null)
+  }, [props.jobId])
+
+  useEffect(() => {
+    if (
+      jobQuery.data?.status === 'completed' ||
+      jobQuery.data?.status === 'failed' ||
+      jobQuery.data?.status === 'cancelled'
+    ) {
+      setCancelPending(false)
+    }
+  }, [jobQuery.data?.status])
 
   useEffect(() => {
     const reconciled = reconcileWorkbookSelection(rows, selectedItemId)
@@ -266,6 +313,9 @@ export function WorkbookPage(props: {
 
     await queryClient.invalidateQueries({
       queryKey: ['workbook', props.workbookId, activeTab]
+    })
+    await queryClient.invalidateQueries({
+      queryKey: ['workbook-export-counts', props.workbookId]
     })
   }
 
@@ -331,6 +381,32 @@ export function WorkbookPage(props: {
       )
     } finally {
       setStoppedActionPending(null)
+    }
+  }
+
+  async function cancelGeneration() {
+    if (!props.jobId || cancelPending) {
+      return
+    }
+
+    setCancelPending(true)
+    setCancelError(null)
+    try {
+      const result = (await trpc.generationCancel.mutate({
+        jobId: props.jobId
+      })) as { cancelled?: boolean }
+      await queryClient.invalidateQueries({
+        queryKey: ['job-snapshot', props.jobId]
+      })
+      if (!result.cancelled) {
+        setCancelError(t('workbook.cancelNotDelivered'))
+        setCancelPending(false)
+      }
+    } catch (error) {
+      setCancelError(
+        error instanceof Error ? error.message : t('workbook.cancelFailed')
+      )
+      setCancelPending(false)
     }
   }
 
@@ -413,12 +489,38 @@ export function WorkbookPage(props: {
         <div className="workbook-progress-state boot-card">
           <p className="boot-eyebrow">{t('workbook.progress')}</p>
           <h2>{formatJobStatus(jobQuery.data?.status, t)}</h2>
-          <p>
-            {t('workbook.progressSessions', {
-              processed: jobQuery.data?.processedSessionCount ?? 0,
-              total: jobQuery.data?.selectedSessionCount ?? 0
-            })}
-          </p>
+          <div
+            className="workbook-progress-bar"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={progressPercent}
+          >
+            <span style={{ width: `${progressPercent}%` }} />
+          </div>
+          <div className="workbook-progress-metrics">
+            <span>
+              {t('workbook.progressSessions', {
+                processed: progressProcessed,
+                total: progressTotal
+              })}
+            </span>
+            <span>
+              {t('workbook.progressItems', {
+                count: jobQuery.data?.createdItemCount ?? 0
+              })}
+            </span>
+            <span>
+              {t('workbook.progressWarnings', {
+                count: jobQuery.data?.warningCount ?? 0
+              })}
+            </span>
+            <span>
+              {t('workbook.progressFailures', {
+                count: jobQuery.data?.failureCount ?? 0
+              })}
+            </span>
+          </div>
           {jobQuery.data?.currentSessionTitle || jobQuery.data?.currentBatchLabel ? (
             <p className="workbook-progress-detail">
               {[jobQuery.data.currentSessionTitle, jobQuery.data.currentBatchLabel]
@@ -426,6 +528,18 @@ export function WorkbookPage(props: {
                 .join(' - ')}
             </p>
           ) : null}
+          {cancelError ? (
+            <p className="workbook-progress-error">{cancelError}</p>
+          ) : null}
+          <div className="workbook-progress-actions">
+            <button
+              type="button"
+              disabled={cancelPending || !props.jobId}
+              onClick={() => void cancelGeneration()}
+            >
+              {cancelPending ? t('workbook.cancelling') : t('workbook.cancelGeneration')}
+            </button>
+          </div>
         </div>
       ) : isTerminalFailure ? (
         <div className="workbook-progress-state boot-card">
@@ -537,6 +651,8 @@ export function WorkbookPage(props: {
       )}
       <ExportModal
         open={exportOpen}
+        exportItems={exportRows}
+        flaggedItemExportPolicy={flaggedItemExportPolicy}
         onClose={() => setExportOpen(false)}
         onConfirm={async (payload) => {
           if (!props.workbookId) {

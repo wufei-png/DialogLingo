@@ -41,6 +41,7 @@ import {
   type GenerationRunSnapshot,
   type JobSessionSnapshot
 } from './generation/checkpointStore'
+import { requestGenerationCancel } from './generation/cancelWorker'
 import { runGenerationJob } from './generation/jobRunner'
 import { writeWorkbookDraft } from './generation/materializeWorkbook'
 import {
@@ -1191,22 +1192,31 @@ function createRouter() {
       },
       cancel: async (input: { jobId: string }) => {
         const worker = jobWorkers.get(input.jobId)
-        const cancelled = Boolean(
-          worker?.postMessage({
-            type: 'cancel',
-            jobId: input.jobId
+        let cancelResult = {
+          workerFound: Boolean(worker),
+          cancelled: false
+        }
+
+        try {
+          cancelResult = requestGenerationCancel(worker, input.jobId)
+        } catch (error) {
+          logger.warn('generation', 'cancel delivery failed', {
+            jobId: input.jobId,
+            workerFound: Boolean(worker),
+            cancelled: false,
+            message: error instanceof Error ? error.message : String(error)
           })
-        )
+        }
+
         logger.info('generation', 'cancel requested', {
           jobId: input.jobId,
-          workerFound: Boolean(worker),
-          cancelled
+          ...cancelResult
         })
 
         return {
           ok: true as const,
           jobId: input.jobId,
-          cancelled
+          cancelled: cancelResult.cancelled
         }
       }
     },

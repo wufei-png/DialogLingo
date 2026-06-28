@@ -10,6 +10,7 @@ import type {
 import { createSqliteSourceScanCache } from '../sources/cache'
 import { isTurnToolNoise } from '../text/turnNoise'
 import { logger } from '../logging'
+import { buildSearchPreview, buildSearchText } from '../search/searchText'
 import { discoverProjects } from './discoverProjects'
 
 type PersistedSession = {
@@ -35,6 +36,19 @@ function yieldToEventLoop() {
   return new Promise<void>((resolve) => {
     setImmediate(resolve)
   })
+}
+
+function buildSessionHash(turns: ConversationTurn[]) {
+  const hashInput = turns.map((turn) => ({
+    id: turn.id,
+    role: turn.role,
+    languageHint: turn.languageHint,
+    text: turn.text,
+    sourceSpanRef: turn.sourceSpanRef,
+    isToolNoise: isTurnToolNoise(turn)
+  }))
+
+  return crypto.createHash('sha1').update(JSON.stringify(hashInput)).digest('hex')
 }
 
 function isSamePersistedSession(existing: ExistingSession, next: PersistedSession) {
@@ -259,8 +273,8 @@ export async function scanSessions(
           ? await sourceRegistry.claude.readSession(summary.id, readOptions)
           : await sourceRegistry.opencode.readSession(summary.id, readOptions))
 
-    const searchText = turns.map((turn) => turn.text).join('\n')
-    const sessionHash = crypto.createHash('sha1').update(searchText).digest('hex')
+    const searchText = buildSearchText(turns)
+    const sessionHash = buildSessionHash(turns)
     const persistedSession: PersistedSession = {
       id: persistedSessionId,
       sourceType: summary.sourceType,
@@ -269,7 +283,7 @@ export async function scanSessions(
       title: summary.title,
       startedAt: summary.startedAt,
       updatedAt: summary.updatedAt,
-      preview: summary.preview,
+      preview: buildSearchPreview(turns, summary.preview),
       searchText,
       isArchived: summary.archived ? 1 : 0,
       rawLocator: summary.locator,

@@ -195,6 +195,36 @@ describe('createPreviewQuery', () => {
     ])
   })
 
+  it('filters tool-noise turns from search preview rows', () => {
+    const db = createTestDb()
+    insertPreviewSession(db, {
+      id: 's1',
+      title: 'plain title',
+      searchText: 'Evidence turn with useful language.'
+    })
+    db.prepare(
+      `
+        insert into session_turns (
+          id,
+          session_id,
+          seq,
+          role,
+          language_hint,
+          text,
+          source_span_ref,
+          is_tool_noise
+        )
+        values ('t-s1-noise', 's1', 1, 'assistant', 'en', ?, 'fixture:2', 1)
+      `
+    ).run('Adapter-marked tool output should stay hidden.')
+
+    const preview = createPreviewQuery(db)('s1', '')
+
+    expect(preview.turns.map((turn) => turn.text)).toEqual([
+      'Evidence turn with useful language.'
+    ])
+  })
+
   it('does not treat literal mark tags in transcript text as search highlights', () => {
     const db = createTestDb()
     insertPreviewSession(db, {
@@ -243,6 +273,41 @@ describe('createPreviewQuery', () => {
       markHighlightedText('geometric registration')
     )
     expect(preview.matchedBy).toBe('source-span')
+  })
+
+  it('filters tool-noise turns from workbook source preview rows', () => {
+    const db = createTestDb()
+    insertPreviewSession(db, {
+      id: 's1',
+      title: 'Source session',
+      searchText: 'Use a stable evidence manifest before generation.'
+    })
+    db.prepare(
+      `
+        insert into session_turns (
+          id,
+          session_id,
+          seq,
+          role,
+          language_hint,
+          text,
+          source_span_ref,
+          is_tool_noise
+        )
+        values ('t-s1-noise', 's1', 1, 'assistant', 'en', ?, 'fixture:2', 1)
+      `
+    ).run('Tool output that should not render in source preview.')
+
+    const preview = createWorkbookPreviewQuery(db)({
+      sessionId: 's1',
+      sourceSpanRef: 'fixture:2',
+      highlightText: 'Tool output'
+    })
+
+    expect(preview.turns.map((turn) => turn.text)).toEqual([
+      'Use a stable evidence manifest before generation.'
+    ])
+    expect(preview.matchedBy).toBe('none')
   })
 
   it('falls back to workbook source text highlighting when the span is unavailable', () => {

@@ -78,6 +78,20 @@ function getVisiblePreviewText(preview: SessionPreview | null, fallbackPreview: 
   return preview?.snippet?.snippet || fallbackPreview
 }
 
+function formatPreviewUpdatedAt(value: string, locale: string) {
+  const epoch = Date.parse(value)
+  if (Number.isNaN(epoch)) {
+    return value
+  }
+
+  return new Intl.DateTimeFormat(locale, {
+    month: 'short',
+    day: 'numeric',
+    hour: '2-digit',
+    minute: '2-digit'
+  }).format(new Date(epoch))
+}
+
 function isTextEditingTarget(target: EventTarget | null) {
   return (
     target instanceof HTMLElement &&
@@ -104,7 +118,7 @@ export function SearchPage(props: {
   onOpenSettings: () => void
   onWorkbookReady: (payload: { jobId: string; workbookId: string }) => void
 }) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const [sessions, setSessions] = useState<SearchSession[]>([])
   const [projects, setProjects] = useState<ProjectOption[]>([])
   const [focusedSessionId, setFocusedSessionId] = useState<string | null>(null)
@@ -331,6 +345,20 @@ export function SearchPage(props: {
     ? countHighlightMarkers(focusedSession?.titleSnippet) +
       countHighlightMarkers(visiblePreviewText)
     : 0
+  const previewScopeLabel =
+    queryScope === 'titles'
+      ? t('search.searchInTitles')
+      : queryScope === 'transcript'
+        ? t('search.searchInTranscripts')
+        : t('search.searchInAll')
+  const previewHeaderMeta = focusedSession ? (
+    <>
+      <span>{PLATFORM_LABELS[focusedSession.sourceType]}</span>
+      <span>{focusedSession.projectPath ?? t('search.unassigned')}</span>
+      <span>{formatPreviewUpdatedAt(focusedSession.updatedAt, i18n.language)}</span>
+      <span>{previewScopeLabel}</span>
+    </>
+  ) : null
 
   useEffect(() => {
     setActiveMatchIndex(0)
@@ -527,6 +555,7 @@ export function SearchPage(props: {
               matchCount > 0 ? (current + 1) % matchCount : 0
             )
           }
+          headerMeta={previewHeaderMeta}
         />
       )}
     />

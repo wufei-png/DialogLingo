@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { FolderTree, Monitor, WandSparkles } from 'lucide-react'
+import { FolderTree, Monitor, RotateCcw, WandSparkles } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { IconLabel } from '../../components/IconLabel'
 import { useEscapeToClose } from '../../lib/useEscapeToClose'
@@ -24,6 +24,16 @@ type Props = {
   onCancel: () => void
 }
 
+function summarizeRows(rows: SummaryRow[], maxVisible = 2) {
+  const visibleRows = rows.slice(0, maxVisible)
+  const hiddenCount = Math.max(0, rows.length - visibleRows.length)
+
+  return {
+    text: visibleRows.map((row) => `${row.label} ${row.count}`).join(' · '),
+    hiddenCount
+  }
+}
+
 export function GenerateWorkbookSheet(props: Props) {
   const { t } = useTranslation()
   const textareaRef = useRef<HTMLTextAreaElement | null>(null)
@@ -39,6 +49,8 @@ export function GenerateWorkbookSheet(props: Props) {
   const sessionSignature = useMemo(() => props.sessionIds.join('|'), [props.sessionIds])
   const promptChanged = prompt !== originalPrompt
   const promptBlank = prompt.trim().length === 0
+  const platformManifest = summarizeRows(props.platformSummary)
+  const projectManifest = summarizeRows(props.projectSummary)
 
   useEffect(() => {
     if (!props.open) {
@@ -129,37 +141,42 @@ export function GenerateWorkbookSheet(props: Props) {
   return createPortal(
     <div className="sheet-backdrop">
       <div className="sheet">
-        <p className="sheet-kicker">{t('generateWorkbook.kicker')}</p>
-        <h2>
-          <IconLabel icon={WandSparkles}>{t('generateWorkbook.title')}</IconLabel>
-        </h2>
-        <p>{t('generateWorkbook.selectedSessions', { count: props.selectedCount })}</p>
-        <div className="sheet-grid">
-          <section>
-            <h3>
+        <header className="generate-sheet-header">
+          <p className="sheet-kicker">{t('generateWorkbook.kicker')}</p>
+          <h2>
+            <IconLabel icon={WandSparkles}>{t('generateWorkbook.title')}</IconLabel>
+          </h2>
+          <div className="generate-sheet-chip-row">
+            <span>{t('generateWorkbook.selectedSessions', { count: props.selectedCount })}</span>
+            <span>{t('generateWorkbook.targetTypes')}</span>
+            <span>
+              {loadingPrompt
+                ? t('generateWorkbook.preparingPrompt')
+                : t('generateWorkbook.minedCandidates', { count: candidateCount })}
+            </span>
+            {promptChanged ? (
+              <span className="is-modified">{t('generateWorkbook.modifiedPrompt')}</span>
+            ) : saved ? (
+              <span className="is-saved">{t('common.saved')}</span>
+            ) : null}
+          </div>
+          <div className="generate-sheet-manifest">
+            <span>
               <IconLabel icon={Monitor}>{t('generateWorkbook.platform')}</IconLabel>
-            </h3>
-            <ul>
-              {props.platformSummary.map((row) => (
-                <li key={row.label}>
-                  {row.label}: {row.count}
-                </li>
-              ))}
-            </ul>
-          </section>
-          <section>
-            <h3>
+              <strong>{platformManifest.text || t('common.none')}</strong>
+              {platformManifest.hiddenCount > 0 ? (
+                <em>{t('generateWorkbook.moreSummary', { count: platformManifest.hiddenCount })}</em>
+              ) : null}
+            </span>
+            <span>
               <IconLabel icon={FolderTree}>{t('generateWorkbook.project')}</IconLabel>
-            </h3>
-            <ul>
-              {props.projectSummary.map((row) => (
-                <li key={row.label}>
-                  {row.label}: {row.count}
-                </li>
-              ))}
-            </ul>
-          </section>
-        </div>
+              <strong>{projectManifest.text || t('common.none')}</strong>
+              {projectManifest.hiddenCount > 0 ? (
+                <em>{t('generateWorkbook.moreSummary', { count: projectManifest.hiddenCount })}</em>
+              ) : null}
+            </span>
+          </div>
+        </header>
         <section className="generation-prompt-panel">
           <div className="prompt-editor-header">
             <div>
@@ -174,7 +191,7 @@ export function GenerateWorkbookSheet(props: Props) {
               {saved ? <span>{t('common.saved')}</span> : null}
               {promptChanged ? (
                 <button type="button" onClick={revertPrompt}>
-                  {t('common.revert')}
+                  <IconLabel icon={RotateCcw}>{t('common.revert')}</IconLabel>
                 </button>
               ) : null}
             </div>

@@ -14,6 +14,7 @@ const zhCN = {
     revert: '还原',
     selected: '已选择',
     notSelected: '未选择',
+    none: '无',
     settings: '设置',
     unknownSource: '未知来源',
     enable: '启用 {{label}}',
@@ -134,7 +135,10 @@ const zhCN = {
     project: '项目',
     modelPrompt: '模型 Prompt',
     preparingPrompt: '正在准备最终 prompt...',
-    minedCandidates: '包含 {{count}} 个候选项'
+    minedCandidates: '包含 {{count}} 个候选项',
+    targetTypes: '表达 + 句子',
+    modifiedPrompt: '已修改',
+    moreSummary: '+{{count}} 项'
   },
   preview: {
     searchMatches: '搜索匹配',
@@ -151,6 +155,13 @@ const zhCN = {
     emptyTitle: '从“搜索与选择”生成学习册。',
     progress: '生成进度',
     progressSessions: '{{processed}} / {{total}} 个会话',
+    progressItems: '已创建 {{count}} 个条目',
+    progressWarnings: '{{count}} 个警告',
+    progressFailures: '{{count}} 个失败',
+    cancelGeneration: '取消生成',
+    cancelling: '正在取消...',
+    cancelFailed: '取消失败。',
+    cancelNotDelivered: '取消请求未能发送到正在运行的任务。',
     generationStopped: '生成已停止',
     lastCheckpoint: '最后检查点：',
     failedBatches: '失败批次：',
@@ -242,8 +253,10 @@ const zhCN = {
     directionBilingual: '双语',
     expressions: '表达',
     expressionsDescription: '包含已审核的表达卡片。',
+    expressionCount: '{{count}} 个表达条目',
     sentences: '句子',
     sentencesDescription: '包含已审核的句子卡片。',
+    sentenceCount: '{{count}} 个句子条目',
     keepFlaggedItems: '保留标记条目',
     keepFlaggedItemsDescription: '导出标记为需要再次审核的条目。',
     chooseFolderTitle: '选择导出文件夹',
@@ -255,7 +268,19 @@ const zhCN = {
     format: '格式',
     exportAnkiPackage: 'Anki 包（.apkg）',
     exportAnkiTextBundle: 'Anki 文本包（.tsv + .md + .json）',
-    exportGenericTextBundle: '通用文本包（.csv + .md + .json）'
+    exportGenericTextBundle: '通用文本包（.csv + .md + .json）',
+    exportAnkiPackageTarget: 'Anki 包',
+    exportAnkiTextBundleTarget: 'Anki 文本包',
+    exportGenericTextBundleTarget: '通用文本包',
+    exportAnkiPackageDetail: '.apkg',
+    exportAnkiTextBundleDetail: '.tsv + .md + .json',
+    exportGenericTextBundleDetail: '.csv + .md + .json',
+    exportAnkiPackageDescription: '主要的 Anki 导入目标。',
+    exportAnkiTextBundleDescription: '可供审核或备份的 Anki 文本文件。',
+    exportGenericTextBundleDescription: '供其他工具使用的通用文本文件。',
+    runAnkiPackage: '导出 .apkg',
+    runAnkiTextBundle: '导出 Anki 文本包',
+    runGenericTextBundle: '导出文本包'
   }
 } satisfies LocaleResource<typeof en>
 

@@ -186,7 +186,7 @@ describe('scanSessions', () => {
       projectPath: '/workspace/dialoglingo',
       startedAt: '2026-06-15T12:00:00.000Z',
       updatedAt: '2026-06-15T12:00:05.000Z',
-      preview: 'Need better candidate mining.',
+      preview: '```ts\nconst value = 1\n```',
       locator: '/fixtures/codex-tool-noise.jsonl',
       turns: [
         {
@@ -254,6 +254,31 @@ describe('scanSessions', () => {
         isToolNoise: 1
       }
     ])
+
+    const session = db
+      .prepare(
+        `
+          select preview, search_text as searchText
+          from sessions
+          where id = 'codex:codex-tool-noise'
+        `
+      )
+      .get() as { preview: string; searchText: string }
+    const noiseSearchRows = db
+      .prepare(
+        `
+          select session_id as sessionId
+          from session_search
+          where session_search match 'Adapter'
+        `
+      )
+      .all() as Array<{ sessionId: string }>
+
+    expect(session).toEqual({
+      preview: 'Need better candidate mining before generation.',
+      searchText: 'Need better candidate mining before generation.'
+    })
+    expect(noiseSearchRows).toEqual([])
   })
 
   it('passes archived-session preference to source adapters', async () => {

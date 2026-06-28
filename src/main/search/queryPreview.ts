@@ -19,6 +19,7 @@ type PreviewTurn = {
   role: string
   text: string
   sourceSpanRef: string | null
+  isToolNoise: number
 }
 
 type SessionPreviewMeta = {
@@ -40,12 +41,18 @@ function isEnvironmentContextText(text: string) {
 function filterInitialEnvironmentContextTurn(turns: PreviewTurn[]) {
   const [firstTurn] = turns
   if (firstTurn?.role === 'user' && isEnvironmentContextText(firstTurn.text)) {
-    // Codex rollout files often start with machine context. It remains indexed,
-    // but hiding it here keeps preview navigation focused on the conversation.
+    // Older rows may predate the tool-noise flag. Keep this display guard so
+    // preview navigation stays focused on conversation evidence.
     return turns.slice(1)
   }
 
   return turns
+}
+
+function filterPreviewTurns(turns: PreviewTurn[]) {
+  return filterInitialEnvironmentContextTurn(turns).filter(
+    (turn) => !turn.isToolNoise
+  )
 }
 
 function snippetColumns(scope: QueryScope) {
@@ -80,14 +87,15 @@ export function createPreviewQuery(db: Database.Database) {
             seq,
             role,
             text,
-            source_span_ref as sourceSpanRef
+            source_span_ref as sourceSpanRef,
+            is_tool_noise as isToolNoise
           from session_turns
           where session_id = ?
           order by seq asc
         `
       )
       .all(sessionId) as PreviewTurn[]
-    const turns = filterInitialEnvironmentContextTurn(rawTurns)
+    const turns = filterPreviewTurns(rawTurns)
 
     const plan = buildSearchQueryPlan(query)
     const previewTurns =
@@ -205,14 +213,15 @@ export function createWorkbookPreviewQuery(db: Database.Database) {
             seq,
             role,
             text,
-            source_span_ref as sourceSpanRef
+            source_span_ref as sourceSpanRef,
+            is_tool_noise as isToolNoise
           from session_turns
           where session_id = ?
           order by seq asc
         `
       )
       .all(input.sessionId) as PreviewTurn[]
-    const turns = filterInitialEnvironmentContextTurn(rawTurns)
+    const turns = filterPreviewTurns(rawTurns)
     const sourceSpanRef = input.sourceSpanRef?.trim() ?? ''
     const highlight = input.highlightText?.trim() ?? ''
     const sourceMatchedTurns = sourceSpanRef

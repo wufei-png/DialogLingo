@@ -1,15 +1,22 @@
 import { useEffect, useState } from 'react'
 import {
   ArrowLeftRight,
+  Check,
   FileText,
   Layers,
   Tag as TagIcon,
   X
 } from 'lucide-react'
+import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
 import { IconLabel } from '../../components/IconLabel'
 import { trpc } from '../../lib/trpc'
 import { useEscapeToClose } from '../../lib/useEscapeToClose'
+import {
+  countExportableItems,
+  type ExportCountItem,
+  type FlaggedItemExportPolicy
+} from './exportCountModel'
 
 type ExportFormat = 'anki-package' | 'anki-text-bundle' | 'generic-text-bundle'
 type ExportConfirmPayload = {
@@ -37,6 +44,8 @@ type ExportConfirmResult =
 
 type Props = {
   open: boolean
+  exportItems?: ExportCountItem[] | null
+  flaggedItemExportPolicy?: FlaggedItemExportPolicy | null
   onClose: () => void
   onConfirm: (payload: ExportConfirmPayload) => Promise<ExportConfirmResult>
 }
@@ -66,7 +75,25 @@ function defaultOutputName(deckName: string) {
   return deckName.trim() || 'DialogLingo'
 }
 
-export function ExportModal({ open, onClose, onConfirm }: Props) {
+function getExportActionLabel(format: ExportFormat, t: TFunction) {
+  if (format === 'anki-package') {
+    return t('export.runAnkiPackage')
+  }
+
+  if (format === 'anki-text-bundle') {
+    return t('export.runAnkiTextBundle')
+  }
+
+  return t('export.runGenericTextBundle')
+}
+
+export function ExportModal({
+  open,
+  exportItems,
+  flaggedItemExportPolicy,
+  onClose,
+  onConfirm
+}: Props) {
   const { t } = useTranslation()
   useEscapeToClose(open, onClose)
   const [deckName, setDeckName] = useState('DialogLingo')
@@ -164,6 +191,41 @@ export function ExportModal({ open, onClose, onConfirm }: Props) {
     return null
   }
 
+  const formatOptions: Array<{
+    value: ExportFormat
+    label: string
+    description: string
+    detail?: string
+  }> = [
+    {
+      value: 'anki-package',
+      label: t('export.exportAnkiPackageTarget'),
+      description: t('export.exportAnkiPackageDescription'),
+      detail: t('export.exportAnkiPackageDetail')
+    },
+    {
+      value: 'anki-text-bundle',
+      label: t('export.exportAnkiTextBundleTarget'),
+      description: t('export.exportAnkiTextBundleDescription'),
+      detail: t('export.exportAnkiTextBundleDetail')
+    },
+    {
+      value: 'generic-text-bundle',
+      label: t('export.exportGenericTextBundleTarget'),
+      description: t('export.exportGenericTextBundleDescription'),
+      detail: t('export.exportGenericTextBundleDetail')
+    }
+  ]
+  const itemCounts =
+    exportItems && flaggedItemExportPolicy
+      ? countExportableItems(exportItems, {
+          includeExpressions,
+          includeSentences,
+          keepFlaggedItems,
+          flaggedItemExportPolicy
+        })
+      : null
+
   return (
     <div className="sheet-backdrop">
       <div className="sheet export-modal">
@@ -176,6 +238,38 @@ export function ExportModal({ open, onClose, onConfirm }: Props) {
             <IconLabel icon={X}>{t('common.close')}</IconLabel>
           </button>
         </header>
+        <section className="export-target-panel" aria-label={t('export.format')}>
+          <p className="export-target-label">
+            <IconLabel icon={FileText}>{t('export.format')}</IconLabel>
+          </p>
+          <div className="export-target-options">
+            {formatOptions.map((format) => {
+              const selected = selectedFormat === format.value
+              const FormatIcon = format.value === 'anki-package' ? Layers : FileText
+              const detailId = `export-format-${format.value}-detail`
+
+              return (
+                <span key={format.value} className="export-target-option-shell">
+                  <button
+                    type="button"
+                    className={selected ? 'export-target-option is-selected' : 'export-target-option'}
+                    aria-pressed={selected}
+                    aria-describedby={detailId}
+                    disabled={Boolean(exportingFormat)}
+                    onClick={() => setSelectedFormat(format.value)}
+                  >
+                    <IconLabel icon={FormatIcon}>{format.label}</IconLabel>
+                    <span>{format.description}</span>
+                    {selected ? <Check aria-hidden="true" size={16} /> : null}
+                  </button>
+                  <span id={detailId} role="tooltip" className="export-target-tooltip">
+                    {format.detail}
+                  </span>
+                </span>
+              )
+            })}
+          </div>
+        </section>
         <div className="export-field-list">
           <label className="export-field">
             <span className="export-field-copy">
@@ -254,6 +348,11 @@ export function ExportModal({ open, onClose, onConfirm }: Props) {
               <span className="export-option-label">{t('export.expressions')}</span>
               <span className="export-option-description">
                 {t('export.expressionsDescription')}
+                {itemCounts ? (
+                  <span className="export-option-count">
+                    {t('export.expressionCount', { count: itemCounts.expressions })}
+                  </span>
+                ) : null}
               </span>
             </span>
             <SelectionButton
@@ -267,6 +366,11 @@ export function ExportModal({ open, onClose, onConfirm }: Props) {
               <span className="export-option-label">{t('export.sentences')}</span>
               <span className="export-option-description">
                 {t('export.sentencesDescription')}
+                {itemCounts ? (
+                  <span className="export-option-count">
+                    {t('export.sentenceCount', { count: itemCounts.sentences })}
+                  </span>
+                ) : null}
               </span>
             </span>
             <SelectionButton
@@ -275,7 +379,7 @@ export function ExportModal({ open, onClose, onConfirm }: Props) {
               onToggle={() => setIncludeSentences((current) => !current)}
             />
           </div>
-          <div className="export-option-row">
+          <div className="export-option-row is-warning">
             <span className="export-option-copy">
               <span className="export-option-label">{t('export.keepFlaggedItems')}</span>
               <span className="export-option-description">
@@ -290,27 +394,14 @@ export function ExportModal({ open, onClose, onConfirm }: Props) {
           </div>
         </div>
         <div className="sheet-actions export-run-actions">
-          <label className="export-format-select">
-            <span className="export-field-label">
-              <IconLabel icon={FileText}>{t('export.format')}</IconLabel>
-            </span>
-            <select
-              aria-label={t('export.format')}
-              disabled={Boolean(exportingFormat)}
-              value={selectedFormat}
-              onChange={(event) => setSelectedFormat(event.target.value as ExportFormat)}
-            >
-              <option value="anki-package">{t('export.exportAnkiPackage')}</option>
-              <option value="anki-text-bundle">{t('export.exportAnkiTextBundle')}</option>
-              <option value="generic-text-bundle">{t('export.exportGenericTextBundle')}</option>
-            </select>
-          </label>
           <button
             type="button"
             disabled={Boolean(exportingFormat)}
             onClick={() => void runExport(selectedFormat)}
           >
-            {exportingFormat ? t('export.exporting') : t('workbook.export')}
+            {exportingFormat
+              ? t('export.exporting')
+              : getExportActionLabel(selectedFormat, t)}
           </button>
         </div>
         {exportMessage ? (

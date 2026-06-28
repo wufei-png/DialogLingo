@@ -8,6 +8,7 @@ const en = {
     revert: 'Revert',
     selected: 'Selected',
     notSelected: 'Not selected',
+    none: 'None',
     settings: 'Settings',
     unknownSource: 'Unknown source',
     enable: 'Enable {{label}}',
@@ -128,7 +129,10 @@ const en = {
     project: 'Project',
     modelPrompt: 'Model prompt',
     preparingPrompt: 'Preparing final prompt...',
-    minedCandidates: '{{count}} mined candidates included'
+    minedCandidates: '{{count}} mined candidates included',
+    targetTypes: 'Expression + Sentence',
+    modifiedPrompt: 'Modified',
+    moreSummary: '+{{count}} more'
   },
   preview: {
     searchMatches: 'Search matches',
@@ -145,6 +149,13 @@ const en = {
     emptyTitle: 'Generate a workbook from Search & Select.',
     progress: 'Generation Progress',
     progressSessions: '{{processed}} / {{total}} sessions',
+    progressItems: '{{count}} items created',
+    progressWarnings: '{{count}} warnings',
+    progressFailures: '{{count}} failures',
+    cancelGeneration: 'Cancel generation',
+    cancelling: 'Cancelling...',
+    cancelFailed: 'Cancel failed.',
+    cancelNotDelivered: 'Cancel could not be sent to the running job.',
     generationStopped: 'Generation stopped',
     lastCheckpoint: 'Last checkpoint:',
     failedBatches: 'Failed batches:',
@@ -238,8 +249,10 @@ const en = {
     directionBilingual: 'Bilingual',
     expressions: 'Expressions',
     expressionsDescription: 'Include reviewed expression cards.',
+    expressionCount: '{{count}} expression items',
     sentences: 'Sentences',
     sentencesDescription: 'Include reviewed sentence cards.',
+    sentenceCount: '{{count}} sentence items',
     keepFlaggedItems: 'Keep flagged items',
     keepFlaggedItemsDescription: 'Export items marked for another review pass.',
     chooseFolderTitle: 'Choose export folder',
@@ -251,7 +264,19 @@ const en = {
     format: 'Format',
     exportAnkiPackage: 'Anki Package (.apkg)',
     exportAnkiTextBundle: 'Anki Text Bundle (.tsv + .md + .json)',
-    exportGenericTextBundle: 'Generic Text Bundle (.csv + .md + .json)'
+    exportGenericTextBundle: 'Generic Text Bundle (.csv + .md + .json)',
+    exportAnkiPackageTarget: 'Anki Package',
+    exportAnkiTextBundleTarget: 'Anki Text Bundle',
+    exportGenericTextBundleTarget: 'Generic Text Bundle',
+    exportAnkiPackageDetail: '.apkg',
+    exportAnkiTextBundleDetail: '.tsv + .md + .json',
+    exportGenericTextBundleDetail: '.csv + .md + .json',
+    exportAnkiPackageDescription: 'Primary Anki import target.',
+    exportAnkiTextBundleDescription: 'Anki-ready text files for review or backup.',
+    exportGenericTextBundleDescription: 'Portable text files for other tools.',
+    runAnkiPackage: 'Export .apkg',
+    runAnkiTextBundle: 'Export Anki text bundle',
+    runGenericTextBundle: 'Export text bundle'
   }
 } as const
 
