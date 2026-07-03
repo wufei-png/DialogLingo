@@ -4,6 +4,7 @@ import {
   parseLearningItemContent
 } from './modelAdapter'
 import { logger } from '../logging'
+import { STRUCTURED_OUTPUT_REMINDER } from './prompts'
 
 export function normalizeOpenAiChatCompletionsUrl(baseUrl: string) {
   const trimmed = baseUrl.trim()
@@ -96,6 +97,7 @@ export async function enrichOpenAiCompatibleCandidateBatch(input: {
   apiKey: string
   model: string
   prompt: string
+  excerptCount: number
   timeoutMs?: number
 }) {
   const url = normalizeOpenAiChatCompletionsUrl(input.baseUrl)
@@ -112,12 +114,12 @@ export async function enrichOpenAiCompatibleCandidateBatch(input: {
         type: 'json_schema',
         json_schema: {
           name: 'dialoglingo_learning_items',
-          schema: learningItemJsonSchema(),
+          schema: learningItemJsonSchema({ excerptCount: input.excerptCount }),
           strict: true
         }
       }
     })
-    return parseLearningItemContent(content)
+    return parseLearningItemContent(content, { excerptCount: input.excerptCount })
   } catch (error) {
     if (
       error instanceof ModelAdapterError &&
@@ -136,10 +138,10 @@ export async function enrichOpenAiCompatibleCandidateBatch(input: {
       url,
       apiKey: input.apiKey,
       model: input.model,
-      prompt: `${input.prompt}\n\nReturn JSON in this exact shape: {"items":[{"itemType":"Expression","sourceText":"...","targetText":"...","gloss":"...","contextText":"...","explanation":"...","quizPrompt":"...","quizAnswer":"...","tags":["..."]}]}`,
+      prompt: `${input.prompt}\n\n${STRUCTURED_OUTPUT_REMINDER}`,
       timeoutMs,
       responseFormat: { type: 'json_object' }
     })
-    return parseLearningItemContent(content)
+    return parseLearningItemContent(content, { excerptCount: input.excerptCount })
   }
 }

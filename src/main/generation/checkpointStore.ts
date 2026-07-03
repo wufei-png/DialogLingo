@@ -418,12 +418,6 @@ function expectedBatchCountForSnapshot(input: {
   snapshot: GenerationRunSnapshot
   candidateCount: number
 }) {
-  if (input.snapshot.promptOverride?.trim()) {
-    // Prompt override bypasses candidate batching and is sent as one custom
-    // enrichment request.
-    return 1
-  }
-
   if (input.candidateCount === 0) {
     return 0
   }
@@ -649,7 +643,9 @@ export function loadResumeCheckpointPayload(
           candidates: []
         }),
         response: parseJson(batch.responseJson, {
-          drafts: [],
+          result: {
+            excerptResults: []
+          },
           items: []
         })
       }

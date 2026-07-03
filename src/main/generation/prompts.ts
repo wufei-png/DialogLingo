@@ -16,17 +16,24 @@ const EXPRESSION_DIFFICULTY_PROMPTS: Record<ExpressionDifficulty, string> = {
   hard: HARD_EXPRESSION_DIFFICULTY_PROMPT
 }
 
-export function buildGenerationPrompt(input: {
-  sessionTitle: string
+export const INPUT_BATCH_PLACEHOLDER = '{{INPUT_BATCH}}'
+export const STRUCTURED_OUTPUT_REMINDER =
+  'Return JSON matching the provided schema.'
+
+export type GenerationPromptExcerpt = {
+  sourceSpanRef?: string
+  promptText: string
+  role?: 'user' | 'assistant'
+  sessionTitle?: string
+}
+
+export type PromptRenderWarning =
+  | 'missing_input_placeholder'
+  | 'duplicate_input_placeholder'
+
+export function buildGenerationPromptTemplate(input: {
   expressionDifficulty: ExpressionDifficulty
-  candidates: Array<{
-    sourceSpanRef: string
-    promptText: string
-    role?: 'user' | 'assistant'
-    sessionTitle?: string
-  }>
 }) {
-  const candidateText = formatPromptSessions(input.sessionTitle, input.candidates)
   const trivialExamples = TRIVIAL_EXPRESSION_SOURCE_TEXTS.join(', ')
 
   return [
@@ -34,84 +41,73 @@ export function buildGenerationPrompt(input: {
     'You are an expert ESL (English as a Second Language) teacher and curriculum designer.',
     '',
     '# Task',
-    'Create English-learning workbook items from the conversation excerpts provided in the <session> tags.',
+    'Create English-learning workbook items from each excerpt in the input batch.',
     '',
     '# Rules',
-    `1. Target audience: ${EXPRESSION_DIFFICULTY_PROMPTS[input.expressionDifficulty]}`,
-    '2. Item types:',
-    '   - Use Expression for reusable terms/phrases.',
-    '   - Use Sentence for useful full sentences.',
-    '3. Bilingual support:',
-    '   - If source text is Chinese, generate useful English equivalents.',
-    '   - If source text is English, generate Chinese translations and support.',
-    '4. Exclusions:',
-    `   - Do not generate trivial items for obvious greetings, fillers, or ultra-basic words such as: ${trivialExamples}.`,
-    '   - Do not return duplicate items with the same itemType and sourceText.',
-    '   - Ignore empty greetings, provider errors, and model/access-error messages unless they contain useful English worth learning.',
-    '5. Empty state:',
-    '   - If no content meets the learning criteria, return {"items":[]}.',
+    `- Target audience: ${EXPRESSION_DIFFICULTY_PROMPTS[input.expressionDifficulty]}`,
+    '- Prefer useful English expressions, collocations, and sentence patterns.',
+    '- If an excerpt is Chinese, create a natural English study text for the learner.',
+    `- Skip trivial greetings, fillers, or ultra-basic expressions such as: ${trivialExamples}.`,
+    '- Return exactly one excerptResults entry for each excerpt, in the same order.',
+    '- Each excerptResult.items array contains 0 to 2 learning items.',
     '',
     '# Output Contract',
-    'Return only a valid JSON object matching the externally provided schema.',
-    'Do not output markdown fences, conversational text, or explanations outside the JSON.',
-    'The top-level object must contain an items array.',
+    STRUCTURED_OUTPUT_REMINDER,
     '',
-    '# Input Conversation',
-    candidateText
+    INPUT_BATCH_PLACEHOLDER
   ].join('\n')
 }
 
-function formatPromptSessions(
-  fallbackSessionTitle: string,
-  candidates: Array<{
-    promptText: string
-    role?: 'user' | 'assistant'
-    sessionTitle?: string
-  }>
-) {
-  const groups: Array<{
-    title: string
-    turns: Array<{ role: 'user' | 'assistant'; text: string }>
-  }> = []
-
-  for (const candidate of candidates) {
-    const title = candidate.sessionTitle ?? fallbackSessionTitle
-    const lastGroup = groups[groups.length - 1]
-    const group =
-      lastGroup?.title === title
-        ? lastGroup
-        : {
-          title,
-          turns: []
-        }
-
-    if (group !== lastGroup) {
-      groups.push(group)
-    }
-
-    group.turns.push({
-      role: candidate.role ?? 'assistant',
-      text: candidate.promptText
-    })
-  }
-
-  return groups
-    .map((group) =>
+export function buildInputExcerptsBlock(input: {
+  excerpts: GenerationPromptExcerpt[]
+}) {
+  return [
+    '# Input Excerpts',
+    '',
+    ...input.excerpts.map((excerpt, index) =>
       [
-        `<session title="${escapePromptAttribute(group.title)}">`,
-        group.turns
-          .map((turn) => `${turn.role}:\n${turn.text}`)
-          .join('\n\n'),
-        '</session>'
+        `excerpt ${index + 1}`,
+        `session: ${formatPromptLine(excerpt.sessionTitle ?? 'Selected session')}`,
+        `role: ${excerpt.role ?? 'assistant'}`,
+        'text:',
+        excerpt.promptText
       ].join('\n')
     )
-    .join('\n\n')
+  ].join('\n\n')
 }
 
-function escapePromptAttribute(value: string) {
+export function renderGenerationPromptTemplate(input: {
+  template: string
+  excerpts: GenerationPromptExcerpt[]
+}) {
+  const inputBlock = buildInputExcerptsBlock({ excerpts: input.excerpts })
+  const firstPlaceholderIndex = input.template.indexOf(INPUT_BATCH_PLACEHOLDER)
+  const warnings: PromptRenderWarning[] = []
+
+  if (firstPlaceholderIndex < 0) {
+    warnings.push('missing_input_placeholder')
+    return {
+      prompt: [input.template.trimEnd(), inputBlock].join('\n\n'),
+      warnings
+    }
+  }
+
+  const before = input.template.slice(0, firstPlaceholderIndex)
+  const after = input.template.slice(
+    firstPlaceholderIndex + INPUT_BATCH_PLACEHOLDER.length
+  )
+  if (after.includes(INPUT_BATCH_PLACEHOLDER)) {
+    warnings.push('duplicate_input_placeholder')
+  }
+
+  return {
+    prompt: before + inputBlock + after.replaceAll(INPUT_BATCH_PLACEHOLDER, ''),
+    warnings
+  }
+}
+
+function formatPromptLine(value: string) {
   return value
-    .replace(/&/g, '&amp;')
-    .replace(/"/g, '&quot;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
+    .replace(/\s+/g, ' ')
+    .trim()
 }

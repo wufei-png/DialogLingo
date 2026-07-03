@@ -1,7 +1,7 @@
 import type { ExpressionDifficulty } from '../../shared/schemas/settings'
 import { mineCandidateGroups } from './candidates'
 import { precleanTurns } from './preclean'
-import { buildGenerationPrompt } from './prompts'
+import { buildGenerationPromptTemplate } from './prompts'
 
 export type GenerationPromptSession = {
   sessionId: string
@@ -48,23 +48,12 @@ export function buildGenerationPromptPreview(input: {
   const candidates = collectGenerationPromptCandidates({
     sessions: input.sessions,
     maxItemsPerSession: input.maxItemsPerSession
-  }).slice(0, input.batchSize)
-  const sessionTitle =
-    input.sessions.length === 1
-      ? input.sessions[0]?.title ?? 'Selected session'
-      : `${input.sessions.length} selected sessions`
+  })
 
   return {
     candidateCount: candidates.length,
-    prompt: buildGenerationPrompt({
-      sessionTitle,
-      expressionDifficulty: input.expressionDifficulty,
-      candidates: candidates.map((candidate) => ({
-        sourceSpanRef: candidate.sourceSpanRef,
-        promptText: candidate.promptText,
-        ...(candidate.role ? { role: candidate.role } : {}),
-        sessionTitle: candidate.sessionTitle
-      }))
+    prompt: buildGenerationPromptTemplate({
+      expressionDifficulty: input.expressionDifficulty
     })
   }
 }

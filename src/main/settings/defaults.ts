@@ -33,7 +33,6 @@ export const DEFAULT_SETTINGS: Settings = {
     }
   },
   generation: {
-    defaultLanguageDirection: 'bilingual',
     expressionDifficulty: DEFAULT_EXPRESSION_DIFFICULTY,
     batchSize: DEFAULT_BATCH_SIZE,
     boundedConcurrency: 2,

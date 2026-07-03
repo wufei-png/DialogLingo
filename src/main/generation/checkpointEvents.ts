@@ -1,5 +1,9 @@
 import type { Settings } from '../../shared/schemas/settings'
-import type { LearningItemDraft, ModelAdapterFailureReason } from './modelAdapter'
+import type {
+  BatchEnrichmentResult,
+  LearningItemDraft,
+  ModelAdapterFailureReason
+} from './modelAdapter'
 
 export type GenerationCheckpointName =
   | 'generation_job_sessions'
@@ -36,7 +40,7 @@ export type EnrichmentBatchRequestArtifact = {
 }
 
 export type EnrichmentBatchResponseArtifact = {
-  drafts: LearningItemDraft[]
+  result: BatchEnrichmentResult
   items: PersistedWorkerItem[]
   reusedFromJobId?: string
 }

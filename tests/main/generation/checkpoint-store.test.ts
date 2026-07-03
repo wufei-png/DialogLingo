@@ -29,7 +29,6 @@ const settings = {
     }
   },
   generation: {
-    defaultLanguageDirection: 'en-zh',
     expressionDifficulty: 'average',
     batchSize: 2,
     boundedConcurrency: 1,
@@ -167,7 +166,9 @@ describe('generation checkpoint store', () => {
         ]
       },
       response: {
-        drafts: [draft],
+        result: {
+          excerptResults: [{ items: [draft] }]
+        },
         items: [
           {
             id: 'expr-job-1-1',
@@ -212,7 +213,9 @@ describe('generation checkpoint store', () => {
     })
 
     const payload = loadResumeCheckpointPayload(db, 'job-1')
-    expect(payload.completedBatches[0]?.response.drafts).toMatchObject([draft])
+    expect(payload.completedBatches[0]?.response.result).toMatchObject({
+      excerptResults: [{ items: [draft] }]
+    })
     expect(payload.rankedOrderIds).toEqual(['expr-job-1-1'])
   })
 
@@ -383,7 +386,9 @@ describe('generation checkpoint store', () => {
         candidates: []
       },
       response: {
-        drafts: [draft],
+        result: {
+          excerptResults: [{ items: [draft] }]
+        },
         items: [
           {
             id: 'expr-job-4-1',

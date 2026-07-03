@@ -10,6 +10,7 @@ import {
   parseLearningItemPayload
 } from './modelAdapter'
 import { logger } from '../logging'
+import { STRUCTURED_OUTPUT_REMINDER } from './prompts'
 
 export type CliBackendKind = Extract<
   ModelBackendKind,
@@ -296,19 +297,18 @@ function promptWithJsonContract(prompt: string) {
   return [
     prompt,
     '',
-    'Return JSON in this exact shape:',
-    '{"items":[{"itemType":"Expression","sourceText":"...","targetText":"...","gloss":"...","contextText":"...","explanation":"...","quizPrompt":"...","quizAnswer":"...","tags":["..."]}]}'
+    STRUCTURED_OUTPUT_REMINDER
   ].join('\n')
 }
 
-export function parseCliResponse(raw: string) {
+export function parseCliResponse(raw: string, input?: { excerptCount?: number }) {
   const trimmed = raw.trim()
   if (!trimmed) {
     throw new ModelAdapterError('CLI command produced no output.', 'invalid-structured-payload')
   }
 
   try {
-    return parseLearningItemPayload(JSON.parse(trimmed))
+    return parseLearningItemPayload(JSON.parse(trimmed), input)
   } catch {
     // Continue with wrapper-field and markdown/text extraction below.
   }
@@ -317,7 +317,7 @@ export function parseCliResponse(raw: string) {
     const parsed = JSON.parse(trimmed) as unknown
     for (const candidate of collectStringCandidates(parsed)) {
       try {
-        return parseLearningItemContent(candidate)
+        return parseLearningItemContent(candidate, input)
       } catch {
         // Try the next candidate.
       }
@@ -328,10 +328,10 @@ export function parseCliResponse(raw: string) {
 
   const jsonSlice = extractJsonSlice(trimmed)
   if (jsonSlice) {
-    return parseLearningItemContent(jsonSlice)
+    return parseLearningItemContent(jsonSlice, input)
   }
 
-  return parseLearningItemContent(trimmed)
+  return parseLearningItemContent(trimmed, input)
 }
 
 async function readOutputFile(path: string) {
@@ -346,6 +346,7 @@ export async function enrichCliCandidateBatch(input: {
   kind: CliBackendKind
   cli: CliSettings
   prompt: string
+  excerptCount: number
 }) {
   const toolName = cliToolNameForKind(input.kind)
   const toolSettings = input.cli[toolName]
@@ -357,7 +358,9 @@ export async function enrichCliCandidateBatch(input: {
   const schemaPath = join(tempDir, 'schema.json')
   const outputPath = join(tempDir, 'last-message.json')
   const promptPath = join(tempDir, 'prompt.txt')
-  const schemaJson = JSON.stringify(learningItemJsonSchema())
+  const schemaJson = JSON.stringify(
+    learningItemJsonSchema({ excerptCount: input.excerptCount })
+  )
   const cliPrompt = promptWithJsonContract(input.prompt)
 
   try {
@@ -385,7 +388,9 @@ export async function enrichCliCandidateBatch(input: {
     const outputFileContent = command.outputPath
       ? await readOutputFile(command.outputPath)
       : ''
-    return parseCliResponse(outputFileContent || result.stdout)
+    return parseCliResponse(outputFileContent || result.stdout, {
+      excerptCount: input.excerptCount
+    })
   } finally {
     await rm(tempDir, { recursive: true, force: true })
   }

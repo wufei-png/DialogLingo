@@ -17,6 +17,8 @@ const SAMPLE_ITEM = {
   tags: ['product']
 }
 
+const SAMPLE_PAYLOAD = { excerptResults: [{ items: [SAMPLE_ITEM] }] }
+
 let cleanupPaths: string[] = []
 
 afterEach(async () => {
@@ -43,7 +45,7 @@ async function createFakeCodexExecutable() {
     [
       '#!/usr/bin/env node',
       "const fs = require('node:fs')",
-      `const payload = ${JSON.stringify(JSON.stringify({ items: [SAMPLE_ITEM] }))}`,
+	      `const payload = ${JSON.stringify(JSON.stringify(SAMPLE_PAYLOAD))}`,
       "const outputIndex = process.argv.indexOf('--output-last-message')",
       'fs.writeFileSync(process.argv[outputIndex + 1], payload)'
     ].join('\n'),
@@ -61,7 +63,7 @@ describe('enrichCandidateBatch', () => {
           choices: [
             {
               message: {
-                content: JSON.stringify({ items: [SAMPLE_ITEM] })
+	                content: JSON.stringify(SAMPLE_PAYLOAD)
               }
             }
           ]
@@ -81,11 +83,12 @@ describe('enrichCandidateBatch', () => {
         kind: 'openai-compatible',
         cli: cliConfig('')
       },
-      prompt: 'prompt'
-    })
+	      prompt: 'prompt',
+	      excerptCount: 1
+	    })
 
-    expect(fetchMock).toHaveBeenCalled()
-    expect(items).toMatchObject([SAMPLE_ITEM])
+	    expect(fetchMock).toHaveBeenCalled()
+	    expect(items).toMatchObject(SAMPLE_PAYLOAD)
   })
 
   it('selects a CLI backend without requiring API provider fields', async () => {
@@ -101,9 +104,10 @@ describe('enrichCandidateBatch', () => {
         kind: 'codex-cli',
         cli: cliConfig(executablePath)
       },
-      prompt: 'prompt'
-    })
+	      prompt: 'prompt',
+	      excerptCount: 1
+	    })
 
-    expect(items).toMatchObject([SAMPLE_ITEM])
-  })
-})
+	    expect(items).toMatchObject(SAMPLE_PAYLOAD)
+	  })
+	})

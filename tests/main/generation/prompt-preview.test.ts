@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import { buildGenerationPromptPreview } from '../../../src/main/generation/promptPreview'
+import { INPUT_BATCH_PLACEHOLDER } from '../../../src/main/generation/prompts'
 
 describe('buildGenerationPromptPreview', () => {
-  it('uses filtered candidates for prompt text and candidate count', () => {
+  it('uses filtered candidates for candidate count but returns a reusable template', () => {
     const preview = buildGenerationPromptPreview({
       expressionDifficulty: 'average',
       maxItemsPerSession: 4,
@@ -34,9 +35,8 @@ describe('buildGenerationPromptPreview', () => {
     })
 
     expect(preview.candidateCount).toBe(1)
-    expect(preview.prompt).toContain(
-      'Candidate mining should remove provider logs before prompt construction.'
-    )
+    expect(preview.prompt).toContain(INPUT_BATCH_PLACEHOLDER)
+    expect(preview.prompt).not.toContain('Candidate mining should remove provider logs')
     expect(preview.prompt).not.toContain('const x')
     expect(preview.prompt).not.toContain('Adapter-marked tool output')
   })
@@ -72,9 +72,8 @@ describe('buildGenerationPromptPreview', () => {
     })
 
     expect(preview.candidateCount).toBe(1)
-    expect(preview.prompt).toContain(
-      'Candidate filtering should happen before the per-session item cap.'
-    )
+    expect(preview.prompt).toContain(INPUT_BATCH_PLACEHOLDER)
+    expect(preview.prompt).not.toContain('Candidate filtering should happen')
     expect(preview.prompt).not.toContain('Export manifest work')
     expect(preview.prompt).not.toContain('npm ERR')
   })

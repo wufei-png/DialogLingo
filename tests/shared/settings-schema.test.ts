@@ -46,6 +46,7 @@ describe('settingsSchema', () => {
     expect(parsed.ui.workbookSplitRatio).toBe(DEFAULT_WORKBOOK_SPLIT_RATIO)
     expect(parsed.ui.workbookSourcePinned).toBe(false)
     expect(parsed.generation.expressionDifficulty).toBe(DEFAULT_EXPRESSION_DIFFICULTY)
+    expect(parsed.generation).not.toHaveProperty('defaultLanguageDirection')
     expect(parsed.modelBackend).toMatchObject({
       kind: 'openai-compatible',
       cli: {

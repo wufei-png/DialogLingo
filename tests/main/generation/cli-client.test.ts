@@ -23,7 +23,7 @@ const SAMPLE_ITEM = {
   tags: ['product']
 }
 
-const SAMPLE_PAYLOAD = { items: [SAMPLE_ITEM] }
+const SAMPLE_PAYLOAD = { excerptResults: [{ items: [SAMPLE_ITEM] }] }
 
 let cleanupPaths: string[] = []
 
@@ -165,10 +165,19 @@ describe('runCliCommand', () => {
 
 describe('parseCliResponse', () => {
   it('accepts direct and wrapped JSON payloads', () => {
-    expect(parseCliResponse(JSON.stringify(SAMPLE_PAYLOAD))).toHaveLength(1)
+    expect(parseCliResponse(JSON.stringify(SAMPLE_PAYLOAD), { excerptCount: 1 }))
+      .toMatchObject(SAMPLE_PAYLOAD)
     expect(
-      parseCliResponse(JSON.stringify({ result: JSON.stringify(SAMPLE_PAYLOAD) }))
-    ).toHaveLength(1)
+      parseCliResponse(JSON.stringify({ result: JSON.stringify(SAMPLE_PAYLOAD) }), {
+        excerptCount: 1
+      })
+    ).toMatchObject(SAMPLE_PAYLOAD)
+  })
+
+  it('rejects the old flat items payload', () => {
+    expect(() =>
+      parseCliResponse(JSON.stringify({ items: [SAMPLE_ITEM] }), { excerptCount: 1 })
+    ).toThrow('excerptResults')
   })
 
   it('rejects invalid JSON payloads', () => {
@@ -184,24 +193,27 @@ describe('enrichCliCandidateBatch', () => {
       enrichCliCandidateBatch({
         kind: 'codex-cli',
         cli: cliSettings(executablePath),
-        prompt: 'prompt'
+        prompt: 'prompt',
+        excerptCount: 1
       })
-    ).resolves.toMatchObject([SAMPLE_ITEM])
+    ).resolves.toMatchObject(SAMPLE_PAYLOAD)
 
     await expect(
       enrichCliCandidateBatch({
         kind: 'claude-cli',
         cli: cliSettings(executablePath),
-        prompt: 'prompt'
+        prompt: 'prompt',
+        excerptCount: 1
       })
-    ).resolves.toMatchObject([SAMPLE_ITEM])
+    ).resolves.toMatchObject(SAMPLE_PAYLOAD)
 
     await expect(
       enrichCliCandidateBatch({
         kind: 'opencode-cli',
         cli: cliSettings(executablePath),
-        prompt: 'prompt'
+        prompt: 'prompt',
+        excerptCount: 1
       })
-    ).resolves.toMatchObject([SAMPLE_ITEM])
+    ).resolves.toMatchObject(SAMPLE_PAYLOAD)
   })
 })

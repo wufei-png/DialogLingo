@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import type { GenerationCheckpointEvent } from '../../../src/main/generation/checkpointEvents'
-import type { LearningItemDraft } from '../../../src/main/generation/modelAdapter'
+import type {
+  BatchEnrichmentResult,
+  LearningItemDraft
+} from '../../../src/main/generation/modelAdapter'
 import {
   runEnrichmentFromCandidates,
   type CandidateWithSession,
@@ -98,6 +101,31 @@ function createCandidate(): CandidateWithSession {
   }
 }
 
+function createCandidateWithSource(input: {
+  id: string
+  sourceSpanRef: string
+  promptText: string
+}): CandidateWithSession {
+  return {
+    id: input.id,
+    sessionId: session.sessionId,
+    sessionTitle: session.title,
+    sourceSpanRef: input.sourceSpanRef,
+    promptText: input.promptText,
+    role: 'assistant',
+    status: 'pending',
+    session
+  }
+}
+
+function resultWithExcerptItems(
+  excerptItems: LearningItemDraft[][]
+): BatchEnrichmentResult {
+  return {
+    excerptResults: excerptItems.map((items) => ({ items }))
+  }
+}
+
 function createRuntime(input: {
   isCancelled: () => boolean
   enrichCandidateBatch: WorkerRuntime['enrichCandidateBatch']
@@ -128,10 +156,35 @@ function createRuntime(input: {
 }
 
 describe('runEnrichmentFromCandidates cancellation', () => {
+  it('completes empty candidate sets without calling the model', async () => {
+    let called = false
+    const { runtime, jobMessages, checkpoints } = createRuntime({
+      isCancelled: () => false,
+      enrichCandidateBatch: async () => {
+        called = true
+        return resultWithExcerptItems([])
+      }
+    })
+
+    await runEnrichmentFromCandidates({
+      message: createStartMessage(),
+      candidates: [],
+      runtime
+    })
+
+    expect(called).toBe(false)
+    expect(
+      checkpoints.some(
+        (event) => event.checkpoint === 'enrichment_batch_started'
+      )
+    ).toBe(false)
+    expect(jobMessages.find((event) => event.status === 'completed')?.items).toEqual([])
+  })
+
   it('emits cancelled instead of pushing drafts or completing when cancel arrives during enrichment await', async () => {
     let cancelled = false
     const enrichStarted = deferred<void>()
-    const enrichResult = deferred<LearningItemDraft[]>()
+    const enrichResult = deferred<BatchEnrichmentResult>()
     const { runtime, jobMessages, checkpoints } = createRuntime({
       isCancelled: () => cancelled,
       enrichCandidateBatch: async () => {
@@ -148,7 +201,7 @@ describe('runEnrichmentFromCandidates cancellation', () => {
 
     await enrichStarted.promise
     cancelled = true
-    enrichResult.resolve([draft])
+    enrichResult.resolve(resultWithExcerptItems([[draft]]))
     await run
 
     expect(jobMessages.some((event) => event.status === 'completed')).toBe(false)
@@ -170,7 +223,7 @@ describe('runEnrichmentFromCandidates cancellation', () => {
     let cancelled = false
     const { runtime, jobMessages, checkpoints } = createRuntime({
       isCancelled: () => cancelled,
-      enrichCandidateBatch: async () => [draft],
+      enrichCandidateBatch: async () => resultWithExcerptItems([[draft]]),
       onCheckpoint: (event) => {
         if (event.checkpoint === 'enrichment_batch_completed') {
           cancelled = true
@@ -192,5 +245,57 @@ describe('runEnrichmentFromCandidates cancellation', () => {
     expect(
       jobMessages.find((event) => event.status === 'cancelled')?.items
     ).toHaveLength(1)
+  })
+
+  it('maps returned excerpt items back to the matching candidate source refs', async () => {
+    const firstCandidate = createCandidateWithSource({
+      id: 'candidate-1',
+      sourceSpanRef: 'span-empty',
+      promptText: 'This excerpt is not useful enough.'
+    })
+    const secondCandidate = createCandidateWithSource({
+      id: 'candidate-2',
+      sourceSpanRef: 'span-rich',
+      promptText: 'We can ship it today after smoke testing.'
+    })
+    const sentenceDraft: LearningItemDraft = {
+      ...draft,
+      itemType: 'Sentence',
+      sourceText: 'We can ship it today after smoke testing.'
+    }
+    const { runtime, jobMessages } = createRuntime({
+      isCancelled: () => false,
+      enrichCandidateBatch: async () =>
+        resultWithExcerptItems([
+          [],
+          [draft, sentenceDraft]
+        ])
+    })
+
+    await runEnrichmentFromCandidates({
+      message: {
+        ...createStartMessage(),
+        generation: {
+          ...createStartMessage().generation,
+          batchSize: 2
+        }
+      },
+      candidates: [firstCandidate, secondCandidate],
+      runtime
+    })
+
+    const completed = jobMessages.find((event) => event.status === 'completed')
+    const items = completed?.items as Array<{
+      sourceRefs: Array<{ sourceSpanRef: string; excerpt: string }>
+    }>
+    expect(items).toHaveLength(2)
+    expect(items.map((item) => item.sourceRefs[0]?.sourceSpanRef)).toEqual([
+      'span-rich',
+      'span-rich'
+    ])
+    expect(items.map((item) => item.sourceRefs[0]?.excerpt)).toEqual([
+      secondCandidate.promptText,
+      secondCandidate.promptText
+    ])
   })
 })

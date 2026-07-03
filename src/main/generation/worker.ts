@@ -10,11 +10,18 @@ import {
 } from './checkpointEvents'
 import { enrichCandidateBatch } from './enrichCandidateBatch'
 import { finalizeWorkbookItems } from './finalizeWorkbookItems'
-import { ModelAdapterError, type LearningItemDraft } from './modelAdapter'
+import {
+  ModelAdapterError,
+  type BatchEnrichmentResult,
+  type LearningItemDraft
+} from './modelAdapter'
 import { createMockLearningItemDrafts, isMockLlmEnabled } from './mockLlm'
 import { precleanTurns } from './preclean'
 import { collectGenerationPromptCandidates } from './promptPreview'
-import { buildGenerationPrompt } from './prompts'
+import {
+  buildGenerationPromptTemplate,
+  renderGenerationPromptTemplate
+} from './prompts'
 import { rankWorkbookItems } from './ranking'
 
 type WorkerTurn = {
@@ -283,31 +290,59 @@ function buildBatchRequest(input: {
   }
 }
 
-function itemsFromDrafts(input: {
+function itemsFromBatchResult(input: {
   jobId: string
   batch: CandidateWithSession[]
-  drafts: LearningItemDraft[]
+  result: BatchEnrichmentResult
   startIndex: number
 }) {
-  return input.drafts.map((draft, draftIndex) => {
-    const sourceCandidate = input.batch[draftIndex % Math.max(input.batch.length, 1)]
-    const fallbackSession =
-      sourceCandidate?.session ??
-      ({
-        sessionId: 'checkpoint',
-        title: 'Checkpoint',
-        turns: []
-      } satisfies WorkerSession)
+  if (input.result.excerptResults.length !== input.batch.length) {
+    throw new ModelAdapterError(
+      `Expected ${input.batch.length} excerptResults, received ${input.result.excerptResults.length}.`,
+      'invalid-structured-payload'
+    )
+  }
 
-    return toWorkerItem({
+  const items: WorkerItem[] = []
+  for (const [excerptIndex, excerptResult] of input.result.excerptResults.entries()) {
+    const sourceCandidate = input.batch[excerptIndex]!
+    for (const draft of excerptResult.items) {
+      items.push(toWorkerItem({
+        jobId: input.jobId,
+        session: sourceCandidate.session,
+        draft,
+        itemIndex: input.startIndex + items.length,
+        sourceSpanRef: sourceCandidate.sourceSpanRef,
+        excerpt: sourceCandidate.promptText
+      }))
+    }
+  }
+
+  return items
+}
+
+function batchResultFromDrafts(drafts: LearningItemDraft[]): BatchEnrichmentResult {
+  return {
+    excerptResults: drafts.map((draft) => ({
+      items: [draft]
+    }))
+  }
+}
+
+function logPromptTemplateWarnings(input: {
+  jobId: string
+  batchIndex: number
+  warnings: ReturnType<typeof renderGenerationPromptTemplate>['warnings']
+}) {
+  for (const warning of input.warnings) {
+    logger.warn('generation-worker', 'prompt template rendered with warning', {
       jobId: input.jobId,
-      session: fallbackSession,
-      draft,
-      itemIndex: input.startIndex + draftIndex,
-      sourceSpanRef: sourceCandidate?.sourceSpanRef ?? 'checkpoint',
-      excerpt: sourceCandidate?.promptText ?? ''
+      batchIndex: input.batchIndex,
+      warning,
+      templateMissingInputPlaceholder: warning === 'missing_input_placeholder',
+      templateDuplicateInputPlaceholder: warning === 'duplicate_input_placeholder'
     })
-  })
+  }
 }
 
 function rebasePersistedOrder(input: {
@@ -454,7 +489,8 @@ async function runMockStart(message: StartMessage) {
       turns: []
     } satisfies WorkerSession)
   const drafts = createMockLearningItemDrafts()
-  const mockCandidates = drafts.map((draft, itemIndex) => {
+  const result = batchResultFromDrafts(drafts)
+  const mockCandidates = drafts.map((_, itemIndex) => {
     const source = mockSourceForSession({ session, itemIndex })
     return toPersistedCandidate({
       jobId: message.jobId,
@@ -531,7 +567,7 @@ async function runMockStart(message: StartMessage) {
       candidates: mockCandidates.map(toRequestCandidate)
     },
     response: {
-      drafts,
+      result,
       items
     }
   })
@@ -586,21 +622,22 @@ export async function runEnrichmentFromCandidates(input: {
     (input.completedBatches ?? []).map((batch) => [batch.batchIndex, batch])
   )
   let failedBatchCount = 0
-  const batchSize = input.customPrompt
-    ? Math.max(input.candidates.length, 1)
-    : input.message.generation.batchSize
+  const batchSize = input.message.generation.batchSize
   const batchCount =
-    input.customPrompt
-      ? 1
-      : input.candidates.length === 0
-        ? 0
-        : Math.ceil(input.candidates.length / batchSize)
+    input.candidates.length === 0
+      ? 0
+      : Math.ceil(input.candidates.length / batchSize)
+  const promptTemplate =
+    input.customPrompt ??
+    buildGenerationPromptTemplate({
+      expressionDifficulty: input.message.generation.expressionDifficulty
+    })
   logger.info('generation-worker', 'enrichment start', {
     jobId: input.message.jobId,
     candidateCount: input.candidates.length,
     batchSize,
     batchCount,
-    customPrompt: Boolean(input.customPrompt)
+    customPromptTemplate: Boolean(input.customPrompt)
   })
 
   for (let batchIndex = 0; batchIndex < batchCount; batchIndex += 1) {
@@ -608,18 +645,18 @@ export async function runEnrichmentFromCandidates(input: {
     const batchStart = batchIndex * batchSize
     const batch = input.candidates.slice(batchStart, batchStart + batchSize)
     const batchLabel = input.customPrompt
-      ? 'custom prompt'
+      ? `custom template batch ${batchIndex + 1}`
       : `llm batch ${batchIndex + 1}`
-    const prompt =
-      input.customPrompt ??
-      buildGenerationPrompt({
-        sessionTitle:
-          input.message.sessions.length === 1
-            ? input.message.sessions[0]?.title ?? 'Selected session'
-            : `${input.message.sessions.length} selected sessions`,
-        expressionDifficulty: input.message.generation.expressionDifficulty,
-        candidates: batch
-      })
+    const renderedPrompt = renderGenerationPromptTemplate({
+      template: promptTemplate,
+      excerpts: batch
+    })
+    logPromptTemplateWarnings({
+      jobId: input.message.jobId,
+      batchIndex,
+      warnings: renderedPrompt.warnings
+    })
+    const prompt = renderedPrompt.prompt
     const request = buildBatchRequest({
       batchIndex,
       prompt,
@@ -663,10 +700,10 @@ export async function runEnrichmentFromCandidates(input: {
 
     const completed = completedByIndex.get(batchIndex)
     if (completed) {
-      const reusedItems = itemsFromDrafts({
+      const reusedItems = itemsFromBatchResult({
         jobId: input.message.jobId,
         batch,
-        drafts: completed.response.drafts,
+        result: completed.response.result,
         startIndex: items.length + 1
       })
       items.push(...reusedItems)
@@ -677,7 +714,7 @@ export async function runEnrichmentFromCandidates(input: {
         batchIndex,
         request,
         response: {
-          drafts: completed.response.drafts,
+          result: completed.response.result,
           items: reusedItems,
           reusedFromJobId: input.sourceJobId ?? undefined
         }
@@ -714,10 +751,11 @@ export async function runEnrichmentFromCandidates(input: {
     })
 
     try {
-      const drafts = await runtime.enrichCandidateBatch({
+      const result = await runtime.enrichCandidateBatch({
         provider: input.message.provider,
         modelBackend: input.message.modelBackend,
-        prompt
+        prompt,
+        excerptCount: batch.length
       })
       if (
         maybeEmitCancelledSnapshot({
@@ -733,10 +771,10 @@ export async function runEnrichmentFromCandidates(input: {
       ) {
         return
       }
-      const batchItems = itemsFromDrafts({
+      const batchItems = itemsFromBatchResult({
         jobId: input.message.jobId,
         batch,
-        drafts,
+        result,
         startIndex: items.length + 1
       })
 
@@ -748,7 +786,7 @@ export async function runEnrichmentFromCandidates(input: {
         batchIndex,
         request,
         response: {
-          drafts,
+          result,
           items: batchItems
         }
       })

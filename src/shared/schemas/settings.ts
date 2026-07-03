@@ -64,7 +64,6 @@ export const settingsSchema = z.object({
   }),
   modelBackend: modelBackendSchema,
   generation: z.object({
-    defaultLanguageDirection: z.enum(['en-zh', 'zh-en', 'bilingual']),
     expressionDifficulty: expressionDifficultySchema.default(DEFAULT_EXPRESSION_DIFFICULTY),
     batchSize: z.number().int().positive().default(DEFAULT_BATCH_SIZE),
     boundedConcurrency: z.number().int().positive(),

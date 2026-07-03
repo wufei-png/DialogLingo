@@ -4,6 +4,27 @@ import {
   normalizeOpenAiChatCompletionsUrl
 } from '../../../src/main/generation/openAiCompatibleClient'
 import { ModelAdapterError } from '../../../src/main/generation/modelAdapter'
+import { STRUCTURED_OUTPUT_REMINDER } from '../../../src/main/generation/prompts'
+
+const samplePayload = {
+  excerptResults: [
+    {
+      items: [
+        {
+          itemType: 'Expression',
+          sourceText: 'ship it',
+          targetText: '发布它',
+          gloss: 'release something',
+          contextText: 'We can ship it today.',
+          explanation: '一个常见的软件发布表达。',
+          quizPrompt: '“发布它”用英语怎么说？',
+          quizAnswer: 'ship it',
+          tags: ['product']
+        }
+      ]
+    }
+  ]
+}
 
 describe('normalizeOpenAiChatCompletionsUrl', () => {
   it('accepts proxy root, v1 base, and full chat completions URLs', () => {
@@ -33,21 +54,7 @@ describe('enrichOpenAiCompatibleCandidateBatch', () => {
           choices: [
             {
               message: {
-                content: JSON.stringify({
-                  items: [
-                    {
-                      itemType: 'Expression',
-                      sourceText: 'ship it',
-                      targetText: '发布它',
-                      gloss: 'ship',
-                      contextText: 'We can ship it today.',
-                      explanation: 'A common product phrase.',
-                      quizPrompt: 'Translate: ship it',
-                      quizAnswer: '发布它',
-                      tags: ['product']
-                    }
-                  ]
-                })
+                content: JSON.stringify(samplePayload)
               }
             }
           ]
@@ -61,15 +68,45 @@ describe('enrichOpenAiCompatibleCandidateBatch', () => {
       baseUrl: 'http://localhost:4000',
       apiKey: 'sk-test',
       model: 'gpt-4o-mini',
-      prompt: 'candidate'
+      prompt: 'candidate',
+      excerptCount: 1
     })
 
     expect(fetchMock).toHaveBeenCalledWith(
       'http://localhost:4000/v1/chat/completions',
       expect.any(Object)
     )
-    expect(items).toHaveLength(1)
-    expect(items[0].itemType).toBe('Expression')
+    expect(items.excerptResults).toHaveLength(1)
+    expect(items.excerptResults[0]?.items[0]?.itemType).toBe('Expression')
+  })
+
+  it('retries with json_object using the shared structured-output reminder', async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('unsupported schema', { status: 400 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            choices: [{ message: { content: JSON.stringify(samplePayload) } }]
+          }),
+          { status: 200 }
+        )
+      )
+    vi.stubGlobal('fetch', fetchMock)
+
+    await expect(
+      enrichOpenAiCompatibleCandidateBatch({
+        baseUrl: 'http://localhost:4000',
+        apiKey: 'sk-test',
+        model: 'gpt-4o-mini',
+        prompt: 'candidate',
+        excerptCount: 1
+      })
+    ).resolves.toMatchObject(samplePayload)
+
+    const secondRequest = JSON.parse(fetchMock.mock.calls[1]?.[1]?.body as string)
+    expect(secondRequest.response_format).toEqual({ type: 'json_object' })
+    expect(secondRequest.messages[1].content).toContain(STRUCTURED_OUTPUT_REMINDER)
   })
 
   it('classifies invalid structured payloads', async () => {
@@ -90,7 +127,8 @@ describe('enrichOpenAiCompatibleCandidateBatch', () => {
         baseUrl: 'http://localhost:4000',
         apiKey: 'sk-test',
         model: 'gpt-4o-mini',
-        prompt: 'candidate'
+        prompt: 'candidate',
+        excerptCount: 1
       })
     ).rejects.toMatchObject({
       reason: 'invalid-structured-payload'

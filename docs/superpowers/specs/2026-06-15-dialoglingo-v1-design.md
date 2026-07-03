@@ -383,7 +383,6 @@ Do not add same-source card clustering to v1. If later needed, treat it as a fol
 
 ### Generation
 
-- `default language direction`
 - `batch size`
 - `bounded concurrency`
 - `max items per session`
@@ -616,8 +615,6 @@ Every workbook item should normalize to:
 
 - `id`
 - `item_type`
-- `source_language`
-- `target_language`
 - `source_text`
 - `target_text`
 - `gloss`
@@ -627,6 +624,8 @@ Every workbook item should normalize to:
 - `quiz_answer`
 - `tags`
 - `source_refs`
+
+v1 generation is English-first: `source_text` is the English expression or sentence to study, `target_text` is concise Chinese meaning or translation, and provenance lives in `source_refs` rather than language-direction fields.
 
 ## Generation Pipeline
 
@@ -1070,9 +1069,9 @@ Anki is the primary target, but export must always degrade cleanly.
   - names the `.apkg` file for Anki package export
   - names the subfolder created inside the selected output location for text-bundle exports
 
-Do not add persistent template-management complexity in v1. The generation confirmation sheet may expose only the current run's final prompt draft.
+Do not add persistent template-management complexity in v1. The generation confirmation sheet exposes the current run's editable prompt template, not a concrete first-batch prompt.
 
-Prompt drafts should keep model-facing context compact: Markdown sections for role, task, rules, output contract, and input conversation; `<session title="...">` boundaries inside the input section; and plain `user:` / `assistant:` turns. Do not expose internal `source_span_ref`, session ids, or candidate numbering in the model prompt; keep source mapping in application state. Because the runtime supplies a JSON Schema separately, prompts should mention schema adherence and the empty object form `{"items":[]}` without embedding the full schema text.
+Prompt templates should keep model-facing context compact: Markdown sections for role, task, rules, output contract, a `{{INPUT_BATCH}}` placeholder, and a short final schema reminder. At runtime, replace the first placeholder with a flat `# Input Excerpts` block made of `excerpt N`, session title, role, and text; if the placeholder is missing, append the block and log a warning, and if duplicates exist, remove all placeholders after the first and log a warning. The model output schema is `{"excerptResults":[{"items":[]}]}` with exactly one result per excerpt and 0 to 2 items per result; keep detailed field meanings in JSON Schema descriptions instead of duplicating them in prompt prose.
 
 ### Bundle contents
 
