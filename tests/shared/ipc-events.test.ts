@@ -14,6 +14,24 @@ describe('jobEventSchema', () => {
       failureCount: 0,
       currentSessionTitle: 'hi',
       currentBatchLabel: 'mock llm startup',
+      currentBatchIndex: 0,
+      completedBatchCount: 1,
+      totalBatchCount: 2,
+      candidateCount: 3,
+      batchSize: 2,
+      inputBatches: [
+        {
+          batchIndex: 0,
+          excerpts: [
+            {
+              id: 'candidate-1',
+              sessionTitle: 'Session one',
+              role: 'assistant',
+              promptText: 'We can ship it today.'
+            }
+          ]
+        }
+      ],
       lastCheckpoint: null,
       canResume: false,
       resumeBlockedReason: null,
@@ -22,6 +40,9 @@ describe('jobEventSchema', () => {
     })
 
     expect(parsed.failureReason).toBeNull()
+    expect(parsed.inputBatches?.[0]?.excerpts[0]?.promptText).toBe(
+      'We can ship it today.'
+    )
   })
 })
 

@@ -1,8 +1,9 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import type { TFunction } from 'i18next'
 import { useTranslation } from 'react-i18next'
 import { countHighlightMarkers } from '../../../../shared/highlight'
+import type { GenerationInputBatch } from '../../../../shared/schemas/jobs'
 import type { Settings } from '../../../../shared/schemas/settings'
 import { ResizableSplitPane } from '../../components/ResizableSplitPane'
 import { trpc } from '../../lib/trpc'
@@ -22,6 +23,10 @@ import {
   unpinWorkbookSource,
   type WorkbookSourceMode
 } from './workbookModel'
+import {
+  getWorkbookActiveProgressPercent,
+  getWorkbookProgressPercent
+} from './workbookProgressModel'
 import { getWorkbookStoppedState } from './workbookStoppedModel'
 
 type WorkbookItem = {
@@ -85,12 +90,20 @@ function formatJobStatus(status: string | null | undefined, t: TFunction) {
   }
 }
 
-function getProgressPercent(processed: number, total: number) {
-  if (total <= 0) {
-    return 0
+function getBatchState(input: {
+  batchIndex: number
+  currentBatchIndex: number | null
+  completedBatchCount: number
+}) {
+  if (input.batchIndex < input.completedBatchCount) {
+    return 'completed'
   }
 
-  return Math.max(0, Math.min(100, Math.round((processed / total) * 100)))
+  if (input.currentBatchIndex === input.batchIndex) {
+    return 'active'
+  }
+
+  return 'queued'
 }
 
 export function WorkbookPage(props: {
@@ -121,6 +134,7 @@ export function WorkbookPage(props: {
   const [stoppedActionError, setStoppedActionError] = useState<string | null>(null)
   const [cancelPending, setCancelPending] = useState(false)
   const [cancelError, setCancelError] = useState<string | null>(null)
+  const activeBatchRef = useRef<HTMLElement | null>(null)
 
   useJobSubscription()
 
@@ -139,6 +153,12 @@ export function WorkbookPage(props: {
         failureCount: number
         currentSessionTitle?: string | null
         currentBatchLabel?: string | null
+        currentBatchIndex?: number | null
+        completedBatchCount?: number
+        totalBatchCount?: number
+        candidateCount?: number
+        batchSize?: number
+        inputBatches?: GenerationInputBatch[]
         lastCheckpoint?: string | null
         failedBatchCount?: number
         failureReason?: string | null
@@ -216,7 +236,17 @@ export function WorkbookPage(props: {
   })
   const progressProcessed = jobQuery.data?.processedSessionCount ?? 0
   const progressTotal = jobQuery.data?.selectedSessionCount ?? 0
-  const progressPercent = getProgressPercent(progressProcessed, progressTotal)
+  const progressPercent = getWorkbookProgressPercent(jobQuery.data ?? null)
+  const inputBatches = jobQuery.data?.inputBatches ?? []
+  const currentBatchIndex =
+    typeof jobQuery.data?.currentBatchIndex === 'number'
+      ? jobQuery.data.currentBatchIndex
+      : null
+  const completedBatchCount = jobQuery.data?.completedBatchCount ?? 0
+  const totalBatchCount = jobQuery.data?.totalBatchCount ?? inputBatches.length
+  const candidateCount = jobQuery.data?.candidateCount ?? 0
+  const batchSize = jobQuery.data?.batchSize ?? null
+  const activeProgressPercent = getWorkbookActiveProgressPercent(jobQuery.data ?? null)
 
   useEffect(() => {
     if (props.workbookSourcePinned) {
@@ -251,6 +281,18 @@ export function WorkbookPage(props: {
       setCancelPending(false)
     }
   }, [jobQuery.data?.status])
+
+  useEffect(() => {
+    if (currentBatchIndex == null || inputBatches.length === 0) {
+      return
+    }
+
+    activeBatchRef.current?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'nearest',
+      inline: 'center'
+    })
+  }, [currentBatchIndex, inputBatches.length])
 
   useEffect(() => {
     const reconciled = reconcileWorkbookSelection(rows, selectedItemId)
@@ -496,7 +538,14 @@ export function WorkbookPage(props: {
             aria-valuemax={100}
             aria-valuenow={progressPercent}
           >
-            <span style={{ width: `${progressPercent}%` }} />
+            <span
+              className="workbook-progress-bar-active"
+              style={{ width: `${activeProgressPercent}%` }}
+            />
+            <span
+              className="workbook-progress-bar-complete"
+              style={{ width: `${progressPercent}%` }}
+            />
           </div>
           <div className="workbook-progress-metrics">
             <span>
@@ -505,6 +554,28 @@ export function WorkbookPage(props: {
                 total: progressTotal
               })}
             </span>
+            {totalBatchCount > 0 ? (
+              <span>
+                {t('workbook.progressBatches', {
+                  completed: completedBatchCount,
+                  total: totalBatchCount
+                })}
+              </span>
+            ) : null}
+            {candidateCount > 0 ? (
+              <span>
+                {t('workbook.progressCandidates', {
+                  count: candidateCount
+                })}
+              </span>
+            ) : null}
+            {batchSize ? (
+              <span>
+                {t('workbook.progressBatchSize', {
+                  count: batchSize
+                })}
+              </span>
+            ) : null}
             <span>
               {t('workbook.progressItems', {
                 count: jobQuery.data?.createdItemCount ?? 0
@@ -530,6 +601,75 @@ export function WorkbookPage(props: {
           ) : null}
           {cancelError ? (
             <p className="workbook-progress-error">{cancelError}</p>
+          ) : null}
+          {inputBatches.length > 0 ? (
+            <section
+              className="workbook-input-batches-panel"
+              aria-label={t('workbook.inputBatches')}
+            >
+              <header className="workbook-input-batches-header">
+                <span>{t('workbook.inputBatches')}</span>
+                <span>
+                  {t('workbook.inputBatchSummary', {
+                    count: inputBatches.length
+                  })}
+                </span>
+              </header>
+              <div className="workbook-input-batches-scroll">
+                {inputBatches.map((batch) => {
+                  const batchState = getBatchState({
+                    batchIndex: batch.batchIndex,
+                    currentBatchIndex,
+                    completedBatchCount
+                  })
+                  return (
+                    <article
+                      key={batch.batchIndex}
+                      ref={batchState === 'active' ? activeBatchRef : null}
+                      className={`workbook-input-batch is-${batchState}`}
+                    >
+                      <header className="workbook-input-batch-header">
+                        <span>
+                          {t('workbook.inputBatchTitle', {
+                            index: batch.batchIndex + 1,
+                            total: totalBatchCount
+                          })}
+                        </span>
+                        <span>
+                          {t(`workbook.batchStatus.${batchState}`)}
+                        </span>
+                      </header>
+                      <div className="workbook-input-batch-count">
+                        {t('workbook.batchExcerptCount', {
+                          count: batch.excerpts.length
+                        })}
+                      </div>
+                      <div className="workbook-input-batch-excerpts">
+                        {batch.excerpts.map((excerpt, excerptIndex) => (
+                          <section
+                            key={excerpt.id}
+                            className="workbook-input-excerpt"
+                          >
+                            <div className="workbook-input-excerpt-meta">
+                              <span>
+                                {t('workbook.inputExcerptTitle', {
+                                  index: excerptIndex + 1
+                                })}
+                              </span>
+                              {excerpt.role ? (
+                                <span>{t(`preview.roles.${excerpt.role}`)}</span>
+                              ) : null}
+                              <span>{excerpt.sessionTitle}</span>
+                            </div>
+                            <p>{excerpt.promptText}</p>
+                          </section>
+                        ))}
+                      </div>
+                    </article>
+                  )
+                })}
+              </div>
+            </section>
           ) : null}
           <div className="workbook-progress-actions">
             <button

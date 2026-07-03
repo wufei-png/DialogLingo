@@ -12,6 +12,18 @@ export const generationJobStatusSchema = z.enum([
   'cancelled'
 ])
 
+export const generationBatchExcerptSchema = z.object({
+  id: z.string(),
+  sessionTitle: z.string(),
+  role: z.enum(['user', 'assistant']).optional(),
+  promptText: z.string()
+})
+
+export const generationInputBatchSchema = z.object({
+  batchIndex: z.number().int().nonnegative(),
+  excerpts: z.array(generationBatchExcerptSchema)
+})
+
 export const generationJobSnapshotSchema = z.object({
   id: z.string(),
   status: generationJobStatusSchema,
@@ -22,6 +34,12 @@ export const generationJobSnapshotSchema = z.object({
   failureCount: z.number().int().nonnegative(),
   currentSessionTitle: z.string().nullable().optional(),
   currentBatchLabel: z.string().nullable().optional(),
+  currentBatchIndex: z.number().int().nonnegative().nullable().optional(),
+  completedBatchCount: z.number().int().nonnegative().optional(),
+  totalBatchCount: z.number().int().nonnegative().optional(),
+  candidateCount: z.number().int().nonnegative().optional(),
+  batchSize: z.number().int().positive().optional(),
+  inputBatches: z.array(generationInputBatchSchema).optional(),
   lastCheckpoint: z.string().nullable().optional(),
   failedBatchCount: z.number().int().nonnegative().optional(),
   failureReason: z.string().nullable().optional(),
@@ -30,3 +48,4 @@ export const generationJobSnapshotSchema = z.object({
 })
 
 export type GenerationJobSnapshot = z.infer<typeof generationJobSnapshotSchema>
+export type GenerationInputBatch = z.infer<typeof generationInputBatchSchema>

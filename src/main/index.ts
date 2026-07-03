@@ -8,6 +8,7 @@ import { app, BrowserWindow, dialog } from 'electron'
 import type { OpenDialogOptions } from 'electron'
 import { buildRouter } from '../shared/ipc/router'
 import type { ScanEvent } from '../shared/ipc/events'
+import type { GenerationInputBatch } from '../shared/schemas/jobs'
 import type { Settings } from '../shared/schemas/settings'
 import { createDb } from './db/client'
 import { runMigrations } from './db/migrate'
@@ -42,6 +43,7 @@ import {
   type JobSessionSnapshot
 } from './generation/checkpointStore'
 import { requestGenerationCancel } from './generation/cancelWorker'
+import { mergeGenerationProgressEvent } from './generation/jobProgress'
 import { runGenerationJob } from './generation/jobRunner'
 import { writeWorkbookDraft } from './generation/materializeWorkbook'
 import {
@@ -118,6 +120,12 @@ type JobSnapshot = {
   workbookId: string | null
   currentSessionTitle?: string | null
   currentBatchLabel?: string | null
+  currentBatchIndex?: number | null
+  completedBatchCount?: number
+  totalBatchCount?: number
+  candidateCount?: number
+  batchSize?: number
+  inputBatches?: GenerationInputBatch[]
   lastCheckpoint?: string | null
   failedBatchCount?: number
   failureReason?: string | null
@@ -218,6 +226,7 @@ function mergeJobProgress(jobId: string, patch: Record<string, unknown>) {
     ...readJobProgress(jobId),
     ...patch
   }
+  delete (next as { inputBatches?: unknown }).inputBatches
 
   sqlite
     .prepare('update generation_jobs set progress_json = ? where id = ?')
@@ -304,6 +313,12 @@ function emitJobEvent(event: {
   failureCount: number
   currentSessionTitle: string | null
   currentBatchLabel: string | null
+  currentBatchIndex?: number | null
+  completedBatchCount?: number
+  totalBatchCount?: number
+  candidateCount?: number
+  batchSize?: number
+  inputBatches?: GenerationInputBatch[]
   failedBatchCount?: number
   failureReason?:
     | 'missing-provider-config'
@@ -316,6 +331,7 @@ function emitJobEvent(event: {
     `job=${event.jobId} kind=${event.kind} status=${event.status} processed=${event.processedSessionCount}/${event.totalSelectedSessionCount} created=${event.createdItemCount} label=${event.currentBatchLabel ?? ''}`
   )
   const previousProgress = readJobProgress(event.jobId)
+  const previousSnapshot = jobSnapshots.get(event.jobId)
   const resumeStatus =
     event.status === 'failed' || event.status === 'cancelled'
       ? getJobResumeStatus(sqlite, event.jobId)
@@ -324,23 +340,16 @@ function emitJobEvent(event: {
           checkpoint: null,
           resumeBlockedReason: null
         }
-  const enrichedEvent = {
-    ...event,
-    lastCheckpoint:
-      resumeStatus.checkpoint ??
-      previousProgress.lastCheckpoint ??
-      null,
-    failedBatchCount:
-      event.failedBatchCount ??
-      previousProgress.failedBatchCount ??
-      0,
-    failureReason:
-      event.failureReason ??
-      previousProgress.failureReason ??
-      null,
-    canResume: resumeStatus.canResume,
-    resumeBlockedReason: resumeStatus.resumeBlockedReason
-  }
+  const {
+    enrichedEvent,
+    persistedProgress,
+    inputBatchesForSnapshot
+  } = mergeGenerationProgressEvent({
+    event,
+    previousProgress,
+    previousInputBatches: previousSnapshot?.inputBatches,
+    resumeStatus
+  })
   logger.debug('generation-event', 'enriched job event', enrichedEvent)
 
   jobSnapshots.set(event.jobId, {
@@ -354,6 +363,15 @@ function emitJobEvent(event: {
     workbookId: jobSnapshots.get(event.jobId)?.workbookId ?? null,
     currentSessionTitle: event.currentSessionTitle,
     currentBatchLabel: event.currentBatchLabel,
+    currentBatchIndex: enrichedEvent.currentBatchIndex,
+    completedBatchCount: Number(enrichedEvent.completedBatchCount ?? 0),
+    totalBatchCount: Number(enrichedEvent.totalBatchCount ?? 0),
+    candidateCount: Number(enrichedEvent.candidateCount ?? 0),
+    batchSize:
+      typeof enrichedEvent.batchSize === 'number'
+        ? enrichedEvent.batchSize
+        : undefined,
+    inputBatches: inputBatchesForSnapshot,
     lastCheckpoint: String(enrichedEvent.lastCheckpoint ?? '') || null,
     failedBatchCount: Number(enrichedEvent.failedBatchCount ?? 0),
     failureReason: enrichedEvent.failureReason
@@ -371,7 +389,7 @@ function emitJobEvent(event: {
         where id = ?
       `
     )
-    .run(event.status, JSON.stringify(enrichedEvent), event.jobId)
+    .run(event.status, JSON.stringify(persistedProgress), event.jobId)
 
   for (const win of BrowserWindow.getAllWindows()) {
     win.webContents.send('dialoglingo:job-event', enrichedEvent)
@@ -1008,6 +1026,12 @@ function createRouter() {
                 failureCount?: number
                 currentSessionTitle?: string | null
                 currentBatchLabel?: string | null
+                currentBatchIndex?: number | null
+                completedBatchCount?: number
+                totalBatchCount?: number
+                candidateCount?: number
+                batchSize?: number
+                inputBatches?: GenerationInputBatch[]
                 lastCheckpoint?: string | null
                 failedBatchCount?: number
                 failureReason?: string | null
@@ -1027,6 +1051,12 @@ function createRouter() {
           failureCount: progress.failureCount ?? 0,
           currentSessionTitle: progress.currentSessionTitle ?? null,
           currentBatchLabel: progress.currentBatchLabel ?? null,
+          currentBatchIndex: progress.currentBatchIndex ?? null,
+          completedBatchCount: progress.completedBatchCount ?? 0,
+          totalBatchCount: progress.totalBatchCount ?? 0,
+          candidateCount: progress.candidateCount ?? 0,
+          batchSize: progress.batchSize,
+          inputBatches: progress.inputBatches ?? [],
           lastCheckpoint:
             progress.lastCheckpoint ?? resumeStatus.checkpoint ?? null,
           failedBatchCount: progress.failedBatchCount ?? 0,

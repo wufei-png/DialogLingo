@@ -9,7 +9,11 @@ import {
   X
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import type { AppLocale, Settings } from '../../../shared/schemas/settings'
+import {
+  DEFAULT_BATCH_SIZE,
+  type AppLocale,
+  type Settings
+} from '../../../shared/schemas/settings'
 import { IconLabel } from './IconLabel'
 import appI18n from '../i18n/i18n'
 import { trpc } from '../lib/trpc'
@@ -99,7 +103,7 @@ export function SettingsSheet(props: Props) {
   const [cliTimeoutMs, setCliTimeoutMs] = useState('120000')
   const [expressionDifficulty, setExpressionDifficulty] =
     useState<ExpressionDifficulty>('average')
-  const [batchSize, setBatchSize] = useState('32')
+  const [batchSize, setBatchSize] = useState(String(DEFAULT_BATCH_SIZE))
   const [maxItemsPerSession, setMaxItemsPerSession] = useState('50')
   const [expressionTargetPercent, setExpressionTargetPercent] = useState('60')
   const [balanceStrength, setBalanceStrength] = useState('0.1')

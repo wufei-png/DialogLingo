@@ -6,7 +6,7 @@ export const MIN_SPLIT_RATIO = 0.16
 export const MAX_SPLIT_RATIO = 0.7
 export const DEFAULT_CLI_TIMEOUT_MS = 120_000
 export const DEFAULT_EXPRESSION_DIFFICULTY = 'average'
-export const DEFAULT_BATCH_SIZE = 32
+export const DEFAULT_BATCH_SIZE = 8
 export const DEFAULT_APP_LOCALE = 'en'
 
 export const DEFAULT_MODEL_BACKEND = {

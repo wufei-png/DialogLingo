@@ -1,5 +1,8 @@
 import { z } from 'zod'
-import { generationJobStatusSchema } from '../schemas/jobs'
+import {
+  generationInputBatchSchema,
+  generationJobStatusSchema
+} from '../schemas/jobs'
 
 export const jobEventSchema = z.object({
   kind: z.enum(['snapshot', 'phase', 'warning', 'failure', 'completed']),
@@ -12,6 +15,12 @@ export const jobEventSchema = z.object({
   failureCount: z.number().int().nonnegative(),
   currentSessionTitle: z.string().nullable(),
   currentBatchLabel: z.string().nullable(),
+  currentBatchIndex: z.number().int().nonnegative().nullable().optional(),
+  completedBatchCount: z.number().int().nonnegative().optional(),
+  totalBatchCount: z.number().int().nonnegative().optional(),
+  candidateCount: z.number().int().nonnegative().optional(),
+  batchSize: z.number().int().positive().optional(),
+  inputBatches: z.array(generationInputBatchSchema).optional(),
   lastCheckpoint: z.string().nullable().optional(),
   canResume: z.boolean().optional(),
   resumeBlockedReason: z.string().nullable().optional(),

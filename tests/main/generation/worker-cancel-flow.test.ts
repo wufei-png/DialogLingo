@@ -6,6 +6,7 @@ import type {
 } from '../../../src/main/generation/modelAdapter'
 import {
   runEnrichmentFromCandidates,
+  runMockStart,
   type CandidateWithSession,
   type StartMessage,
   type WorkerRuntime,
@@ -131,7 +132,11 @@ function createRuntime(input: {
   enrichCandidateBatch: WorkerRuntime['enrichCandidateBatch']
   onCheckpoint?: (event: GenerationCheckpointEvent) => void
 }) {
-  const jobMessages: Array<{ status?: string; kind?: string; items?: unknown[] }> = []
+  const jobMessages: Array<Record<string, unknown> & {
+    status?: string
+    kind?: string
+    items?: unknown[]
+  }> = []
   const checkpoints: GenerationCheckpointEvent[] = []
   const runtime: Partial<WorkerRuntime> = {
     isCancelled: input.isCancelled,
@@ -297,5 +302,110 @@ describe('runEnrichmentFromCandidates cancellation', () => {
       secondCandidate.promptText,
       secondCandidate.promptText
     ])
+  })
+
+  it('emits batch progress and input batch previews during enrichment', async () => {
+    const firstCandidate = createCandidateWithSource({
+      id: 'candidate-1',
+      sourceSpanRef: 'span-1',
+      promptText: 'First excerpt.'
+    })
+    const secondCandidate = createCandidateWithSource({
+      id: 'candidate-2',
+      sourceSpanRef: 'span-2',
+      promptText: 'Second excerpt.'
+    })
+    const { runtime, jobMessages } = createRuntime({
+      isCancelled: () => false,
+      enrichCandidateBatch: async () => resultWithExcerptItems([[draft]])
+    })
+
+    await runEnrichmentFromCandidates({
+      message: createStartMessage(),
+      candidates: [firstCandidate, secondCandidate],
+      runtime
+    })
+
+    const enrichmentEvents = jobMessages.filter(
+      (event) => event.status === 'enriching'
+    )
+    expect(enrichmentEvents.map((event) => event.completedBatchCount)).toEqual([
+      0,
+      1,
+      1,
+      2
+    ])
+    expect(enrichmentEvents.at(0)?.totalBatchCount).toBe(2)
+    expect(enrichmentEvents.at(0)?.candidateCount).toBe(2)
+    expect(enrichmentEvents.slice(1).some((event) => 'inputBatches' in event)).toBe(
+      false
+    )
+    expect(enrichmentEvents.at(0)?.inputBatches).toEqual([
+      {
+        batchIndex: 0,
+        excerpts: [
+          {
+            id: firstCandidate.id,
+            sessionTitle: firstCandidate.sessionTitle,
+            role: firstCandidate.role,
+            promptText: firstCandidate.promptText
+          }
+        ]
+      },
+      {
+        batchIndex: 1,
+        excerpts: [
+          {
+            id: secondCandidate.id,
+            sessionTitle: secondCandidate.sessionTitle,
+            role: secondCandidate.role,
+            promptText: secondCandidate.promptText
+          }
+        ]
+      }
+    ])
+  })
+
+  it('uses configured batch size for mock LLM batch progress', async () => {
+    const { runtime, jobMessages, checkpoints } = createRuntime({
+      isCancelled: () => false,
+      enrichCandidateBatch: async () => resultWithExcerptItems([[draft]])
+    })
+
+    await runMockStart(
+      {
+        ...createStartMessage(),
+        generation: {
+          ...createStartMessage().generation,
+          batchSize: 2
+        }
+      },
+      runtime
+    )
+
+    const enrichmentEvents = jobMessages.filter(
+      (event) => event.status === 'enriching'
+    )
+    const completedBatchCheckpoints = checkpoints.filter(
+      (event) => event.checkpoint === 'enrichment_batch_completed'
+    )
+
+    expect(enrichmentEvents.map((event) => event.completedBatchCount)).toEqual([
+      0,
+      1,
+      1,
+      2
+    ])
+    expect(enrichmentEvents.at(0)?.totalBatchCount).toBe(2)
+    expect(enrichmentEvents.at(0)?.batchSize).toBe(2)
+    expect(enrichmentEvents.at(0)?.inputBatches).toHaveLength(2)
+    expect(enrichmentEvents.slice(1).some((event) => 'inputBatches' in event)).toBe(
+      false
+    )
+    expect(
+      completedBatchCheckpoints.map((event) =>
+        'request' in event ? event.request.candidates.length : 0
+      )
+    ).toEqual([2, 2])
   })
 })

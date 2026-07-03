@@ -114,6 +114,12 @@ type WorkerJobEvent = {
   failureCount: number
   currentSessionTitle: string | null
   currentBatchLabel: string | null
+  currentBatchIndex?: number | null
+  completedBatchCount?: number
+  totalBatchCount?: number
+  candidateCount?: number
+  batchSize?: number
+  inputBatches?: WorkerInputBatchPreview[]
   failedBatchCount?: number
   failureReason?:
     | 'provider-timeout'
@@ -125,6 +131,48 @@ type WorkerJobMessage = WorkerJobEvent & {
   items?: WorkerItem[]
 }
 
+type WorkerBatchExcerptPreview = {
+  id: string
+  sessionTitle: string
+  role?: 'user' | 'assistant'
+  promptText: string
+}
+
+type WorkerInputBatchPreview = {
+  batchIndex: number
+  excerpts: WorkerBatchExcerptPreview[]
+}
+
+type WorkerBatchProgress = Pick<
+  WorkerJobEvent,
+  | 'completedBatchCount'
+  | 'totalBatchCount'
+  | 'candidateCount'
+  | 'batchSize'
+  | 'inputBatches'
+>
+
+type WorkerBatchProgressBase = {
+  totalBatchCount: number
+  candidateCount: number
+  batchSize: number
+  inputBatches: WorkerInputBatchPreview[]
+}
+
+function buildBatchProgress(input: {
+  base: WorkerBatchProgressBase
+  completedBatchCount: number
+  includeInputBatches?: boolean
+}): WorkerBatchProgress {
+  return {
+    totalBatchCount: input.base.totalBatchCount,
+    candidateCount: input.base.candidateCount,
+    batchSize: input.base.batchSize,
+    ...(input.includeInputBatches ? { inputBatches: input.base.inputBatches } : {}),
+    completedBatchCount: input.completedBatchCount
+  }
+}
+
 function emit(input: WorkerJobEvent) {
   logger.debug('generation-worker', 'post job event to main', {
     jobId: input.jobId,
@@ -132,7 +180,10 @@ function emit(input: WorkerJobEvent) {
     status: input.status,
     processedSessionCount: input.processedSessionCount,
     totalSelectedSessionCount: input.totalSelectedSessionCount,
-    currentBatchLabel: input.currentBatchLabel
+    currentBatchLabel: input.currentBatchLabel,
+    currentBatchIndex: input.currentBatchIndex,
+    completedBatchCount: input.completedBatchCount,
+    totalBatchCount: input.totalBatchCount
   })
   parentPort?.postMessage(input)
 }
@@ -251,6 +302,36 @@ function rebaseCheckpointCandidates(input: {
 function toRequestCandidate(candidate: CandidateWithSession): PersistedCandidate {
   const { session: _session, ...persisted } = candidate
   return persisted
+}
+
+function toBatchExcerptPreview(candidate: CandidateWithSession): WorkerBatchExcerptPreview {
+  return {
+    id: candidate.id,
+    sessionTitle: candidate.sessionTitle,
+    ...(candidate.role ? { role: candidate.role } : {}),
+    promptText: candidate.promptText
+  }
+}
+
+function buildInputBatchPreviews(input: {
+  candidates: CandidateWithSession[]
+  batchSize: number
+}): WorkerInputBatchPreview[] {
+  const batches: WorkerInputBatchPreview[] = []
+  for (
+    let batchStart = 0;
+    batchStart < input.candidates.length;
+    batchStart += input.batchSize
+  ) {
+    batches.push({
+      batchIndex: batches.length,
+      excerpts: input.candidates
+        .slice(batchStart, batchStart + input.batchSize)
+        .map(toBatchExcerptPreview)
+    })
+  }
+
+  return batches
 }
 
 function toWorkerItem(input: {
@@ -395,6 +476,7 @@ function emitTerminalPhases(input: {
   totalSelectedSessionCount: number
   createdItemCount: number
   failedBatchCount: number
+  batchProgress?: WorkerBatchProgress
   emitEvent?: WorkerRuntime['emit']
 }) {
   const emitEvent = input.emitEvent ?? emit
@@ -408,7 +490,9 @@ function emitTerminalPhases(input: {
     warningCount: 0,
     failureCount: input.failedBatchCount,
     currentSessionTitle: null,
-    currentBatchLabel: 'dedup + type-balance rerank'
+    currentBatchLabel: 'dedup + type-balance rerank',
+    currentBatchIndex: null,
+    ...input.batchProgress
   })
 
   emitEvent({
@@ -421,7 +505,9 @@ function emitTerminalPhases(input: {
     warningCount: 0,
     failureCount: input.failedBatchCount,
     currentSessionTitle: null,
-    currentBatchLabel: 'write workbook items'
+    currentBatchLabel: 'write workbook items',
+    currentBatchIndex: null,
+    ...input.batchProgress
   })
 }
 
@@ -432,6 +518,8 @@ function emitCancelledSnapshot(input: {
   failedBatchCount: number
   currentSessionTitle: string | null
   currentBatchLabel: string | null
+  currentBatchIndex?: number | null
+  batchProgress?: WorkerBatchProgress
   items: WorkerItem[]
   runtime: Pick<WorkerRuntime, 'postJobMessage'>
 }) {
@@ -446,6 +534,8 @@ function emitCancelledSnapshot(input: {
     failureCount: input.failedBatchCount,
     currentSessionTitle: input.currentSessionTitle,
     currentBatchLabel: input.currentBatchLabel,
+    currentBatchIndex: input.currentBatchIndex,
+    ...input.batchProgress,
     items: input.items
   })
 }
@@ -457,6 +547,8 @@ function maybeEmitCancelledSnapshot(input: {
   failedBatchCount: number
   currentSessionTitle: string | null
   currentBatchLabel: string | null
+  currentBatchIndex?: number | null
+  batchProgress?: WorkerBatchProgress
   items: WorkerItem[]
   runtime: Pick<WorkerRuntime, 'isCancelled' | 'postJobMessage'>
 }) {
@@ -475,7 +567,11 @@ function finalizeAndRankItems(items: WorkerItem[], generation: StartMessage['gen
   )
 }
 
-async function runMockStart(message: StartMessage) {
+export async function runMockStart(
+  message: StartMessage,
+  runtimeOverrides?: Partial<WorkerRuntime>
+) {
+  const runtime = resolveWorkerRuntime(runtimeOverrides)
   const startedAt = Date.now()
   logger.debug('generation-worker', 'mock start begin', {
     jobId: message.jobId,
@@ -489,7 +585,6 @@ async function runMockStart(message: StartMessage) {
       turns: []
     } satisfies WorkerSession)
   const drafts = createMockLearningItemDrafts()
-  const result = batchResultFromDrafts(drafts)
   const mockCandidates = drafts.map((_, itemIndex) => {
     const source = mockSourceForSession({ session, itemIndex })
     return toPersistedCandidate({
@@ -502,18 +597,29 @@ async function runMockStart(message: StartMessage) {
       role: 'assistant'
     })
   })
+  const inputBatches = buildInputBatchPreviews({
+    candidates: mockCandidates,
+    batchSize: message.generation.batchSize
+  })
+  const batchProgressBase: WorkerBatchProgressBase = {
+    totalBatchCount: inputBatches.length,
+    candidateCount: mockCandidates.length,
+    batchSize: message.generation.batchSize,
+    inputBatches
+  }
+  const rawItems = drafts.map((draft, itemIndex) => {
+    const source = mockSourceForSession({ session, itemIndex })
+    return toWorkerItem({
+      jobId: message.jobId,
+      session,
+      draft,
+      itemIndex: itemIndex + 1,
+      sourceSpanRef: source.sourceSpanRef,
+      excerpt: source.excerpt
+    })
+  })
   const items = finalizeAndRankItems(
-    drafts.map((draft, itemIndex) => {
-      const source = mockSourceForSession({ session, itemIndex })
-      return toWorkerItem({
-        jobId: message.jobId,
-        session,
-        draft,
-        itemIndex: itemIndex + 1,
-        sourceSpanRef: source.sourceSpanRef,
-        excerpt: source.excerpt
-      })
-    }),
+    rawItems,
     message.generation
   )
   logger.debug('generation-worker', 'mock drafts ready', {
@@ -523,14 +629,14 @@ async function runMockStart(message: StartMessage) {
     durationMs: elapsedMs(startedAt)
   })
 
-  emitCheckpoint({
+  runtime.emitCheckpoint({
     kind: 'checkpoint',
     jobId: message.jobId,
     checkpoint: 'candidate_groups',
     candidates: mockCandidates.map(toRequestCandidate)
   })
 
-  emit({
+  runtime.emit({
     kind: 'phase',
     jobId: message.jobId,
     status: 'normalizing',
@@ -543,35 +649,83 @@ async function runMockStart(message: StartMessage) {
     currentBatchLabel: 'mock llm'
   })
 
-  emit({
-    kind: 'phase',
-    jobId: message.jobId,
-    status: 'enriching',
-    totalSelectedSessionCount: message.sessions.length,
-    processedSessionCount: message.sessions.length,
-    createdItemCount: items.length,
-    warningCount: 0,
-    failureCount: 0,
-    currentSessionTitle: session.title,
-    currentBatchLabel: 'mock llm'
-  })
+  let completedBatchCount = 0
+  for (const batch of inputBatches) {
+    const batchLabel = `mock llm batch ${batch.batchIndex + 1} / ${inputBatches.length}`
+    const batchStart = batch.batchIndex * message.generation.batchSize
+    const batchCandidates = mockCandidates.slice(
+      batchStart,
+      batchStart + message.generation.batchSize
+    )
+    const batchDrafts = drafts.slice(
+      batchStart,
+      batchStart + message.generation.batchSize
+    )
+    const batchItems = rawItems.slice(
+      batchStart,
+      batchStart + message.generation.batchSize
+    )
+    const batchResult = batchResultFromDrafts(batchDrafts)
 
-  emitCheckpoint({
-    kind: 'checkpoint',
-    jobId: message.jobId,
-    checkpoint: 'enrichment_batch_completed',
-    batchIndex: 0,
-    request: {
-      batchIndex: 0,
-      prompt: 'mock llm',
-      candidates: mockCandidates.map(toRequestCandidate)
-    },
-    response: {
-      result,
-      items
-    }
-  })
-  emitCheckpoint({
+    runtime.emit({
+      kind: 'phase',
+      jobId: message.jobId,
+      status: 'enriching',
+      totalSelectedSessionCount: message.sessions.length,
+      processedSessionCount: message.sessions.length,
+      createdItemCount: batchStart,
+      warningCount: 0,
+      failureCount: 0,
+      currentSessionTitle: session.title,
+      currentBatchLabel: batchLabel,
+      currentBatchIndex: batch.batchIndex,
+      ...buildBatchProgress({
+        base: batchProgressBase,
+        completedBatchCount,
+        includeInputBatches: batch.batchIndex === 0
+      })
+    })
+
+    runtime.emitCheckpoint({
+      kind: 'checkpoint',
+      jobId: message.jobId,
+      checkpoint: 'enrichment_batch_completed',
+      batchIndex: batch.batchIndex,
+      request: {
+        batchIndex: batch.batchIndex,
+        prompt: 'mock llm',
+        candidates: batchCandidates.map(toRequestCandidate)
+      },
+      response: {
+        result: batchResult,
+        items: batchItems
+      }
+    })
+
+    completedBatchCount += 1
+    runtime.emit({
+      kind: 'phase',
+      jobId: message.jobId,
+      status: 'enriching',
+      totalSelectedSessionCount: message.sessions.length,
+      processedSessionCount: message.sessions.length,
+      createdItemCount: Math.min(
+        batchStart + message.generation.batchSize,
+        items.length
+      ),
+      warningCount: 0,
+      failureCount: 0,
+      currentSessionTitle: session.title,
+      currentBatchLabel: `${batchLabel} complete`,
+      currentBatchIndex: batch.batchIndex,
+      ...buildBatchProgress({
+        base: batchProgressBase,
+        completedBatchCount
+      })
+    })
+  }
+
+  runtime.emitCheckpoint({
     kind: 'checkpoint',
     jobId: message.jobId,
     checkpoint: 'ranked_orders',
@@ -583,10 +737,15 @@ async function runMockStart(message: StartMessage) {
     jobId: message.jobId,
     totalSelectedSessionCount: message.sessions.length,
     createdItemCount: items.length,
-    failedBatchCount: 0
+    failedBatchCount: 0,
+    batchProgress: buildBatchProgress({
+      base: batchProgressBase,
+      completedBatchCount
+    }),
+    emitEvent: runtime.emit
   })
 
-  parentPort?.postMessage({
+  runtime.postJobMessage({
     kind: 'completed',
     jobId: message.jobId,
     status: 'completed',
@@ -597,6 +756,11 @@ async function runMockStart(message: StartMessage) {
     failureCount: 0,
     currentSessionTitle: null,
     currentBatchLabel: null,
+    currentBatchIndex: null,
+    ...buildBatchProgress({
+      base: batchProgressBase,
+      completedBatchCount
+    }),
     items
   })
   logger.info('generation-worker', 'mock start complete', {
@@ -627,6 +791,17 @@ export async function runEnrichmentFromCandidates(input: {
     input.candidates.length === 0
       ? 0
       : Math.ceil(input.candidates.length / batchSize)
+  const inputBatches = buildInputBatchPreviews({
+    candidates: input.candidates,
+    batchSize
+  })
+  const batchProgressBase: WorkerBatchProgressBase = {
+    totalBatchCount: batchCount,
+    candidateCount: input.candidates.length,
+    batchSize,
+    inputBatches
+  }
+  let completedBatchCount = 0
   const promptTemplate =
     input.customPrompt ??
     buildGenerationPromptTemplate({
@@ -645,8 +820,8 @@ export async function runEnrichmentFromCandidates(input: {
     const batchStart = batchIndex * batchSize
     const batch = input.candidates.slice(batchStart, batchStart + batchSize)
     const batchLabel = input.customPrompt
-      ? `custom template batch ${batchIndex + 1}`
-      : `llm batch ${batchIndex + 1}`
+      ? `custom template batch ${batchIndex + 1} / ${batchCount}`
+      : `llm batch ${batchIndex + 1} / ${batchCount}`
     const renderedPrompt = renderGenerationPromptTemplate({
       template: promptTemplate,
       excerpts: batch
@@ -671,6 +846,12 @@ export async function runEnrichmentFromCandidates(input: {
         failedBatchCount,
         currentSessionTitle: null,
         currentBatchLabel: batchLabel,
+        currentBatchIndex: batchIndex,
+        batchProgress: buildBatchProgress({
+          base: batchProgressBase,
+          completedBatchCount,
+          includeInputBatches: batchIndex === 0
+        }),
         items,
         runtime
       })
@@ -688,7 +869,13 @@ export async function runEnrichmentFromCandidates(input: {
       warningCount: 0,
       failureCount: failedBatchCount,
       currentSessionTitle: null,
-      currentBatchLabel: batchLabel
+      currentBatchLabel: batchLabel,
+      currentBatchIndex: batchIndex,
+      ...buildBatchProgress({
+        base: batchProgressBase,
+        completedBatchCount,
+        includeInputBatches: batchIndex === 0
+      })
     })
     logger.info('generation-worker', 'enrichment batch start', {
       jobId: input.message.jobId,
@@ -725,6 +912,24 @@ export async function runEnrichmentFromCandidates(input: {
         itemCount: reusedItems.length,
         durationMs: elapsedMs(batchStartedAt)
       })
+      completedBatchCount += 1
+      runtime.emit({
+        kind: 'phase',
+        jobId: input.message.jobId,
+        status: 'enriching',
+        totalSelectedSessionCount: input.message.sessions.length,
+        processedSessionCount: input.message.sessions.length,
+        createdItemCount: items.length,
+        warningCount: 0,
+        failureCount: failedBatchCount,
+        currentSessionTitle: null,
+        currentBatchLabel: `${batchLabel} complete`,
+        currentBatchIndex: batchIndex,
+        ...buildBatchProgress({
+          base: batchProgressBase,
+          completedBatchCount
+        })
+      })
       if (
         maybeEmitCancelledSnapshot({
           message: input.message,
@@ -733,6 +938,11 @@ export async function runEnrichmentFromCandidates(input: {
           failedBatchCount,
           currentSessionTitle: null,
           currentBatchLabel: batchLabel,
+          currentBatchIndex: batchIndex,
+          batchProgress: buildBatchProgress({
+            base: batchProgressBase,
+            completedBatchCount
+          }),
           items,
           runtime
         })
@@ -765,6 +975,11 @@ export async function runEnrichmentFromCandidates(input: {
           failedBatchCount,
           currentSessionTitle: null,
           currentBatchLabel: batchLabel,
+          currentBatchIndex: batchIndex,
+          batchProgress: buildBatchProgress({
+            base: batchProgressBase,
+            completedBatchCount
+          }),
           items,
           runtime
         })
@@ -789,6 +1004,24 @@ export async function runEnrichmentFromCandidates(input: {
           result,
           items: batchItems
         }
+      })
+      completedBatchCount += 1
+      runtime.emit({
+        kind: 'phase',
+        jobId: input.message.jobId,
+        status: 'enriching',
+        totalSelectedSessionCount: input.message.sessions.length,
+        processedSessionCount: input.message.sessions.length,
+        createdItemCount: items.length,
+        warningCount: 0,
+        failureCount: failedBatchCount,
+        currentSessionTitle: null,
+        currentBatchLabel: `${batchLabel} complete`,
+        currentBatchIndex: batchIndex,
+        ...buildBatchProgress({
+          base: batchProgressBase,
+          completedBatchCount
+        })
       })
       logger.info('generation-worker', 'enrichment batch complete', {
         jobId: input.message.jobId,
@@ -828,7 +1061,12 @@ export async function runEnrichmentFromCandidates(input: {
         failedBatchCount,
         failureReason: reason,
         currentSessionTitle: null,
-        currentBatchLabel: batchLabel
+        currentBatchLabel: batchLabel,
+        currentBatchIndex: batchIndex,
+        ...buildBatchProgress({
+          base: batchProgressBase,
+          completedBatchCount
+        })
       })
       logger.error('generation-worker', 'enrichment batch failed', {
         jobId: input.message.jobId,
@@ -849,6 +1087,11 @@ export async function runEnrichmentFromCandidates(input: {
       failedBatchCount,
       currentSessionTitle: null,
       currentBatchLabel: 'dedup + type-balance rerank',
+      currentBatchIndex: null,
+      batchProgress: buildBatchProgress({
+        base: batchProgressBase,
+        completedBatchCount
+      }),
       items,
       runtime
     })
@@ -896,6 +1139,10 @@ export async function runEnrichmentFromCandidates(input: {
     totalSelectedSessionCount: input.message.sessions.length,
     createdItemCount: completedItems.length,
     failedBatchCount,
+    batchProgress: buildBatchProgress({
+      base: batchProgressBase,
+      completedBatchCount
+    }),
     emitEvent: runtime.emit
   })
 
@@ -910,6 +1157,11 @@ export async function runEnrichmentFromCandidates(input: {
     failureCount: failedBatchCount,
     currentSessionTitle: null,
     currentBatchLabel: null,
+    currentBatchIndex: null,
+    ...buildBatchProgress({
+      base: batchProgressBase,
+      completedBatchCount
+    }),
     items: completedItems
   })
 }

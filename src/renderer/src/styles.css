@@ -2280,6 +2280,7 @@ h3 .icon-label {
 .workbook-card-actions button,
 .source-panel-actions button,
 .workbook-right-header button,
+.workbook-progress-actions button,
 .workbook-disclosure-row {
   cursor: pointer;
   transition:
@@ -2303,6 +2304,7 @@ h3 .icon-label {
 .workbook-card-actions button,
 .source-panel-actions button,
 .workbook-right-header button,
+.workbook-progress-actions button,
 .workbook-disclosure-row {
   color: var(--control-fg);
 }
@@ -2320,7 +2322,8 @@ h3 .icon-label {
 .workbook-toolbar > button,
 .workbook-card-actions button,
 .source-panel-actions button,
-.workbook-right-header button {
+.workbook-right-header button,
+.workbook-progress-actions button {
   background: var(--control-bg);
 }
 
@@ -2341,6 +2344,7 @@ h3 .icon-label {
 .workbook-card-actions button:not(:disabled):hover,
 .source-panel-actions button:not(:disabled):hover,
 .workbook-right-header button:not(:disabled):hover,
+.workbook-progress-actions button:not(:disabled):hover,
 .search-filters label:hover {
   background: var(--control-bg-hover);
 }
@@ -2375,7 +2379,8 @@ h3 .icon-label {
 .workbook-toolbar > button:disabled,
 .workbook-card-actions button:disabled,
 .source-panel-actions button:disabled,
-.workbook-right-header button:disabled {
+.workbook-right-header button:disabled,
+.workbook-progress-actions button:disabled {
   cursor: not-allowed;
   opacity: 0.48;
 }
@@ -2386,7 +2391,8 @@ h3 .icon-label {
 .workbook-toolbar > button:disabled:hover,
 .workbook-card-actions button:disabled:hover,
 .source-panel-actions button:disabled:hover,
-.workbook-right-header button:disabled:hover {
+.workbook-right-header button:disabled:hover,
+.workbook-progress-actions button:disabled:hover {
   background: var(--control-bg);
   transform: none;
 }
@@ -3437,6 +3443,7 @@ body {
 }
 
 .workbook-progress-bar {
+  position: relative;
   height: 9px;
   overflow: hidden;
   border-radius: 999px;
@@ -3445,16 +3452,29 @@ body {
 }
 
 .workbook-progress-bar span {
+  position: absolute;
+  inset: 0 auto 0 0;
   display: block;
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, var(--evidence-amber), var(--review-sage));
   transition: width 240ms ease;
+}
+
+.workbook-progress-bar-active {
+  background: linear-gradient(
+    90deg,
+    rgba(217, 119, 6, 0.28),
+    rgba(95, 127, 104, 0.28)
+  );
+}
+
+.workbook-progress-bar-complete {
+  background: linear-gradient(90deg, var(--evidence-amber), var(--review-sage));
 }
 
 .workbook-progress-metrics {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
   gap: 8px;
 }
 
@@ -3470,9 +3490,144 @@ body {
   line-height: 1.25;
 }
 
+.workbook-input-batches-panel {
+  display: grid;
+  min-width: 0;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid var(--line-subtle);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+.workbook-input-batches-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.workbook-input-batches-header span:first-child {
+  color: var(--text-primary);
+}
+
+.workbook-input-batches-scroll {
+  display: flex;
+  min-width: 0;
+  gap: 10px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  padding-bottom: 4px;
+  scroll-snap-type: x proximity;
+}
+
+.workbook-input-batch {
+  display: grid;
+  flex: 0 0 min(360px, calc(100vw - 72px));
+  max-height: min(42vh, 420px);
+  min-width: 0;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  gap: 8px;
+  padding: 12px;
+  border: 1px solid var(--line-subtle);
+  border-radius: 12px;
+  background: rgba(246, 247, 248, 0.86);
+  scroll-snap-align: center;
+  transition:
+    background var(--control-transition),
+    border-color var(--control-transition),
+    box-shadow var(--control-transition),
+    opacity var(--control-transition);
+}
+
+.workbook-input-batch.is-active {
+  border-color: rgba(17, 24, 39, 0.86);
+  background: #17202f;
+  box-shadow:
+    0 0 0 1px rgba(17, 24, 39, 0.1),
+    0 14px 34px rgba(17, 24, 39, 0.18);
+  color: #fff;
+}
+
+.workbook-input-batch.is-completed {
+  opacity: 0.72;
+}
+
+.workbook-input-batch-header {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.workbook-input-batch-header span:last-child,
+.workbook-input-batch-count {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.workbook-input-batch.is-active .workbook-input-batch-header span:last-child,
+.workbook-input-batch.is-active .workbook-input-batch-count {
+  color: rgba(255, 255, 255, 0.7);
+}
+
+.workbook-input-batch-excerpts {
+  display: grid;
+  min-height: 0;
+  gap: 8px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.workbook-input-excerpt {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  padding: 9px;
+  border: 1px solid rgba(17, 24, 39, 0.07);
+  border-radius: 9px;
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.workbook-input-batch.is-active .workbook-input-excerpt {
+  border-color: rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.workbook-input-excerpt-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 8px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.workbook-input-batch.is-active .workbook-input-excerpt-meta {
+  color: rgba(255, 255, 255, 0.62);
+}
+
+.workbook-input-excerpt p {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.workbook-input-batch.is-active .workbook-input-excerpt p {
+  color: rgba(255, 255, 255, 0.9);
+}
+
 .workbook-progress-actions {
   display: flex;
-  justify-content: flex-end;
+  justify-content: center;
 }
 
 .workbook-progress-actions button {
@@ -3482,6 +3637,12 @@ body {
   background: var(--danger-red-soft);
   color: var(--danger-red);
   font-weight: 700;
+}
+
+.workbook-progress-actions button:not(:disabled):hover {
+  border-color: rgba(180, 35, 24, 0.26);
+  background: rgba(180, 35, 24, 0.18);
+  color: #8f1d14;
 }
 
 .workbook-progress-actions button:disabled {
