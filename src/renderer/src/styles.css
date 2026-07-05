@@ -1757,6 +1757,16 @@ h3 .icon-label {
   transition: background 140ms ease, transform 140ms ease;
 }
 
+.settings-sheet button:disabled {
+  cursor: not-allowed;
+  opacity: 0.52;
+}
+
+.settings-sheet button:disabled:hover {
+  background: #e5e7eb;
+  transform: none;
+}
+
 .settings-form {
   display: grid;
   gap: 12px;
@@ -1766,6 +1776,24 @@ h3 .icon-label {
 .settings-form label {
   display: grid;
   gap: 6px;
+}
+
+.settings-model-field {
+  display: grid;
+  gap: 8px;
+}
+
+.settings-model-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.settings-sheet .settings-model-refresh-button {
+  flex: 0 0 auto;
+  padding: 7px 10px;
+  font-size: 12px;
 }
 
 .settings-form span,
@@ -1866,6 +1894,17 @@ h3 .icon-label {
   color: #6b7280;
   font-size: 12px;
   line-height: 1.45;
+}
+
+.settings-model-status {
+  margin: -4px 0 2px;
+  color: #6b7280;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.settings-model-status.is-error {
+  color: #b42318;
 }
 
 .settings-section-heading {

@@ -1,6 +1,6 @@
 import { initTRPC } from '@trpc/server'
 import { z } from 'zod'
-import { settingsSchema } from '../schemas/settings'
+import { modelListInputSchema, settingsSchema } from '../schemas/settings'
 import { workbookListTabSchema } from '../schemas/workbook'
 
 const t = initTRPC.create()
@@ -10,6 +10,9 @@ export type RouterDeps = {
     get: () => unknown
     save: (next: any) => unknown
     reset: () => unknown
+  }
+  modelCatalog: {
+    list: (input: any) => Promise<unknown>
   }
   jobs: {
     getSnapshot: (jobId: string) => unknown
@@ -65,6 +68,9 @@ export function buildRouter(deps: RouterDeps) {
       .input(settingsSchema)
       .mutation(({ input }) => deps.settings.save(input)),
     settingsReset: t.procedure.mutation(() => deps.settings.reset()),
+    settingsListModels: t.procedure
+      .input(modelListInputSchema)
+      .query(({ input }) => deps.modelCatalog.list(input)),
     jobSnapshot: t.procedure
       .input(z.object({ jobId: z.string() }))
       .query(({ input }) => deps.jobs.getSnapshot(input.jobId)),

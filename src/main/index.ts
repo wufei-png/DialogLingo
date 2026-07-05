@@ -44,6 +44,7 @@ import {
 } from './generation/checkpointStore'
 import { requestGenerationCancel } from './generation/cancelWorker'
 import { mergeGenerationProgressEvent } from './generation/jobProgress'
+import { listSupportedModels } from './generation/modelDiscovery'
 import { runGenerationJob } from './generation/jobRunner'
 import { writeWorkbookDraft } from './generation/materializeWorkbook'
 import {
@@ -968,6 +969,9 @@ function createRouter() {
 
   return buildRouter({
     settings,
+    modelCatalog: {
+      list: listSupportedModels
+    },
     jobs: {
       getSnapshot(jobId: string) {
         const snapshot = jobSnapshots.get(jobId)

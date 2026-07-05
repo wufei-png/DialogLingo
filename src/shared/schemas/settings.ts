@@ -42,6 +42,10 @@ const cliCommandSettingsSchema = z.object({
   model: z.string().default('')
 })
 
+const cliModelDiscoverySettingsSchema = z.object({
+  executablePath: z.string().default('')
+})
+
 export const modelBackendSchema = z
   .object({
     kind: modelBackendKindSchema.default(DEFAULT_MODEL_BACKEND.kind),
@@ -109,7 +113,40 @@ export const settingsSchema = z.object({
   })
 })
 
+export const modelOptionSchema = z.object({
+  id: z.string(),
+  label: z.string(),
+  detail: z.string().optional()
+})
+
+export const modelListInputSchema = z.object({
+  backendKind: modelBackendKindSchema,
+  provider: z
+    .object({
+      baseUrl: z.string(),
+      apiKey: z.string()
+    })
+    .optional(),
+  cli: z
+    .object({
+      codex: cliModelDiscoverySettingsSchema.default({ executablePath: '' }),
+      claude: cliModelDiscoverySettingsSchema.default({ executablePath: '' }),
+      opencode: cliModelDiscoverySettingsSchema.default({ executablePath: '' }),
+      timeoutMs: z.number().int().positive().default(DEFAULT_CLI_TIMEOUT_MS)
+    })
+    .optional()
+})
+
+export const modelListResultSchema = z.object({
+  models: z.array(modelOptionSchema),
+  message: z.string().nullable(),
+  discoveredAt: z.string()
+})
+
 export type Settings = z.infer<typeof settingsSchema>
 export type ModelBackendKind = z.infer<typeof modelBackendKindSchema>
 export type ExpressionDifficulty = z.infer<typeof expressionDifficultySchema>
 export type AppLocale = z.infer<typeof appLocaleSchema>
+export type ModelOption = z.infer<typeof modelOptionSchema>
+export type ModelListInput = z.infer<typeof modelListInputSchema>
+export type ModelListResult = z.infer<typeof modelListResultSchema>

@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ScanSearch,
+  RefreshCw,
   Settings as SettingsIcon,
   Shield,
   SlidersHorizontal,
@@ -10,8 +11,11 @@ import {
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import {
+  DEFAULT_CLI_TIMEOUT_MS,
   DEFAULT_BATCH_SIZE,
   type AppLocale,
+  type ModelOption,
+  type ModelListResult,
   type Settings
 } from '../../../shared/schemas/settings'
 import { IconLabel } from './IconLabel'
@@ -23,6 +27,7 @@ type BackendKind = Settings['modelBackend']['kind']
 type ExpressionDifficulty = Settings['generation']['expressionDifficulty']
 type FlaggedItemExportPolicy = Settings['privacy']['flaggedItemExportPolicy']
 type CliToolKey = 'codex' | 'claude' | 'opencode'
+type ModelListStatus = 'idle' | 'loading' | 'ready' | 'error'
 
 type Props = {
   open: boolean
@@ -80,6 +85,15 @@ function getErrorMessage(error: unknown) {
   return error instanceof Error ? error.message : String(error)
 }
 
+function fingerprintSecret(value: string) {
+  let hash = 0
+  for (const char of value.trim()) {
+    hash = Math.imul(hash ^ char.charCodeAt(0), 16777619)
+  }
+
+  return `${value.trim().length}:${(hash >>> 0).toString(36)}`
+}
+
 export function SettingsSheet(props: Props) {
   const { t } = useTranslation()
   const queryClient = useQueryClient()
@@ -112,6 +126,43 @@ export function SettingsSheet(props: Props) {
   const [flaggedItemExportPolicy, setFlaggedItemExportPolicy] =
     useState<FlaggedItemExportPolicy>('warn')
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
+  const [modelOptions, setModelOptions] = useState<ModelOption[]>([])
+  const [modelListKey, setModelListKey] = useState<string | null>(null)
+  const [modelListBackendKind, setModelListBackendKind] =
+    useState<BackendKind | null>(null)
+  const [modelListStatus, setModelListStatus] =
+    useState<ModelListStatus>('idle')
+  const [modelListMessage, setModelListMessage] = useState<string | null>(null)
+  const modelDiscoveryRequestId = useRef(0)
+  const currentModelListKeyRef = useRef('')
+
+  function modelListKeyForCurrentForm(kind: BackendKind = backendKind) {
+    if (kind === 'openai-compatible') {
+      return [
+        kind,
+        baseUrl.trim(),
+        fingerprintSecret(apiKey)
+      ].join('|')
+    }
+
+    if (kind === 'codex-cli') {
+      return [
+        kind,
+        codexExecutablePath.trim(),
+        toPositiveInt(cliTimeoutMs, DEFAULT_CLI_TIMEOUT_MS)
+      ].join('|')
+    }
+
+    if (kind === 'claude-cli') {
+      return [kind].join('|')
+    }
+
+    return [
+      kind,
+      opencodeExecutablePath.trim(),
+      toPositiveInt(cliTimeoutMs, DEFAULT_CLI_TIMEOUT_MS)
+    ].join('|')
+  }
 
   useEffect(() => {
     if (!settingsQuery.data) {
@@ -141,7 +192,30 @@ export function SettingsSheet(props: Props) {
     setIncludeArchivedSessions(settingsQuery.data.scan.includeArchivedSessions)
     setFlaggedItemExportPolicy(settingsQuery.data.privacy.flaggedItemExportPolicy)
     setSaveMessage(null)
+    setModelOptions([])
+    setModelListKey(null)
+    setModelListBackendKind(null)
+    setModelListStatus('idle')
+    setModelListMessage(null)
   }, [settingsQuery.data])
+
+  useEffect(() => {
+    modelDiscoveryRequestId.current += 1
+    currentModelListKeyRef.current = modelListKeyForCurrentForm()
+    setModelOptions([])
+    setModelListKey(null)
+    setModelListBackendKind(null)
+    setModelListStatus('idle')
+    setModelListMessage(null)
+  }, [
+    apiKey,
+    backendKind,
+    baseUrl,
+    cliTimeoutMs,
+    codexExecutablePath,
+    claudeExecutablePath,
+    opencodeExecutablePath
+  ])
 
   if (!props.open) {
     return null
@@ -236,6 +310,91 @@ export function SettingsSheet(props: Props) {
     setSaveMessage(appI18n.t('settings.messages.reset'))
   }
 
+  async function refreshModelOptions() {
+    const requestedBackendKind = backendKind
+    const requestKey = modelListKeyForCurrentForm(requestedBackendKind)
+    const requestId = modelDiscoveryRequestId.current + 1
+    modelDiscoveryRequestId.current = requestId
+    currentModelListKeyRef.current = requestKey
+    setModelListKey(requestKey)
+    setModelListBackendKind(requestedBackendKind)
+    setModelListStatus('loading')
+    setModelListMessage(null)
+
+    try {
+      const response = (await trpc.settingsListModels.query({
+        backendKind: requestedBackendKind,
+        provider: {
+          baseUrl: baseUrl.trim(),
+          apiKey: apiKey.trim()
+        },
+        cli: {
+          codex: {
+            executablePath: codexExecutablePath.trim()
+          },
+          claude: {
+            executablePath: claudeExecutablePath.trim()
+          },
+          opencode: {
+            executablePath: opencodeExecutablePath.trim()
+          },
+          timeoutMs: toPositiveInt(cliTimeoutMs, DEFAULT_CLI_TIMEOUT_MS)
+        }
+      })) as ModelListResult
+
+      if (
+        requestId !== modelDiscoveryRequestId.current ||
+        requestKey !== currentModelListKeyRef.current
+      ) {
+        return
+      }
+
+      setModelOptions(response.models)
+      setModelListKey(requestKey)
+      setModelListBackendKind(requestedBackendKind)
+      setModelListStatus('ready')
+      setModelListMessage(
+        requestedBackendKind === 'claude-cli'
+          ? t('settings.claudeModelDiscoveryHelp')
+          : response.message ??
+              (response.models.length === 0 ? t('settings.noModelsFound') : null)
+      )
+    } catch (error) {
+      if (
+        requestId !== modelDiscoveryRequestId.current ||
+        requestKey !== currentModelListKeyRef.current
+      ) {
+        return
+      }
+
+      setModelOptions([])
+      setModelListKey(requestKey)
+      setModelListBackendKind(requestedBackendKind)
+      setModelListStatus('error')
+      setModelListMessage(
+        t('settings.modelsLoadFailed', {
+          message: getErrorMessage(error)
+        })
+      )
+    }
+  }
+
+  const activeModelOptions =
+    modelListBackendKind === backendKind &&
+    modelListKey === currentModelListKeyRef.current
+      ? modelOptions
+      : []
+  const activeModelMessage =
+    modelListBackendKind === backendKind &&
+    modelListKey === currentModelListKeyRef.current
+      ? modelListMessage
+      : null
+  const activeModelStatus =
+    modelListBackendKind === backendKind &&
+    modelListKey === currentModelListKeyRef.current
+      ? modelListStatus
+      : 'idle'
+
   return (
     <div className="sheet-backdrop">
       <section className="sheet settings-sheet" role="dialog" aria-modal="true" aria-label={t('settings.title')}>
@@ -295,14 +454,17 @@ export function SettingsSheet(props: Props) {
                   onChange={(event) => setApiKey(event.currentTarget.value)}
                 />
               </label>
-              <label>
-                <span>{t('settings.defaultModel')}</span>
-                <input
-                  placeholder="gpt-4o-mini"
-                  value={defaultModel}
-                  onChange={(event) => setDefaultModel(event.currentTarget.value)}
-                />
-              </label>
+              <ModelDiscoveryField
+                datalistId={`settings-model-options-${backendKind}`}
+                label={t('settings.defaultModel')}
+                message={activeModelMessage}
+                model={defaultModel}
+                options={activeModelOptions}
+                placeholder="gpt-4o-mini"
+                status={activeModelStatus}
+                onModelChange={setDefaultModel}
+                onRefreshModels={() => void refreshModelOptions()}
+              />
             </>
           ) : null}
           {cliToolKeyForBackend(backendKind) ? (
@@ -315,6 +477,9 @@ export function SettingsSheet(props: Props) {
               opencodeExecutablePath={opencodeExecutablePath}
               opencodeModel={opencodeModel}
               cliTimeoutMs={cliTimeoutMs}
+              modelOptions={activeModelOptions}
+              modelListStatus={activeModelStatus}
+              modelListMessage={activeModelMessage}
               onCodexExecutablePathChange={setCodexExecutablePath}
               onCodexModelChange={setCodexModel}
               onClaudeExecutablePathChange={setClaudeExecutablePath}
@@ -322,6 +487,7 @@ export function SettingsSheet(props: Props) {
               onOpencodeExecutablePathChange={setOpencodeExecutablePath}
               onOpencodeModelChange={setOpencodeModel}
               onCliTimeoutMsChange={setCliTimeoutMs}
+              onRefreshModels={() => void refreshModelOptions()}
             />
           ) : null}
           <p className="settings-help">
@@ -484,6 +650,9 @@ function CliSettingsFields(props: {
   opencodeExecutablePath: string
   opencodeModel: string
   cliTimeoutMs: string
+  modelOptions: ModelOption[]
+  modelListStatus: ModelListStatus
+  modelListMessage: string | null
   onCodexExecutablePathChange: (value: string) => void
   onCodexModelChange: (value: string) => void
   onClaudeExecutablePathChange: (value: string) => void
@@ -491,6 +660,7 @@ function CliSettingsFields(props: {
   onOpencodeExecutablePathChange: (value: string) => void
   onOpencodeModelChange: (value: string) => void
   onCliTimeoutMsChange: (value: string) => void
+  onRefreshModels: () => void
 }) {
   const { t } = useTranslation()
 
@@ -536,14 +706,17 @@ function CliSettingsFields(props: {
       <p className="settings-help">
         {t('settings.cliPathHelp', { tool: props.tool })}
       </p>
-      <label>
-        <span>{t('settings.cliModel', { tool: cliToolLabel(props.tool) })}</span>
-        <input
-          placeholder={t('settings.cliDefaultPlaceholder')}
-          value={model}
-          onChange={(event) => onModelChange(event.currentTarget.value)}
-        />
-      </label>
+      <ModelDiscoveryField
+        datalistId={`settings-model-options-${props.tool}`}
+        label={t('settings.cliModel', { tool: cliToolLabel(props.tool) })}
+        message={props.modelListMessage}
+        model={model}
+        options={props.modelOptions}
+        placeholder={t('settings.cliDefaultPlaceholder')}
+        status={props.modelListStatus}
+        onModelChange={onModelChange}
+        onRefreshModels={props.onRefreshModels}
+      />
       <label>
         <span>{t('settings.cliTimeout')}</span>
         <input
@@ -554,6 +727,60 @@ function CliSettingsFields(props: {
           onChange={(event) => props.onCliTimeoutMsChange(event.currentTarget.value)}
         />
       </label>
+    </>
+  )
+}
+
+function ModelDiscoveryField(props: {
+  datalistId: string
+  label: string
+  message: string | null
+  model: string
+  options: ModelOption[]
+  placeholder: string
+  status: ModelListStatus
+  onModelChange: (value: string) => void
+  onRefreshModels: () => void
+}) {
+  const { t } = useTranslation()
+  const isLoading = props.status === 'loading'
+
+  return (
+    <>
+      <div className="settings-model-field">
+        <div className="settings-model-heading">
+          <span>{props.label}</span>
+          <button
+            type="button"
+            className="settings-model-refresh-button"
+            disabled={isLoading}
+            onClick={props.onRefreshModels}
+          >
+            <IconLabel icon={RefreshCw}>
+              {isLoading ? t('settings.loadingModels') : t('settings.refreshModels')}
+            </IconLabel>
+          </button>
+        </div>
+        <input
+          aria-label={props.label}
+          list={props.options.length > 0 ? props.datalistId : undefined}
+          placeholder={props.placeholder}
+          value={props.model}
+          onChange={(event) => props.onModelChange(event.currentTarget.value)}
+        />
+      </div>
+      {props.options.length > 0 ? (
+        <datalist id={props.datalistId}>
+          {props.options.map((option) => (
+            <option key={option.id} value={option.id} label={option.label} />
+          ))}
+        </datalist>
+      ) : null}
+      {props.message ? (
+        <p className={`settings-model-status is-${props.status}`}>
+          {props.message}
+        </p>
+      ) : null}
     </>
   )
 }

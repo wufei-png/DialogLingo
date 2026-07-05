@@ -80,6 +80,12 @@ const zhCN = {
     cliModel: '{{tool}} 模型',
     cliDefaultPlaceholder: '使用 CLI 默认值',
     cliTimeout: 'CLI 超时',
+    refreshModels: '刷新模型',
+    loadingModels: '加载中...',
+    noModelsFound: '该后端没有返回模型。',
+    modelsLoadFailed: '无法列出模型：{{message}}',
+    claudeModelDiscoveryHelp:
+      'Claude CLI 没有提供模型发现命令。可以选择预设别名，也可以手动输入完整模型名。',
     messages: {
       saved: '已保存。',
       savedRescanning: '已保存。正在重新扫描会话...',

@@ -74,6 +74,12 @@ const en = {
     cliModel: '{{tool}} model',
     cliDefaultPlaceholder: 'Use CLI default',
     cliTimeout: 'CLI timeout',
+    refreshModels: 'Refresh models',
+    loadingModels: 'Loading...',
+    noModelsFound: 'No models were returned by this backend.',
+    modelsLoadFailed: 'Could not list models: {{message}}',
+    claudeModelDiscoveryHelp:
+      'Claude CLI does not expose model discovery. Choose a preset alias or type a full model name.',
     messages: {
       saved: 'Saved.',
       savedRescanning: 'Saved. Rescanning sessions...',
