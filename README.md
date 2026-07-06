@@ -20,6 +20,10 @@ local sessions -> selection -> generation -> review workbook -> export
 
 You review and clean the generated workbook in DialogLingo, then study it in Anki or another downstream tool.
 
+## Promo Video
+
+[Watch the DialogLingo promo video](docs/media/promo/dialoglingo-promo-v1.mp4)
+
 ## Screenshots
 
 ### Search and Select

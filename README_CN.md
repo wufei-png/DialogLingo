@@ -22,6 +22,10 @@ DialogLingo 是一个本地优先的桌面应用，用来把 AI agent 的本地�
 
 你在 DialogLingo 中检查、修改和清理生成结果，然后把最终内容交给 Anki 或其他工具学习。
 
+## 宣传视频
+
+[观看 DialogLingo 宣传视频](docs/media/promo/dialoglingo-promo-v1.mp4)
+
 ## 界面截图
 
 ### 搜索与选择
