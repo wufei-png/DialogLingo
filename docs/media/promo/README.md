@@ -15,6 +15,14 @@ This folder stores the public promo video assets that are safe to keep in the re
 
 The source capture and intermediate edit files are not committed because they can contain local transcript content and large temporary renders. The retained public artifact is the final encoded promo video.
 
+## Editing Workflow
+
+This promo was produced from real product screen recordings and Chinese voiceover segments, then edited as a fixed timeline with FFmpeg. No Remotion project is required for this artifact.
+
+Use the same lightweight FFmpeg path when an update is mostly trimming, stitching, mild speed adjustment, audio alignment, subtitles, and final encoding.
+
+Introduce a Remotion project only when the promo needs repeatable React-based composition, parameterized captions, generated motion graphics, data-driven scenes, or frequent variant renders. In that case, keep the Remotion source in a dedicated folder and keep raw recordings or intermediate renders out of git unless they are sanitized and intentionally small.
+
 The video demonstrates:
 
 - Search and session selection
