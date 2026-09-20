@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useTranslation } from 'react-i18next'
 import { WorkbookCard } from './WorkbookCard'
+import type { WorkbookSaveState } from './workbookSaveQueue'
 
 type WorkbookSnapshotPatch = {
   sourceText: string
@@ -29,6 +30,7 @@ type WorkbookRow = {
     quizPrompt?: string
     quizAnswer?: string
     tags?: string[]
+    flagged?: boolean
   }
   sourceRefs: Array<{
     sessionId: string
@@ -46,6 +48,10 @@ export function CardStream(props: {
   onDeleteItem: (itemId: string) => void
   onRestoreItem: (itemId: string) => void
   onSaveItem: (itemId: string, nextSnapshot: WorkbookSnapshotPatch) => Promise<void>
+  saveStates: Map<string, WorkbookSaveState>
+  onDraftChange: (itemId: string, nextSnapshot: WorkbookSnapshotPatch) => void
+  onDiscardDraft: (itemId: string) => void
+  onRetrySave: (itemId: string) => Promise<void>
   onRevertItem: (itemId: string) => void
   onOpenSource: (itemId: string) => void
 }) {
@@ -80,6 +86,8 @@ export function CardStream(props: {
       >
         {virtualizer.getVirtualItems().map((virtualItem) => {
           const row = props.rows[virtualItem.index]
+          const saveState = props.saveStates.get(row.id)
+          const snapshot = saveState?.draftSnapshot ?? row.currentSnapshot
           return (
             <div
               key={row.id}
@@ -90,14 +98,14 @@ export function CardStream(props: {
             >
               <WorkbookCard
                 itemType={row.itemType}
-                source={String(row.currentSnapshot.sourceText ?? '')}
-                target={String(row.currentSnapshot.targetText ?? '')}
-                gloss={String(row.currentSnapshot.gloss ?? '')}
-                explanation={String(row.currentSnapshot.explanation ?? '')}
-                contextText={String(row.currentSnapshot.contextText ?? '')}
-                quiz={String(row.currentSnapshot.quizPrompt ?? '')}
-                quizAnswer={String(row.currentSnapshot.quizAnswer ?? '')}
-                tags={String((row.currentSnapshot.tags ?? []).join(', '))}
+                source={String(snapshot.sourceText ?? '')}
+                target={String(snapshot.targetText ?? '')}
+                gloss={String(snapshot.gloss ?? '')}
+                explanation={String(snapshot.explanation ?? '')}
+                contextText={String(snapshot.contextText ?? '')}
+                quiz={String(snapshot.quizPrompt ?? '')}
+                quizAnswer={String(snapshot.quizAnswer ?? '')}
+                tags={String((snapshot.tags ?? []).join(', '))}
                 sourceRefCount={row.sourceRefs.length}
                 deleted={row.state === 'deleted'}
                 selected={props.selectedItemId === row.id}
@@ -112,6 +120,11 @@ export function CardStream(props: {
                   props.onAdvanceSelection()
                 }}
                 onAdvance={props.onAdvanceSelection}
+                onDraftChange={(nextSnapshot) => props.onDraftChange(row.id, nextSnapshot)}
+                onDiscardDraft={() => props.onDiscardDraft(row.id)}
+                saveStatus={saveState?.status ?? 'idle'}
+                saveError={saveState?.error ?? null}
+                onRetry={() => props.onRetrySave(row.id)}
                 onRevert={() => props.onRevertItem(row.id)}
                 onOpenSource={() => props.onOpenSource(row.id)}
               />

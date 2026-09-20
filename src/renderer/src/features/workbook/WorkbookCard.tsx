@@ -3,6 +3,7 @@ import { ChevronRight, FileSearch, RotateCcw, Trash2, Undo2 } from 'lucide-react
 import { useTranslation } from 'react-i18next'
 import { IconLabel } from '../../components/IconLabel'
 import { MeasuredCollapse } from '../../components/MeasuredCollapse'
+import type { WorkbookSaveStatus } from './workbookSaveQueue'
 
 type WorkbookSnapshotDraft = {
   sourceText: string
@@ -35,6 +36,11 @@ type Props = {
   onRestore: () => void
   onSave: (nextSnapshot: WorkbookSnapshotDraft) => Promise<void>
   onSaveAndAdvance: (nextSnapshot: WorkbookSnapshotDraft) => Promise<void>
+  onDraftChange: (nextSnapshot: WorkbookSnapshotDraft) => void
+  onDiscardDraft: () => void
+  saveStatus: WorkbookSaveStatus
+  saveError: string | null
+  onRetry: () => Promise<void>
   onAdvance: () => void
   onRevert: () => void
   onOpenSource: () => void
@@ -109,7 +115,12 @@ export function WorkbookCard(props: Props) {
   }, [props.deleted, props.focusTargetRevision, props.selected])
 
   function resetDraft() {
-    setDraft(toDraft(props))
+    props.onDiscardDraft()
+  }
+
+  function updateDraft(nextDraft: ReturnType<typeof toDraft>) {
+    setDraft(nextDraft)
+    props.onDraftChange(toSnapshot(nextDraft))
   }
 
   async function saveDraft(advance = false) {
@@ -138,7 +149,7 @@ export function WorkbookCard(props: Props) {
 
     if ((event.metaKey || event.ctrlKey) && event.key === 'Enter') {
       event.preventDefault()
-      void saveDraft(true)
+      void saveDraft(true).catch(() => {})
     }
   }
 
@@ -169,6 +180,22 @@ export function WorkbookCard(props: Props) {
           <div className="workbook-card-status">
             {props.modified ? <span>{t('workbook.status.modified')}</span> : null}
             {props.deleted ? <span>{t('workbook.status.deleted')}</span> : null}
+            {!props.deleted && props.saveStatus === 'saving' ? (
+              <span aria-live="polite">{t('workbook.status.saving')}</span>
+            ) : null}
+            {!props.deleted && props.saveStatus === 'saved' ? (
+              <span aria-live="polite">{t('workbook.status.saved')}</span>
+            ) : null}
+            {!props.deleted && (props.saveStatus === 'error' || props.saveStatus === 'conflict') ? (
+              <span aria-live="assertive">
+                {props.saveStatus === 'conflict'
+                  ? t('workbook.status.conflict')
+                  : t('workbook.status.saveFailed')}
+                <button type="button" onClick={() => void props.onRetry().catch(() => {})}>
+                  {t('workbook.actions.retry')}
+                </button>
+              </span>
+            ) : null}
           </div>
           <div className="workbook-card-actions">
             {props.modified ? (
@@ -199,9 +226,9 @@ export function WorkbookCard(props: Props) {
           value={draft.target}
           readOnly={props.deleted}
           onChange={(event) =>
-            setDraft((current) => ({ ...current, target: event.target.value }))
+            updateDraft({ ...draft, target: event.target.value })
           }
-          onBlur={() => void saveDraft(false)}
+          onBlur={() => void saveDraft(false).catch(() => {})}
           onKeyDown={handleEditableKeyDown}
         />
       </label>
@@ -212,9 +239,9 @@ export function WorkbookCard(props: Props) {
           value={draft.gloss}
           readOnly={props.deleted}
           onChange={(event) =>
-            setDraft((current) => ({ ...current, gloss: event.target.value }))
+            updateDraft({ ...draft, gloss: event.target.value })
           }
-          onBlur={() => void saveDraft(false)}
+          onBlur={() => void saveDraft(false).catch(() => {})}
           onKeyDown={handleEditableKeyDown}
         />
       </label>
@@ -251,9 +278,9 @@ export function WorkbookCard(props: Props) {
             value={draft.explanation}
             readOnly={props.deleted}
             onChange={(event) =>
-              setDraft((current) => ({ ...current, explanation: event.target.value }))
+              updateDraft({ ...draft, explanation: event.target.value })
             }
-            onBlur={() => void saveDraft(false)}
+            onBlur={() => void saveDraft(false).catch(() => {})}
             onKeyDown={handleEditableKeyDown}
           />
         </label>
@@ -263,9 +290,9 @@ export function WorkbookCard(props: Props) {
             value={draft.quiz}
             readOnly={props.deleted}
             onChange={(event) =>
-              setDraft((current) => ({ ...current, quiz: event.target.value }))
+              updateDraft({ ...draft, quiz: event.target.value })
             }
-            onBlur={() => void saveDraft(false)}
+            onBlur={() => void saveDraft(false).catch(() => {})}
             onKeyDown={handleEditableKeyDown}
           />
         </label>
@@ -275,9 +302,9 @@ export function WorkbookCard(props: Props) {
             value={draft.quizAnswer}
             readOnly={props.deleted}
             onChange={(event) =>
-              setDraft((current) => ({ ...current, quizAnswer: event.target.value }))
+              updateDraft({ ...draft, quizAnswer: event.target.value })
             }
-            onBlur={() => void saveDraft(false)}
+            onBlur={() => void saveDraft(false).catch(() => {})}
             onKeyDown={handleEditableKeyDown}
           />
         </label>
@@ -287,9 +314,9 @@ export function WorkbookCard(props: Props) {
             value={draft.tags}
             readOnly={props.deleted}
             onChange={(event) =>
-              setDraft((current) => ({ ...current, tags: event.target.value }))
+              updateDraft({ ...draft, tags: event.target.value })
             }
-            onBlur={() => void saveDraft(false)}
+            onBlur={() => void saveDraft(false).catch(() => {})}
             onKeyDown={handleEditableKeyDown}
           />
         </label>

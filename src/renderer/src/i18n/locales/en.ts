@@ -212,11 +212,16 @@ const en = {
     actions: {
       viewSource: 'View source',
       restore: 'Restore',
-      delete: 'Delete'
+      delete: 'Delete',
+      retry: 'Retry'
     },
     status: {
       modified: 'Modified',
       deleted: 'Deleted',
+      saving: 'Saving',
+      saved: 'Saved',
+      saveFailed: 'Save failed',
+      conflict: 'Changed elsewhere',
       stopped: 'stopped',
       starting: 'starting',
       pending: 'pending',

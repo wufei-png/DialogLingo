@@ -218,11 +218,16 @@ const zhCN = {
     actions: {
       viewSource: '查看来源',
       restore: '恢复',
-      delete: '删除'
+      delete: '删除',
+      retry: '重试'
     },
     status: {
       modified: '已修改',
       deleted: '已删除',
+      saving: '正在保存',
+      saved: '已保存',
+      saveFailed: '保存失败',
+      conflict: '已在其他位置更改',
       stopped: '已停止',
       starting: '正在启动',
       pending: '等待中',

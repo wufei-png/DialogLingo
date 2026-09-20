@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { countHighlightMarkers } from '../../../../shared/highlight'
 import type { GenerationInputBatch } from '../../../../shared/schemas/jobs'
 import type { Settings } from '../../../../shared/schemas/settings'
+import type { WorkbookSnapshot } from '../../../../shared/schemas/workbook'
 import { ResizableSplitPane } from '../../components/ResizableSplitPane'
 import { trpc } from '../../lib/trpc'
 import { useJobSubscription } from '../../lib/useJobSubscription'
@@ -12,6 +13,11 @@ import { CardStream } from './CardStream'
 import { ExportModal } from './ExportModal'
 import { SourcePanel } from './SourcePanel'
 import { WorkbookToolbar } from './WorkbookToolbar'
+import {
+  WorkbookSaveQueue,
+  type WorkbookSaveResult,
+  type WorkbookSaveState
+} from './workbookSaveQueue'
 import {
   closeWorkbookSource,
   getInitialWorkbookSourceMode,
@@ -34,8 +40,8 @@ type WorkbookItem = {
   workbookId: string
   itemType: 'Expression' | 'Sentence'
   state: 'active' | 'deleted'
-  generatedSnapshot: Record<string, unknown>
-  currentSnapshot: Record<string, unknown>
+  generatedSnapshot: WorkbookSnapshot
+  currentSnapshot: WorkbookSnapshot
   sourceRefs: Array<{
     sessionId: string
     sourceSpanRef: string
@@ -135,7 +141,27 @@ export function WorkbookPage(props: {
   const [stoppedActionError, setStoppedActionError] = useState<string | null>(null)
   const [cancelPending, setCancelPending] = useState(false)
   const [cancelError, setCancelError] = useState<string | null>(null)
+  const [saveStates, setSaveStates] = useState<Map<string, WorkbookSaveState>>(
+    () => new Map()
+  )
   const activeBatchRef = useRef<HTMLElement | null>(null)
+  const saveQueueRef = useRef<WorkbookSaveQueue | null>(null)
+
+  if (!saveQueueRef.current) {
+    saveQueueRef.current = new WorkbookSaveQueue(
+      async ({ itemId, currentSnapshot, baseVersion }) => {
+        const response = (await trpc.workbookSaveItem.mutate({
+          itemId,
+          currentSnapshot,
+          baseVersion
+        })) as { result: WorkbookSaveResult }
+        return response.result
+      },
+      () => {
+        setSaveStates(new Map(saveQueueRef.current?.getAll()))
+      }
+    )
+  }
 
   useJobSubscription()
 
@@ -248,6 +274,10 @@ export function WorkbookPage(props: {
   const candidateCount = jobQuery.data?.candidateCount ?? 0
   const batchSize = jobQuery.data?.batchSize ?? null
   const activeProgressPercent = getWorkbookActiveProgressPercent(jobQuery.data ?? null)
+
+  useEffect(() => {
+    saveQueueRef.current?.syncServer(rows)
+  }, [rows])
 
   useEffect(() => {
     if (props.workbookSourcePinned) {
@@ -372,16 +402,9 @@ export function WorkbookPage(props: {
     quizAnswer: string
     tags: string[]
   }) {
-    const item = rows.find((row) => row.id === itemId)
-    if (!item) {
-      throw new Error(`Workbook item not found: ${itemId}`)
-    }
-    await trpc.workbookSaveItem.mutate({
-      itemId,
-      currentSnapshot: nextSnapshot,
-      baseVersion: item.editVersion
-    })
-    await invalidateWorkbook()
+    saveQueueRef.current?.setDraft(itemId, nextSnapshot)
+    await saveQueueRef.current?.requestSave(itemId)
+    await invalidateWorkbook().catch(() => {})
   }
 
   async function deleteItem(itemId: string) {
@@ -760,6 +783,17 @@ export function WorkbookPage(props: {
               })
             }}
             onSaveItem={saveItem}
+            saveStates={saveStates}
+            onDraftChange={(itemId, nextSnapshot) => {
+              saveQueueRef.current?.setDraft(itemId, nextSnapshot)
+            }}
+            onDiscardDraft={(itemId) => {
+              saveQueueRef.current?.discardDraft(itemId)
+            }}
+            onRetrySave={async (itemId) => {
+              await saveQueueRef.current?.requestSave(itemId)
+              await invalidateWorkbook().catch(() => {})
+            }}
             onRevertItem={(itemId) => {
               const item = rows.find((row) => row.id === itemId)
               if (!item) {
