@@ -80,6 +80,7 @@ export type SourceAdapter = {
   listSessions: (filters: SessionFilterInput) => Promise<SessionSummary[]>
   readSession: (id: string, options?: { locator?: string }) => Promise<ConversationTurn[]>
   getDiagnostics?: () => SourceDiagnostic[]
+  shouldSkipSession?: (id: string) => boolean
 }
 
 export type SourceRegistry = Record<SourceType, SourceAdapter>

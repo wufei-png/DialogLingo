@@ -57,7 +57,12 @@ export function readJsonlTolerant<T>(
       }
 
       try {
-        return [{ value: JSON.parse(line) as T, lineNumber: index + 1 }]
+        const value = JSON.parse(line) as unknown
+        if (!value || typeof value !== 'object' || Array.isArray(value)) {
+          onInvalidLine(index + 1)
+          return []
+        }
+        return [{ value: value as T, lineNumber: index + 1 }]
       } catch {
         onInvalidLine(index + 1)
         return []

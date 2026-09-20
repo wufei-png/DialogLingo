@@ -67,14 +67,15 @@ describe('createCodexAdapter', () => {
     expect(turns).toMatchObject([
       {
         text: 'Keep the valid Codex prompt after a bad line.',
-        sourceSpanRef: `${summary.locator}:3`
+        sourceSpanRef: `${summary.locator}:4`
       },
       {
         text: 'Keep physical source lines stable.',
-        sourceSpanRef: `${summary.locator}:4`
+        sourceSpanRef: `${summary.locator}:5`
       }
     ])
     expect(adapter.getDiagnostics?.()).toEqual([
+      expect.objectContaining({ code: 'source-jsonl-line-invalid' }),
       expect.objectContaining({ code: 'source-jsonl-line-invalid' }),
       expect.objectContaining({ code: 'source-jsonl-line-invalid' })
     ])

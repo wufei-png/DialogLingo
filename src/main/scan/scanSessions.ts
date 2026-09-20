@@ -256,6 +256,7 @@ export async function scanSessions(
   let insertedSessionCount = 0
   let updatedSessionCount = 0
   let skippedSessionCount = 0
+  let unreadableSessionCount = 0
   let rewrittenTurnSessionCount = 0
   let rewrittenTurnCount = 0
 
@@ -266,13 +267,20 @@ export async function scanSessions(
     const readOptions = { locator: summary.locator }
     // Some adapters fully parse transcript files while listing sessions. Reuse
     // those turns here so large JSONL files are not read twice during scans.
+    const adapter =
+      summary.sourceType === 'codex'
+        ? sourceRegistry.codex
+        : summary.sourceType === 'claude'
+          ? sourceRegistry.claude
+          : sourceRegistry.opencode
     const turns =
       summary.turns ??
-      (summary.sourceType === 'codex'
-        ? await sourceRegistry.codex.readSession(summary.id, readOptions)
-        : summary.sourceType === 'claude'
-          ? await sourceRegistry.claude.readSession(summary.id, readOptions)
-          : await sourceRegistry.opencode.readSession(summary.id, readOptions))
+      (await adapter.readSession(summary.id, readOptions))
+
+    if (adapter.shouldSkipSession?.(summary.id)) {
+      unreadableSessionCount += 1
+      continue
+    }
 
     const searchText = buildSearchText(turns)
     const sessionHash = buildSessionHash(turns)
@@ -327,6 +335,7 @@ export async function scanSessions(
     insertedSessionCount,
     updatedSessionCount,
     skippedSessionCount,
+    unreadableSessionCount,
     rewrittenTurnSessionCount,
     rewrittenTurnCount
   })
@@ -349,6 +358,7 @@ export async function scanSessions(
     insertedSessionCount,
     updatedSessionCount,
     skippedSessionCount,
+    unreadableSessionCount,
     rewrittenTurnSessionCount,
     rewrittenTurnCount,
     diagnostics

@@ -296,10 +296,20 @@ export function createOpenCodeAdapter(
   adapterOptions?: OpenCodeAdapterOptions
 ): SourceAdapter {
   let diagnostics: SourceDiagnostic[] = []
+  const unreadableSessionIds = new Set<string>()
   const runCommand = adapterOptions?.runCommand ?? runOpenCodeCommand
 
   function addDiagnostic(code: SourceDiagnostic['code'], message: string) {
     diagnostics.push({ sourceType: 'opencode', code, message })
+  }
+
+  function markUnreadableSession(
+    sessionId: string,
+    code: SourceDiagnostic['code'],
+    message: string
+  ) {
+    unreadableSessionIds.add(sessionId)
+    addDiagnostic(code, message)
   }
 
   function getExportCommand() {
@@ -351,6 +361,7 @@ export function createOpenCodeAdapter(
   return {
     async listSessions(filters: SessionFilterInput) {
       diagnostics = []
+      unreadableSessionIds.clear()
       const legacyFiles = walkSessionFiles(root)
       if (legacyFiles.length === 0 && hasModernOpenCodeDatabase(root)) {
         if (!isCliPathBoundToRoot(root)) {
@@ -394,7 +405,16 @@ export function createOpenCodeAdapter(
     },
 
     async readSession(sessionId: string, options?: { locator?: string }) {
-      if (hasModernOpenCodeDatabase(root) && isCliPathBoundToRoot(root)) {
+      const legacySessionFile =
+        options?.locator && !options.locator.startsWith('opencode-cli:')
+          ? options.locator
+          : findSessionFile(root, sessionId)
+      const usesModernCli =
+        hasModernOpenCodeDatabase(root) &&
+        isCliPathBoundToRoot(root) &&
+        (options?.locator?.startsWith('opencode-cli:') || !legacySessionFile)
+
+      if (usesModernCli) {
         const locator = options?.locator ?? `opencode-cli:${sessionId}`
         const fingerprint = modernDatabaseFingerprint(root)
         const cached = adapterOptions?.cache?.read({
@@ -403,12 +423,14 @@ export function createOpenCodeAdapter(
           fingerprint
         })
         if (cached) {
+          unreadableSessionIds.delete(sessionId)
           return cached.turns
         }
 
         const exportCommand = getExportCommand()
         if (!exportCommand) {
-          addDiagnostic(
+          markUnreadableSession(
+            sessionId,
             'opencode-cli-export-unsupported',
             'OpenCode CLI 不支持受支持的会话导出命令；未读取该会话。'
           )
@@ -418,7 +440,8 @@ export function createOpenCodeAdapter(
           dataHome: path.dirname(root)
         })
         if (exported.exitCode !== 0) {
-          addDiagnostic(
+          markUnreadableSession(
+            sessionId,
             'opencode-cli-output-unsupported',
             'OpenCode CLI 无法导出该会话；未读取该会话。'
           )
@@ -427,7 +450,8 @@ export function createOpenCodeAdapter(
         try {
           const parsed = parseExport(exported.stdout, sessionId, locator, Date.now())
           if (!parsed) {
-            addDiagnostic(
+            markUnreadableSession(
+              sessionId,
               'opencode-cli-output-unsupported',
               'OpenCode CLI 返回了无法识别的会话导出格式；未读取该会话。'
             )
@@ -440,9 +464,11 @@ export function createOpenCodeAdapter(
             summary: parsed.summary,
             turns: parsed.turns
           })
+          unreadableSessionIds.delete(sessionId)
           return parsed.turns
         } catch {
-          addDiagnostic(
+          markUnreadableSession(
+            sessionId,
             'opencode-cli-output-unsupported',
             'OpenCode CLI 返回了无法解析的会话导出；未读取该会话。'
           )
@@ -450,7 +476,7 @@ export function createOpenCodeAdapter(
         }
       }
 
-      const sessionFile = options?.locator ?? findSessionFile(root, sessionId)
+      const sessionFile = legacySessionFile
       if (!sessionFile) {
         logger.debug('source-adapter', 'opencode session file missing', {
           sessionId
@@ -504,6 +530,10 @@ export function createOpenCodeAdapter(
 
     getDiagnostics() {
       return diagnostics
+    },
+
+    shouldSkipSession(sessionId: string) {
+      return unreadableSessionIds.has(sessionId)
     }
   }
 }

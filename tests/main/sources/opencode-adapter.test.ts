@@ -71,7 +71,10 @@ function modernRunner(): OpenCodeCommandRunner {
 
 describe('createOpenCodeAdapter', () => {
   it('reconstructs ordered turns from session/message/part fixture files', async () => {
-    const adapter = createOpenCodeAdapter('tests/fixtures/opencode')
+    const runner: OpenCodeCommandRunner = () => {
+      throw new Error('legacy storage must not invoke the CLI')
+    }
+    const adapter = createOpenCodeAdapter('tests/fixtures/opencode', { runCommand: runner })
     const [summary] = await adapter.listSessions(filters)
 
     const turns = await adapter.readSession(summary.id)
@@ -186,5 +189,43 @@ describe('createOpenCodeAdapter', () => {
       'opencode-cli:ses_modern_active:message:msg_modern_user'
     )
     expect(preview.turns[0]?.text).toContain('source spans')
+  })
+
+  it('keeps indexed modern turns when a later CLI export fails', async () => {
+    let allowExport = true
+    const runner: OpenCodeCommandRunner = (args) => {
+      if (args.at(-1) === '--help') {
+        return { exitCode: args[0] === 'export' ? 0 : 1, stdout: '' }
+      }
+      if (args.join(' ') === 'session list --format json') {
+        return { exitCode: 0, stdout: modernList }
+      }
+      if (args.join(' ') === 'export ses_modern_active') {
+        return allowExport
+          ? { exitCode: 0, stdout: modernExport }
+          : { exitCode: 1, stdout: '' }
+      }
+      return { exitCode: 1, stdout: '' }
+    }
+    const db = createTestDb()
+    const opencode = createOpenCodeAdapter(modernRoot, { runCommand: runner })
+    const registry: SourceRegistry = {
+      codex: { listSessions: async () => [], readSession: async () => [] },
+      claude: { listSessions: async () => [], readSession: async () => [] },
+      opencode
+    }
+
+    await scanSessions(db, registry)
+    allowExport = false
+    const result = await scanSessions(db, registry)
+    const turns = db
+      .prepare('select text from session_turns where session_id = ? order by seq')
+      .all('opencode:ses_modern_active') as Array<{ text: string }>
+
+    expect(result.unreadableSessionCount).toBe(1)
+    expect(turns).toEqual([
+      { text: 'How should modern exports preserve source spans?' },
+      { text: 'Keep a stable message identifier in every source reference.' }
+    ])
   })
 })

@@ -1,4 +1,5 @@
 {"type":"system","timestamp":"2026-09-21T01:00:00.000Z","sessionId":"claude-malformed","cwd":"/workspace/recovered-claude","message":{"content":"metadata"}}
 {"type":"assistant"
+null
 {"type":"user","timestamp":"2026-09-21T01:00:01.000Z","sessionId":"claude-malformed","cwd":"/workspace/recovered-claude","message":{"content":"Keep the valid Claude prompt after a bad line."}}
 {"type":"assistant","timestamp":"2026-09-21T01:00:02.000Z","sessionId":"claude-malformed","cwd":"/workspace/recovered-claude","message":{"content":[{"type":"text","text":"Keep physical source lines stable."}]}}

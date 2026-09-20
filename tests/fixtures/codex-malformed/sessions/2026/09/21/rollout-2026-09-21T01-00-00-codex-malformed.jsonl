@@ -1,4 +1,5 @@
 {"timestamp":"2026-09-21T01:00:00.000Z","type":"session_meta","payload":{"id":"codex-malformed","timestamp":"2026-09-21T01:00:00.000Z","cwd":"/workspace/recovered-codex"}}
 {"timestamp":"2026-09-21T01:00:00.500Z","type":"response_item"
+null
 {"timestamp":"2026-09-21T01:00:01.000Z","type":"response_item","payload":{"type":"message","role":"user","content":[{"type":"input_text","text":"Keep the valid Codex prompt after a bad line."}]}}
 {"timestamp":"2026-09-21T01:00:02.000Z","type":"response_item","payload":{"type":"message","role":"assistant","content":[{"type":"output_text","text":"Keep physical source lines stable."}]}}
