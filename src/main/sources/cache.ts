@@ -14,8 +14,8 @@ type SourceScanCacheRow = {
 }
 
 const SOURCE_PARSER_VERSIONS: Record<SourceType, string> = {
-  codex: 'codex-parser-v2',
-  claude: 'claude-parser-v2',
+  codex: 'codex-parser-v3',
+  claude: 'claude-parser-v3',
   opencode: 'opencode-parser-v2'
 }
 

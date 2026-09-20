@@ -9,11 +9,14 @@ import {
   type SessionSummary,
   type SourceAdapter,
   type SourceAdapterOptions,
+  type SourceDiagnostic,
   type SourceFileFingerprint
 } from '../types'
+import { readJsonlTolerant, type JsonlRecord } from '../utils'
 import { logger } from '../../logging'
 
 type JsonMap = Record<string, unknown>
+type JsonlRow = JsonlRecord<JsonMap>
 type ParsedClaudeTurn = ConversationTurn & { row: JsonMap; timestamp: string }
 export type ClaudeAdapterPaths = {
   cliRoot: string
@@ -78,14 +81,6 @@ function walkDesktopCodeSessionMetadata(root: string | undefined) {
   return files
 }
 
-function readJsonl(filePath: string): JsonMap[] {
-  return fs
-    .readFileSync(filePath, 'utf8')
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as JsonMap)
-}
-
 function getFileFingerprint(filePath: string): SourceFileFingerprint {
   const stats = fs.statSync(filePath)
   return {
@@ -94,10 +89,14 @@ function getFileFingerprint(filePath: string): SourceFileFingerprint {
   }
 }
 
-function readJsonFile(filePath: string): JsonMap | null {
+function readJsonFile(
+  filePath: string,
+  onInvalidFile: (filePath: string) => void
+): JsonMap | null {
   try {
     return JSON.parse(fs.readFileSync(filePath, 'utf8')) as JsonMap
   } catch {
+    onInvalidFile(filePath)
     return null
   }
 }
@@ -147,12 +146,13 @@ function resolveDesktopTranscriptSessionId(row: JsonMap, filePath: string) {
 }
 
 function readDesktopCodeSessionMetadata(
-  root: string | undefined
+  root: string | undefined,
+  onInvalidFile: (filePath: string) => void
 ): Map<string, DesktopCodeSessionMetadata> {
   const sessions = new Map<string, DesktopCodeSessionMetadata>()
 
   for (const filePath of walkDesktopCodeSessionMetadata(root)) {
-    const row = readJsonFile(filePath)
+    const row = readJsonFile(filePath, onInvalidFile)
     if (!row) {
       continue
     }
@@ -242,9 +242,9 @@ function isClaudeNoise(row: JsonMap, text: string) {
   )
 }
 
-function extractClaudeTurns(filePath: string, rows: JsonMap[]): ParsedClaudeTurn[] {
+function extractClaudeTurns(filePath: string, rows: JsonlRow[]): ParsedClaudeTurn[] {
   return rows
-    .flatMap((row, index) => {
+    .flatMap(({ value: row, lineNumber }) => {
       const role = String(row.type ?? '')
       if (role !== 'user' && role !== 'assistant') {
         return []
@@ -257,11 +257,11 @@ function extractClaudeTurns(filePath: string, rows: JsonMap[]): ParsedClaudeTurn
 
       return [
         {
-          id: `claude-turn-${index}`,
+          id: `claude-turn-${lineNumber - 1}`,
           role,
           text,
           languageHint: detectLanguageHint(text),
-          sourceSpanRef: `${filePath}:${index + 1}`,
+          sourceSpanRef: `${filePath}:${lineNumber}`,
           row,
           timestamp: String(row.timestamp ?? '')
         }
@@ -277,12 +277,17 @@ function toConversationTurn({
   return turn
 }
 
-function summarizeCliTranscript(filePath: string): SessionSummary {
-  const rows = readJsonl(filePath)
+function summarizeCliTranscript(
+  filePath: string,
+  onInvalidLine: (filePath: string, lineNumber: number) => void
+): SessionSummary {
+  const rows = readJsonlTolerant<JsonMap>(filePath, (lineNumber) =>
+    onInvalidLine(filePath, lineNumber)
+  )
   const turns = extractClaudeTurns(filePath, rows)
 
   const firstTurn = turns[0]
-  const firstRow = turns[0]?.row ?? rows[0] ?? {}
+  const firstRow = turns[0]?.row ?? rows[0]?.value ?? {}
   const startedAt = String(firstRow.timestamp ?? '')
   const updatedAt =
     turns.at(-1)?.timestamp ||
@@ -312,7 +317,11 @@ function fromCachedCliTranscript(cached: CachedSessionParse): SessionSummary {
   }
 }
 
-function loadCliTranscriptSummary(filePath: string, options?: SourceAdapterOptions) {
+function loadCliTranscriptSummary(
+  filePath: string,
+  onInvalidLine: (filePath: string, lineNumber: number) => void,
+  options?: SourceAdapterOptions
+) {
   const fingerprint = getFileFingerprint(filePath)
   const cached = options?.cache?.read({
     sourceType: 'claude',
@@ -324,14 +333,20 @@ function loadCliTranscriptSummary(filePath: string, options?: SourceAdapterOptio
     return fromCachedCliTranscript(cached)
   }
 
-  const summary = summarizeCliTranscript(filePath)
-  options?.cache?.write({
-    sourceType: 'claude',
-    locator: filePath,
-    fingerprint,
-    summary,
-    turns: summary.turns ?? []
+  let hadInvalidLine = false
+  const summary = summarizeCliTranscript(filePath, (invalidFilePath, lineNumber) => {
+    hadInvalidLine = true
+    onInvalidLine(invalidFilePath, lineNumber)
   })
+  if (!hadInvalidLine) {
+    options?.cache?.write({
+      sourceType: 'claude',
+      locator: filePath,
+      fingerprint,
+      summary,
+      turns: summary.turns ?? []
+    })
+  }
   return summary
 }
 
@@ -344,19 +359,24 @@ function readCachedCliTurns(filePath: string, options?: SourceAdapterOptions) {
   })?.turns
 }
 
-function findSessionFile(root: string, sessionId: string) {
+function findSessionFile(
+  root: string,
+  sessionId: string,
+  onInvalidLine: (filePath: string, lineNumber: number) => void
+) {
   return walkProjectLogs(root).find((filePath) => {
     if (path.basename(filePath, '.jsonl') === sessionId) {
       return true
     }
 
-    const firstLine = fs.readFileSync(filePath, 'utf8').split('\n').find(Boolean)
-    if (!firstLine) {
+    const firstRow = readJsonlTolerant<JsonMap>(filePath, (lineNumber) =>
+      onInvalidLine(filePath, lineNumber)
+    )[0]?.value
+    if (!firstRow) {
       return false
     }
 
-    const row = JSON.parse(firstLine) as JsonMap
-    return row.sessionId === sessionId
+    return firstRow.sessionId === sessionId
   })
 }
 
@@ -371,13 +391,48 @@ export function createClaudeAdapter(
   adapterOptions?: SourceAdapterOptions
 ): SourceAdapter {
   const paths = normalizeClaudeAdapterPaths(rootOrPaths)
+  let diagnostics: SourceDiagnostic[] = []
+  const recordedInvalidRecords = new Set<string>()
+
+  function recordInvalidLine(filePath: string, lineNumber: number) {
+    const key = `${filePath}:${lineNumber}`
+    if (recordedInvalidRecords.has(key)) {
+      return
+    }
+    recordedInvalidRecords.add(key)
+    diagnostics.push({
+      sourceType: 'claude',
+      code: 'source-jsonl-line-invalid',
+      message: 'Claude 来源包含无法读取的记录；其余有效记录已保留。'
+    })
+  }
+
+  function recordInvalidMetadata(filePath: string) {
+    const key = `${filePath}:metadata`
+    if (recordedInvalidRecords.has(key)) {
+      return
+    }
+    recordedInvalidRecords.add(key)
+    diagnostics.push({
+      sourceType: 'claude',
+      code: 'source-jsonl-line-invalid',
+      message: 'Claude Desktop 元数据包含无法读取的记录；其余有效记录已保留。'
+    })
+  }
 
   return {
     async listSessions(filters: SessionFilterInput) {
-      const desktopMetadata = readDesktopCodeSessionMetadata(paths.desktopCodeSessionRoot)
+      diagnostics = []
+      recordedInvalidRecords.clear()
+      const desktopMetadata = readDesktopCodeSessionMetadata(
+        paths.desktopCodeSessionRoot,
+        recordInvalidMetadata
+      )
 
       return walkProjectLogs(paths.cliRoot)
-        .map((filePath) => loadCliTranscriptSummary(filePath, adapterOptions))
+        .map((filePath) =>
+          loadCliTranscriptSummary(filePath, recordInvalidLine, adapterOptions)
+        )
         .map((summary) =>
           applyDesktopCodeMetadata(summary, desktopMetadata.get(summary.id))
         )
@@ -386,7 +441,9 @@ export function createClaudeAdapter(
     },
 
     async readSession(sessionId: string, options?: { locator?: string }) {
-      const filePath = options?.locator ?? findSessionFile(paths.cliRoot, sessionId)
+      const filePath =
+        options?.locator ??
+        findSessionFile(paths.cliRoot, sessionId, recordInvalidLine)
       if (!filePath) {
         logger.debug('source-adapter', 'claude session file missing', {
           sessionId
@@ -396,8 +453,17 @@ export function createClaudeAdapter(
 
       return (
         readCachedCliTurns(filePath, adapterOptions) ??
-        extractClaudeTurns(filePath, readJsonl(filePath)).map(toConversationTurn)
+        extractClaudeTurns(
+          filePath,
+          readJsonlTolerant<JsonMap>(filePath, (lineNumber) =>
+            recordInvalidLine(filePath, lineNumber)
+          )
+        ).map(toConversationTurn)
       )
+    },
+
+    getDiagnostics() {
+      return diagnostics
     }
   }
 }

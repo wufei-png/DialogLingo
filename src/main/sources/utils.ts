@@ -39,6 +39,32 @@ export function readJsonLines<T>(file: string): T[] {
     .map((line) => JSON.parse(line) as T)
 }
 
+export type JsonlRecord<T> = {
+  value: T
+  lineNumber: number
+}
+
+export function readJsonlTolerant<T>(
+  filePath: string,
+  onInvalidLine: (lineNumber: number) => void
+): JsonlRecord<T>[] {
+  return fs
+    .readFileSync(filePath, 'utf8')
+    .split('\n')
+    .flatMap((line, index) => {
+      if (!line.trim()) {
+        return []
+      }
+
+      try {
+        return [{ value: JSON.parse(line) as T, lineNumber: index + 1 }]
+      } catch {
+        onInvalidLine(index + 1)
+        return []
+      }
+    })
+}
+
 export function normalizeText(value: string): string {
   return value.replace(/\s+/g, ' ').trim()
 }

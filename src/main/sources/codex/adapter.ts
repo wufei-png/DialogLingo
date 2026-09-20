@@ -9,11 +9,14 @@ import {
   type SessionSummary,
   type SourceAdapter,
   type SourceAdapterOptions,
+  type SourceDiagnostic,
   type SourceFileFingerprint
 } from '../types'
+import { readJsonlTolerant, type JsonlRecord } from '../utils'
 import { logger } from '../../logging'
 
 type JsonMap = Record<string, unknown>
+type JsonlRow = JsonlRecord<JsonMap>
 type ParsedCodexTurn = ConversationTurn & { timestamp: string }
 
 function walkJsonlFiles(dir: string): string[] {
@@ -37,14 +40,6 @@ function walkJsonlFiles(dir: string): string[] {
   }
 
   return files
-}
-
-function readJsonl(filePath: string): JsonMap[] {
-  return fs
-    .readFileSync(filePath, 'utf8')
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => JSON.parse(line) as JsonMap)
 }
 
 function getFileFingerprint(filePath: string): SourceFileFingerprint {
@@ -94,7 +89,10 @@ function filterInitialEnvironmentContextTurn(turns: ParsedCodexTurn[]) {
   return turns
 }
 
-function loadSessionIndex(root: string) {
+function loadSessionIndex(
+  root: string,
+  onInvalidLine: (filePath: string, lineNumber: number) => void
+) {
   const indexPath = path.join(root, 'session_index.jsonl')
   const titles = new Map<string, string>()
 
@@ -102,8 +100,10 @@ function loadSessionIndex(root: string) {
     return titles
   }
 
-  for (const line of fs.readFileSync(indexPath, 'utf8').split('\n').filter(Boolean)) {
-    const row = JSON.parse(line) as { id?: string; thread_name?: string }
+  for (const { value: row } of readJsonlTolerant<{
+    id?: string
+    thread_name?: string
+  }>(indexPath, (lineNumber) => onInvalidLine(indexPath, lineNumber))) {
     if (row.id && row.thread_name) {
       titles.set(row.id, row.thread_name)
     }
@@ -112,9 +112,9 @@ function loadSessionIndex(root: string) {
   return titles
 }
 
-function extractRolloutTurns(filePath: string, rows: JsonMap[]): ParsedCodexTurn[] {
+function extractRolloutTurns(filePath: string, rows: JsonlRow[]): ParsedCodexTurn[] {
   const turns = rows
-    .flatMap((row, index) => {
+    .flatMap(({ value: row, lineNumber }) => {
       if (row.type !== 'response_item') {
         return []
       }
@@ -137,11 +137,11 @@ function extractRolloutTurns(filePath: string, rows: JsonMap[]): ParsedCodexTurn
 
       return [
         {
-          id: `codex-turn-${index}`,
+          id: `codex-turn-${lineNumber - 1}`,
           role: normalizedRole,
           text,
           languageHint: detectLanguageHint(text),
-          sourceSpanRef: `${filePath}:${index + 1}`,
+          sourceSpanRef: `${filePath}:${lineNumber}`,
           timestamp: String(row.timestamp ?? '')
         }
       ]
@@ -158,10 +158,13 @@ function toConversationTurn({
 }
 
 function summarizeRollout(
-  filePath: string
+  filePath: string,
+  onInvalidLine: (filePath: string, lineNumber: number) => void
 ): SessionSummary | null {
-  const rows = readJsonl(filePath)
-  const meta = rows.find((row) => row.type === 'session_meta') as JsonMap | undefined
+  const rows = readJsonlTolerant<JsonMap>(filePath, (lineNumber) =>
+    onInvalidLine(filePath, lineNumber)
+  )
+  const meta = rows.find(({ value }) => value.type === 'session_meta')?.value
   const payload = (meta?.payload as JsonMap | undefined) ?? {}
   const turns = extractRolloutTurns(filePath, rows)
 
@@ -170,7 +173,7 @@ function summarizeRollout(
   const fallbackTitle = turns[0]?.text.slice(0, 80) || path.basename(filePath)
   const updatedAt =
     turns.at(-1)?.timestamp ||
-    String(rows.at(-1)?.timestamp ?? '') ||
+    String(rows.at(-1)?.value.timestamp ?? '') ||
     String(payload.timestamp ?? '') ||
     new Date(fs.statSync(filePath).mtimeMs).toISOString()
   const startedAt =
@@ -215,6 +218,7 @@ function fromCachedRollout(
 function loadRolloutSummary(
   filePath: string,
   titleIndex: Map<string, string>,
+  onInvalidLine: (filePath: string, lineNumber: number) => void,
   options?: SourceAdapterOptions
 ) {
   const fingerprint = getFileFingerprint(filePath)
@@ -228,15 +232,21 @@ function loadRolloutSummary(
     return fromCachedRollout(cached, titleIndex)
   }
 
-  const summary = summarizeRollout(filePath)
+  let hadInvalidLine = false
+  const summary = summarizeRollout(filePath, (invalidFilePath, lineNumber) => {
+    hadInvalidLine = true
+    onInvalidLine(invalidFilePath, lineNumber)
+  })
   if (summary) {
-    options?.cache?.write({
-      sourceType: 'codex',
-      locator: filePath,
-      fingerprint,
-      summary,
-      turns: summary.turns ?? []
-    })
+    if (!hadInvalidLine) {
+      options?.cache?.write({
+        sourceType: 'codex',
+        locator: filePath,
+        fingerprint,
+        summary,
+        turns: summary.turns ?? []
+      })
+    }
     return {
       ...withTitleIndex(summary, titleIndex),
       turns: summary.turns
@@ -255,7 +265,11 @@ function readCachedRolloutTurns(filePath: string, options?: SourceAdapterOptions
   })?.turns
 }
 
-function findSessionFile(root: string, sessionId: string) {
+function findSessionFile(
+  root: string,
+  sessionId: string,
+  onInvalidLine: (filePath: string, lineNumber: number) => void
+) {
   const files = [
     ...walkJsonlFiles(path.join(root, 'sessions')),
     ...walkJsonlFiles(path.join(root, 'archived_sessions'))
@@ -266,13 +280,14 @@ function findSessionFile(root: string, sessionId: string) {
       return filePath
     }
 
-    const firstLine = fs.readFileSync(filePath, 'utf8').split('\n').find(Boolean)
-    if (!firstLine) {
+    const firstRow = readJsonlTolerant<JsonMap>(filePath, (lineNumber) =>
+      onInvalidLine(filePath, lineNumber)
+    )[0]?.value
+    if (!firstRow) {
       continue
     }
 
-    const row = JSON.parse(firstLine) as JsonMap
-    const payload = row.payload as JsonMap | undefined
+    const payload = firstRow.payload as JsonMap | undefined
     if (payload?.id === sessionId) {
       return filePath
     }
@@ -285,23 +300,44 @@ export function createCodexAdapter(
   root: string,
   adapterOptions?: SourceAdapterOptions
 ): SourceAdapter {
+  let diagnostics: SourceDiagnostic[] = []
+  const recordedInvalidLines = new Set<string>()
+
+  function recordInvalidLine(filePath: string, lineNumber: number) {
+    const key = `${filePath}:${lineNumber}`
+    if (recordedInvalidLines.has(key)) {
+      return
+    }
+    recordedInvalidLines.add(key)
+    diagnostics.push({
+      sourceType: 'codex',
+      code: 'source-jsonl-line-invalid',
+      message: 'Codex 来源包含无法读取的 JSONL 记录；其余有效记录已保留。'
+    })
+  }
+
   return {
     async listSessions(filters: SessionFilterInput) {
-      const titleIndex = loadSessionIndex(root)
+      diagnostics = []
+      recordedInvalidLines.clear()
+      const titleIndex = loadSessionIndex(root, recordInvalidLine)
       const activeFiles = walkJsonlFiles(path.join(root, 'sessions'))
       const archivedFiles = filters.includeArchived
         ? walkJsonlFiles(path.join(root, 'archived_sessions'))
         : []
 
       return [...activeFiles, ...archivedFiles]
-        .map((filePath) => loadRolloutSummary(filePath, titleIndex, adapterOptions))
+        .map((filePath) =>
+          loadRolloutSummary(filePath, titleIndex, recordInvalidLine, adapterOptions)
+        )
         .filter((summary): summary is SessionSummary => Boolean(summary))
         .filter((summary) => matchesSessionFilters(summary, filters))
         .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
     },
 
     async readSession(sessionId: string, options?: { locator?: string }) {
-      const filePath = options?.locator ?? findSessionFile(root, sessionId)
+      const filePath =
+        options?.locator ?? findSessionFile(root, sessionId, recordInvalidLine)
       if (!filePath) {
         logger.debug('source-adapter', 'codex session file missing', {
           sessionId
@@ -311,8 +347,17 @@ export function createCodexAdapter(
 
       return (
         readCachedRolloutTurns(filePath, adapterOptions) ??
-        extractRolloutTurns(filePath, readJsonl(filePath)).map(toConversationTurn)
+        extractRolloutTurns(
+          filePath,
+          readJsonlTolerant<JsonMap>(filePath, (lineNumber) =>
+            recordInvalidLine(filePath, lineNumber)
+          )
+        ).map(toConversationTurn)
       )
+    },
+
+    getDiagnostics() {
+      return diagnostics
     }
   }
 }

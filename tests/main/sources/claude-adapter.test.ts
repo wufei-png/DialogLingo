@@ -26,6 +26,42 @@ describe('createClaudeAdapter', () => {
     ).toBe(true)
   })
 
+  it('keeps valid records and physical source lines when transcript and metadata records are malformed', async () => {
+    const db = createTestDb()
+    const adapter = createClaudeAdapter({
+      cliRoot: 'tests/fixtures/claude-malformed',
+      desktopCodeSessionRoot: 'tests/fixtures/claude-malformed-desktop'
+    }, { cache: createSqliteSourceScanCache(db) })
+    const [summary] = await adapter.listSessions({
+      query: '',
+      timeRange: null,
+      projects: [],
+      platforms: [],
+      includeArchived: false
+    })
+    const turns = await adapter.readSession(summary.id, { locator: summary.locator })
+
+    expect(turns).toMatchObject([
+      {
+        text: 'Keep the valid Claude prompt after a bad line.',
+        sourceSpanRef: `${summary.locator}:3`
+      },
+      {
+        text: 'Keep physical source lines stable.',
+        sourceSpanRef: `${summary.locator}:4`
+      }
+    ])
+    expect(adapter.getDiagnostics?.()).toEqual([
+      expect.objectContaining({ code: 'source-jsonl-line-invalid' }),
+      expect.objectContaining({ code: 'source-jsonl-line-invalid' })
+    ])
+    expect(
+      (db.prepare('select count(*) as count from source_scan_cache').get() as {
+        count: number
+      }).count
+    ).toBe(0)
+  })
+
   it('applies Claude Desktop Code archive metadata to CLI transcripts', async () => {
     const adapter = createClaudeAdapter({
       cliRoot: 'tests/fixtures/claude',

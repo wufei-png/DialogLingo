@@ -10,8 +10,8 @@ import { createTestDb } from '../testDb'
 
 describe('createCodexAdapter', () => {
   it('uses an adapter-specific cache parser version', () => {
-    expect(getSourceParserVersion('codex')).toBe('codex-parser-v2')
-    expect(getSourceParserVersion('claude')).toBe('claude-parser-v2')
+    expect(getSourceParserVersion('codex')).toBe('codex-parser-v3')
+    expect(getSourceParserVersion('claude')).toBe('claude-parser-v3')
     expect(getSourceParserVersion('opencode')).toBe('opencode-parser-v2')
   })
 
@@ -47,6 +47,42 @@ describe('createCodexAdapter', () => {
     expect(turns.map((turn) => turn.text).join('\n')).not.toContain(
       'environment_context'
     )
+  })
+
+  it('keeps valid records and physical source lines when transcript and index lines are malformed', async () => {
+    const db = createTestDb()
+    const adapter = createCodexAdapter('tests/fixtures/codex-malformed', {
+      cache: createSqliteSourceScanCache(db)
+    })
+    const [summary] = await adapter.listSessions({
+      query: '',
+      timeRange: null,
+      projects: [],
+      platforms: [],
+      includeArchived: false
+    })
+    const turns = await adapter.readSession(summary.id, { locator: summary.locator })
+
+    expect(summary.title).toBe('Recovered Codex session')
+    expect(turns).toMatchObject([
+      {
+        text: 'Keep the valid Codex prompt after a bad line.',
+        sourceSpanRef: `${summary.locator}:3`
+      },
+      {
+        text: 'Keep physical source lines stable.',
+        sourceSpanRef: `${summary.locator}:4`
+      }
+    ])
+    expect(adapter.getDiagnostics?.()).toEqual([
+      expect.objectContaining({ code: 'source-jsonl-line-invalid' }),
+      expect.objectContaining({ code: 'source-jsonl-line-invalid' })
+    ])
+    expect(
+      (db.prepare('select count(*) as count from source_scan_cache').get() as {
+        count: number
+      }).count
+    ).toBe(0)
   })
 
   it('reuses cached transcript parses when the Codex rollout file fingerprint is unchanged', async () => {
