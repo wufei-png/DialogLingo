@@ -120,14 +120,19 @@ describe('createSettingsService', () => {
 
   it('retains the privacy switch after reopening the settings database', () => {
     const filename = `${process.env.TMPDIR ?? '/tmp'}/dialoglingo-settings-${randomUUID()}.db`
+    let first: ReturnType<typeof createSettingsService> | undefined
+    let reopened: ReturnType<typeof createSettingsService> | undefined
     try {
-      const first = createSettingsService(filename, { runMigrations: true })
+      first = createSettingsService(filename, { runMigrations: true })
       first.save({
         ...first.get(),
         privacy: { ...first.get().privacy, redactBeforeRemoteSend: false }
       })
-      expect(createSettingsService(filename).get().privacy.redactBeforeRemoteSend).toBe(false)
+      reopened = createSettingsService(filename)
+      expect(reopened.get().privacy.redactBeforeRemoteSend).toBe(false)
     } finally {
+      reopened?.close()
+      first?.close()
       // The database is only a synthetic settings fixture.
       unlinkSync(filename)
     }

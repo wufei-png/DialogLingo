@@ -39,6 +39,9 @@ export function createWorkbookService(
   }
 
   return {
+    close() {
+      db.close()
+    },
     insertDraftItem(input: DraftItemInput) {
       const id = crypto.randomUUID()
       db.prepare(

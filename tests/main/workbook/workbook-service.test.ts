@@ -47,16 +47,19 @@ describe('createWorkbookService', () => {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dialoglingo-fk-'))
     const filename = path.join(root, 'app.db')
     const { sqlite: main } = createDb(filename)
+    let settings: ReturnType<typeof createSettingsService> | undefined
+    let workbook: ReturnType<typeof createWorkbookService> | undefined
 
     try {
       runMigrations(main)
       expect(main.pragma('foreign_keys', { simple: true })).toBe(1)
 
-      const settings = createSettingsService(filename, { runMigrations: true })
+      settings = createSettingsService(filename, { runMigrations: true })
       settings.save(settings.get())
       expect(settings.get()).toBeDefined()
 
-      const workbook = createWorkbookService(filename, { runMigrations: true })
+      const service = createWorkbookService(filename, { runMigrations: true })
+      workbook = service
       const draft = {
         workbookId: 'missing',
         itemType: 'Expression' as const,
@@ -64,7 +67,7 @@ describe('createWorkbookService', () => {
         currentSnapshot: { sourceText: 'sample' },
         sourceRefs: []
       }
-      expect(() => workbook.insertDraftItem(draft)).toThrow('FOREIGN KEY constraint failed')
+      expect(() => service.insertDraftItem(draft)).toThrow('FOREIGN KEY constraint failed')
 
       main.prepare(
         `insert into generation_jobs (id, created_at, status, selected_filters_json, selected_session_count, progress_json)
@@ -73,13 +76,15 @@ describe('createWorkbookService', () => {
       main.prepare(
         "insert into workbooks (id, job_id, created_at, status) values ('book', 'job', '2026-01-01', 'ready')"
       ).run()
-      const item = workbook.insertDraftItem({ ...draft, workbookId: 'book' })
-      expect(workbook.listActive('book')).toHaveLength(1)
+      const item = service.insertDraftItem({ ...draft, workbookId: 'book' })
+      expect(service.listActive('book')).toHaveLength(1)
 
       main.prepare("delete from generation_jobs where id = 'job'").run()
-      expect(workbook.listActive('book')).toHaveLength(0)
+      expect(service.listActive('book')).toHaveLength(0)
       expect(main.prepare('select id from workbook_items where id = ?').get(item.id)).toBeUndefined()
     } finally {
+      workbook?.close()
+      settings?.close()
       main.close()
       fs.rmSync(root, { recursive: true, force: true })
     }

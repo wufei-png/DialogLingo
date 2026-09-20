@@ -16,6 +16,9 @@ export function createSettingsService(
   }
 
   return {
+    close() {
+      sqlite.close()
+    },
     get() {
       const row = sqlite
         .prepare('select json from settings where id = 1')

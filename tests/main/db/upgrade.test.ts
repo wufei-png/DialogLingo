@@ -80,7 +80,12 @@ describe('historical database upgrades', () => {
         expect(fixture.sqlite.pragma('integrity_check')).toEqual([{ integrity_check: 'ok' }])
         expect(fixture.sqlite.pragma('foreign_key_check')).toEqual([])
         expect(fixture.sqlite.prepare('select count(*) as count from schema_migrations').get()).toEqual({ count: 5 })
-        expect(createWorkbookService(fixture.filename).listActive('book')).toHaveLength(1)
+        const workbook = createWorkbookService(fixture.filename)
+        try {
+          expect(workbook.listActive('book')).toHaveLength(1)
+        } finally {
+          workbook.close()
+        }
         expect(fixture.sqlite.prepare('select output_path from export_runs where id = ?').get('export')).toEqual({
           output_path: '/synthetic/export'
         })
