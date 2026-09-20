@@ -11,7 +11,13 @@ const canaries = [
   'env-value-87654321',
   '/Users/private-person/project-note',
   '/home/another-person/project-note',
-  'sk-ant-abcdefghijklmnop'
+  'sk-ant-abcdefghijklmnop',
+  'quoted-auth-value-12345',
+  'json-auth-value-12345',
+  'SYNTHETIC_BASE64_BODY_123456',
+  'synthetic-aws-secret-12345',
+  'c:\\users\\synthetic-person\\notes.txt',
+  'synthetic-github-token-12345'
 ]
 const payload = { excerptResults: [{ items: [] }] }
 const directories: string[] = []
@@ -85,7 +91,7 @@ describe('final model send boundary', () => {
     const checkpoints = await run({
       message: message('openai-compatible', true),
       customPrompt: mode === 'custom'
-        ? `Custom ${canaries[4]} and ${canaries[5]}\n{{INPUT_BATCH}}`
+        ? `Custom ${canaries[4]} and ${canaries[5]}\nAuthorization: Bearer "${canaries[6]}"\n{"Authorization": "Bearer ${canaries[7]}"}\nPRIVATE_KEY="-----BEGIN PRIVATE KEY-----\n${canaries[8]}\n-----END PRIVATE KEY-----"\nAWS_SECRET_ACCESS_KEY=${canaries[9]}\nPath ${canaries[10]}\nGITHUB_TOKEN=${canaries[11]}\n{{INPUT_BATCH}}`
         : undefined
     })
     expect(requests).toHaveLength(1)

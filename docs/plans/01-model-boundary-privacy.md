@@ -33,8 +33,10 @@ ON 是明确列举模式的保守过滤，不是完全匿名化承诺。覆盖�
 
 ## 完成记录
 
-阶段提交：`801be7d`（run 策略快照）、`7cd0218`（最终发送边界）、设置及示例预览（本提交）。
+阶段提交：`801be7d`（run 策略快照）、`7cd0218`（最终发送边界）、`ff65add`（设置及示例预览）。审查修复：本提交。
 
-验证：阶段 1 的 checkpoint、取消恢复与设置持久化测试以及 typecheck 通过；阶段 2 的 generation 测试与 typecheck 通过；最终 `npm run ci:verify` 通过（54 个测试文件、182 个测试、类型检查、Electron Vite 构建）。测试使用人工合成 canary，在 API 请求正文及 CLI stdin 处截获最终 prompt；这些结果不代表真实远端 provider 的运行证明。
+验证：阶段 1 的 checkpoint、取消恢复与设置持久化测试以及 typecheck 通过；阶段 2 的 generation 测试与 typecheck 通过；阶段 3 与审查修复后均运行 `npm run ci:verify`，通过 54 个测试文件、182 个测试、类型检查、Electron Vite 构建。测试使用人工合成 canary，在 API 请求正文及 CLI stdin 处截获最终 prompt；这些结果不代表真实远端 provider 的运行证明。
+
+独立只读审查对比 `24fea69` 至 `ff65add`。四项发现均已复现并采纳：带引号/JSON 鉴权值、多行私钥、`AWS_SECRET_ACCESS_KEY` 赋值和 Windows home 路径大小写；逐项修复并重跑发送边界测试。无拒绝项。
 
 未验证：未用真实会话或真实 provider 发送；未在 Electron UI 手工核查 ON/OFF、模板编辑与示例布局。已构建，但未做打包启动或跨平台验证。
