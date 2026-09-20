@@ -13,7 +13,15 @@ type SourceScanCacheRow = {
   turnsJson: string
 }
 
-const SOURCE_SCAN_CACHE_VERSION = 'source-scan-cache-v1'
+const SOURCE_PARSER_VERSIONS: Record<SourceType, string> = {
+  codex: 'codex-parser-v2',
+  claude: 'claude-parser-v2',
+  opencode: 'opencode-parser-v2'
+}
+
+export function getSourceParserVersion(sourceType: SourceType) {
+  return SOURCE_PARSER_VERSIONS[sourceType]
+}
 
 function toCachedSummary(summary: SessionSummary): Omit<SessionSummary, 'turns'> {
   const { turns: _turns, ...cachedSummary } = summary
@@ -85,7 +93,7 @@ export function createSqliteSourceScanCache(
         read.get(
           input.sourceType,
           input.locator,
-          SOURCE_SCAN_CACHE_VERSION,
+          getSourceParserVersion(input.sourceType),
           input.fingerprint.sizeBytes,
           input.fingerprint.mtimeMs
         ) as SourceScanCacheRow | undefined
@@ -101,7 +109,7 @@ export function createSqliteSourceScanCache(
       write.run(
         input.sourceType,
         input.locator,
-        SOURCE_SCAN_CACHE_VERSION,
+        getSourceParserVersion(input.sourceType),
         input.fingerprint.sizeBytes,
         input.fingerprint.mtimeMs,
         JSON.stringify(toCachedSummary(input.summary)),

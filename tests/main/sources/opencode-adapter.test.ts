@@ -1,4 +1,9 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+import { scanSessions } from '../../../src/main/scan/scanSessions'
+import { createPreviewQuery } from '../../../src/main/search/queryPreview'
+import { createSqliteSourceScanCache } from '../../../src/main/sources/cache'
+import type { SourceRegistry } from '../../../src/main/sources/types'
+import { createTestDb } from '../testDb'
 import {
   createOpenCodeAdapter,
   type OpenCodeCommandRunner
@@ -10,6 +15,58 @@ const filters = {
   projects: [],
   platforms: [],
   includeArchived: false
+}
+
+const modernRoot = 'tests/fixtures/opencode-modern/opencode'
+const modernList = JSON.stringify({
+  sessions: [
+    {
+      id: 'ses_modern_active',
+      title: 'Modern OpenCode session',
+      directory: '/workspace/modern',
+      time: { created: 1773143205910, updated: 1773143685086 }
+    },
+    {
+      id: 'ses_modern_archived',
+      title: 'Archived modern session',
+      directory: '/workspace/archived',
+      archived: 1773143690000,
+      time: { created: 1773143205910, updated: 1773143690000 }
+    }
+  ]
+})
+const modernExport = JSON.stringify({
+  session: {
+    id: 'ses_modern_active',
+    title: 'Modern OpenCode session',
+    directory: '/workspace/modern',
+    time: { created: 1773143205910, updated: 1773143685086 }
+  },
+  messages: [
+    {
+      info: { id: 'msg_modern_user', role: 'user' },
+      parts: [{ type: 'text', text: 'How should modern exports preserve source spans?' }]
+    },
+    {
+      info: { id: 'msg_modern_assistant', role: 'assistant' },
+      parts: [{ type: 'text', text: 'Keep a stable message identifier in every source reference.' }]
+    }
+  ]
+})
+
+function modernRunner(): OpenCodeCommandRunner {
+  return (args) => {
+    if (args.at(-1) === '--help') {
+      return { exitCode: args[0] === 'export' ? 0 : 1, stdout: '' }
+    }
+    if (args.join(' ') === 'session list --format json') {
+      return { exitCode: 0, stdout: modernList }
+    }
+    if (args.join(' ') === 'export ses_modern_active') {
+      return { exitCode: 0, stdout: modernExport }
+    }
+    return { exitCode: 1, stdout: '' }
+  }
 }
 
 describe('createOpenCodeAdapter', () => {
@@ -51,5 +108,83 @@ describe('createOpenCodeAdapter', () => {
     expect(adapter.getDiagnostics?.()).toEqual([
       expect.objectContaining({ code: 'opencode-cli-path-unverified' })
     ])
+  })
+
+  it('maps supported CLI list and export output while preserving archive and source references', async () => {
+    const adapter = createOpenCodeAdapter(modernRoot, { runCommand: modernRunner() })
+
+    const sessions = await adapter.listSessions(filters)
+    const allSessions = await adapter.listSessions({ ...filters, includeArchived: true })
+    const turns = await adapter.readSession('ses_modern_active', {
+      locator: 'opencode-cli:ses_modern_active'
+    })
+
+    expect(sessions).toMatchObject([
+      {
+        id: 'ses_modern_active',
+        projectPath: '/workspace/modern',
+        locator: 'opencode-cli:ses_modern_active'
+      }
+    ])
+    expect(allSessions.map((session) => session.id)).toEqual([
+      'ses_modern_archived',
+      'ses_modern_active'
+    ])
+    expect(turns).toMatchObject([
+      {
+        role: 'user',
+        sourceSpanRef: 'opencode-cli:ses_modern_active:message:msg_modern_user'
+      },
+      {
+        role: 'assistant',
+        sourceSpanRef: 'opencode-cli:ses_modern_active:message:msg_modern_assistant'
+      }
+    ])
+  })
+
+  it('caches a modern CLI export with the OpenCode parser version', async () => {
+    const db = createTestDb()
+    const cache = createSqliteSourceScanCache(db)
+    const runner = vi.fn(modernRunner())
+    const adapter = createOpenCodeAdapter(modernRoot, { cache, runCommand: runner })
+
+    await adapter.readSession('ses_modern_active', {
+      locator: 'opencode-cli:ses_modern_active'
+    })
+    runner.mockClear()
+    const turns = await adapter.readSession('ses_modern_active', {
+      locator: 'opencode-cli:ses_modern_active'
+    })
+    const cacheVersion = db
+      .prepare('select parser_version as parserVersion from source_scan_cache')
+      .get() as { parserVersion: string }
+
+    expect(turns).toHaveLength(2)
+    expect(runner).not.toHaveBeenCalled()
+    expect(cacheVersion.parserVersion).toBe('opencode-parser-v2')
+  })
+
+  it('carries modern CLI turns through scan, search, and preview', async () => {
+    const db = createTestDb()
+    const opencode = createOpenCodeAdapter(modernRoot, { runCommand: modernRunner() })
+    const registry: SourceRegistry = {
+      codex: { listSessions: async () => [], readSession: async () => [] },
+      claude: { listSessions: async () => [], readSession: async () => [] },
+      opencode
+    }
+
+    await scanSessions(db, registry)
+    const searched = db
+      .prepare('select id from sessions where search_text like ?')
+      .all('%stable message identifier%') as Array<{ id: string }>
+    const preview = createPreviewQuery(
+      db
+    )('opencode:ses_modern_active', 'source spans', 'transcript')
+
+    expect(searched).toEqual([{ id: 'opencode:ses_modern_active' }])
+    expect(preview.turns[0]?.sourceSpanRef).toBe(
+      'opencode-cli:ses_modern_active:message:msg_modern_user'
+    )
+    expect(preview.turns[0]?.text).toContain('source spans')
   })
 })

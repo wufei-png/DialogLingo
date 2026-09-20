@@ -94,17 +94,6 @@ export async function scanSessions(
     ...claudeSummaries,
     ...opencodeSummaries
   ]
-  const diagnostics: SourceDiagnostic[] = [
-    ...(sourceRegistry.codex.getDiagnostics?.() ?? []),
-    ...(sourceRegistry.claude.getDiagnostics?.() ?? []),
-    ...(sourceRegistry.opencode.getDiagnostics?.() ?? [])
-  ]
-  for (const diagnostic of diagnostics) {
-    logger.warn('session-scan', diagnostic.message, {
-      sourceType: diagnostic.sourceType,
-      code: diagnostic.code
-    })
-  }
   logger.debug('session-scan', 'adapter sessions listed', {
     includeArchived: baseFilters.includeArchived,
     codexSessionCount: codexSummaries.length,
@@ -341,6 +330,18 @@ export async function scanSessions(
     rewrittenTurnSessionCount,
     rewrittenTurnCount
   })
+
+  const diagnostics: SourceDiagnostic[] = [
+    ...(sourceRegistry.codex.getDiagnostics?.() ?? []),
+    ...(sourceRegistry.claude.getDiagnostics?.() ?? []),
+    ...(sourceRegistry.opencode.getDiagnostics?.() ?? [])
+  ]
+  for (const diagnostic of diagnostics) {
+    logger.warn('session-scan', diagnostic.message, {
+      sourceType: diagnostic.sourceType,
+      code: diagnostic.code
+    })
+  }
 
   return {
     projectCount: projects.length,

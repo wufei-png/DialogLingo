@@ -17,6 +17,6 @@ export function createSourceRegistry(
   return {
     codex: createCodexAdapter(paths.codex, options),
     claude: createClaudeAdapter(paths.claude, options),
-    opencode: createOpenCodeAdapter(paths.opencode)
+    opencode: createOpenCodeAdapter(paths.opencode, options)
   }
 }

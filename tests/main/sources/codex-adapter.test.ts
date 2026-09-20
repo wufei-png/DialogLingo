@@ -1,11 +1,20 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { createSqliteSourceScanCache } from '../../../src/main/sources/cache'
+import {
+  createSqliteSourceScanCache,
+  getSourceParserVersion
+} from '../../../src/main/sources/cache'
 import { createCodexAdapter } from '../../../src/main/sources/codex/adapter'
 import { createTestDb } from '../testDb'
 
 describe('createCodexAdapter', () => {
+  it('uses an adapter-specific cache parser version', () => {
+    expect(getSourceParserVersion('codex')).toBe('codex-parser-v2')
+    expect(getSourceParserVersion('claude')).toBe('claude-parser-v2')
+    expect(getSourceParserVersion('opencode')).toBe('opencode-parser-v2')
+  })
+
   it('lists sessions from fixture rollouts', async () => {
     const adapter = createCodexAdapter('tests/fixtures/codex')
     const sessions = await adapter.listSessions({
