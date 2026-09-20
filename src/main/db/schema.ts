@@ -113,7 +113,8 @@ export const workbookItemsTable = sqliteTable('workbook_items', {
   generatedSnapshotJson: text('generated_snapshot_json').notNull(),
   currentSnapshotJson: text('current_snapshot_json').notNull(),
   sourceRefsJson: text('source_refs_json').notNull(),
-  state: text('state').notNull()
+  state: text('state').notNull(),
+  editVersion: integer('edit_version').notNull().default(0)
 })
 
 export const workbookItemRevisionsTable = sqliteTable('workbook_item_revisions', {

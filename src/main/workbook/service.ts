@@ -1,5 +1,9 @@
 import crypto from 'node:crypto'
 import { createDb } from '../db/client'
+import {
+  workbookSnapshotSchema,
+  type WorkbookSnapshot
+} from '../../shared/schemas/workbook'
 
 type DraftItemInput = {
   workbookId: string
@@ -24,7 +28,8 @@ export function createWorkbookService(
         generated_snapshot_json text not null,
         current_snapshot_json text not null,
         source_refs_json text not null,
-        state text not null
+        state text not null,
+        edit_version integer not null default 0
       );
 
       create table if not exists workbook_item_revisions (
@@ -69,52 +74,159 @@ export function createWorkbookService(
       return { id }
     },
 
-    saveCurrentSnapshot(id: string, nextSnapshot: unknown) {
-      const row = db
-        .prepare('select current_snapshot_json from workbook_items where id = ?')
-        .get(id) as { current_snapshot_json: string }
-
-      db.prepare(
-        'update workbook_items set current_snapshot_json = ? where id = ?'
-      ).run(JSON.stringify(nextSnapshot), id)
-
-      db.prepare(
-        `
-          insert into workbook_item_revisions (
-            id,
-            workbook_item_id,
-            action_type,
-            before_json,
-            after_json,
-            created_at
+    saveCurrentSnapshot(id: string, nextSnapshot: WorkbookSnapshot, baseVersion: number) {
+      return db.transaction(() => {
+        const row = db
+          .prepare(
+            `
+              select current_snapshot_json, edit_version, state
+              from workbook_items
+              where id = ?
+            `
           )
-          values (?, ?, 'edit', ?, ?, ?)
-        `
-      ).run(
-        crypto.randomUUID(),
-        id,
-        row.current_snapshot_json,
-        JSON.stringify(nextSnapshot),
-        new Date().toISOString()
-      )
+          .get(id) as
+          | {
+              current_snapshot_json: string
+              edit_version: number
+              state: 'active' | 'deleted'
+            }
+          | undefined
+
+        if (!row) {
+          throw new Error(`Workbook item not found: ${id}`)
+        }
+
+        const previousSnapshot = JSON.parse(row.current_snapshot_json) as Record<string, unknown>
+        const persistedSnapshot = workbookSnapshotSchema.parse({
+          ...nextSnapshot,
+          sourceText: previousSnapshot.sourceText,
+          ...(typeof previousSnapshot.flagged === 'boolean'
+            ? { flagged: previousSnapshot.flagged }
+            : {})
+        })
+
+        if (row.edit_version !== baseVersion || row.state !== 'active') {
+          return {
+            status: 'conflict' as const,
+            currentSnapshot: previousSnapshot,
+            editVersion: row.edit_version
+          }
+        }
+
+        const nextSnapshotJson = JSON.stringify(persistedSnapshot)
+        const update = db
+          .prepare(
+            `
+              update workbook_items
+              set current_snapshot_json = ?, edit_version = edit_version + 1
+              where id = ? and edit_version = ? and state = 'active'
+            `
+          )
+          .run(nextSnapshotJson, id, baseVersion)
+
+        if (update.changes !== 1) {
+          const current = db
+            .prepare(
+              'select current_snapshot_json, edit_version from workbook_items where id = ?'
+            )
+            .get(id) as { current_snapshot_json: string; edit_version: number } | undefined
+          if (!current) {
+            throw new Error(`Workbook item not found: ${id}`)
+          }
+          return {
+            status: 'conflict' as const,
+            currentSnapshot: JSON.parse(current.current_snapshot_json) as Record<string, unknown>,
+            editVersion: current.edit_version
+          }
+        }
+
+        db.prepare(
+          `
+            insert into workbook_item_revisions (
+              id,
+              workbook_item_id,
+              action_type,
+              before_json,
+              after_json,
+              created_at
+            )
+            values (?, ?, 'edit', ?, ?, ?)
+          `
+        ).run(
+          crypto.randomUUID(),
+          id,
+          row.current_snapshot_json,
+          nextSnapshotJson,
+          new Date().toISOString()
+        )
+
+        return {
+          status: 'saved' as const,
+          currentSnapshot: persistedSnapshot,
+          editVersion: baseVersion + 1
+        }
+      })()
     },
 
-    revertItem(id: string) {
-      const row = db
-        .prepare('select generated_snapshot_json from workbook_items where id = ?')
-        .get(id) as { generated_snapshot_json: string }
+    revertItem(id: string, baseVersion: number) {
+      return db.transaction(() => {
+        const row = db
+          .prepare(
+            `
+              select generated_snapshot_json, current_snapshot_json, edit_version, state
+              from workbook_items
+              where id = ?
+            `
+          )
+          .get(id) as
+          | {
+              generated_snapshot_json: string
+              current_snapshot_json: string
+              edit_version: number
+              state: 'active' | 'deleted'
+            }
+          | undefined
+        if (!row) {
+          throw new Error(`Workbook item not found: ${id}`)
+        }
+        if (row.edit_version !== baseVersion || row.state !== 'active') {
+          return {
+            status: 'conflict' as const,
+            currentSnapshot: JSON.parse(row.current_snapshot_json) as Record<string, unknown>,
+            editVersion: row.edit_version
+          }
+        }
 
-      db.prepare(
-        'update workbook_items set current_snapshot_json = ? where id = ?'
-      ).run(row.generated_snapshot_json, id)
+        const update = db
+          .prepare(
+            `
+              update workbook_items
+              set current_snapshot_json = ?, edit_version = edit_version + 1
+              where id = ? and edit_version = ? and state = 'active'
+            `
+          )
+          .run(row.generated_snapshot_json, id, baseVersion)
+        if (update.changes !== 1) {
+          throw new Error(`Workbook item changed while reverting: ${id}`)
+        }
+        return {
+          status: 'saved' as const,
+          currentSnapshot: JSON.parse(row.generated_snapshot_json) as Record<string, unknown>,
+          editVersion: baseVersion + 1
+        }
+      })()
     },
 
     deleteItem(id: string) {
-      db.prepare("update workbook_items set state = 'deleted' where id = ?").run(id)
+      return db
+        .prepare("update workbook_items set state = 'deleted', edit_version = edit_version + 1 where id = ?")
+        .run(id)
     },
 
     restoreItem(id: string) {
-      db.prepare("update workbook_items set state = 'active' where id = ?").run(id)
+      return db
+        .prepare("update workbook_items set state = 'active', edit_version = edit_version + 1 where id = ?")
+        .run(id)
     },
 
     listDeleted(workbookId: string) {

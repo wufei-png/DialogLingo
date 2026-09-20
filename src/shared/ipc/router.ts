@@ -1,7 +1,7 @@
 import { initTRPC } from '@trpc/server'
 import { z } from 'zod'
 import { modelListInputSchema, settingsSchema } from '../schemas/settings'
-import { workbookListTabSchema } from '../schemas/workbook'
+import { workbookListTabSchema, workbookSnapshotSchema } from '../schemas/workbook'
 
 const t = initTRPC.create()
 
@@ -135,7 +135,13 @@ export function buildRouter(deps: RouterDeps) {
       )
       .query(({ input }) => deps.workbook.previewSource(input)),
     workbookSaveItem: t.procedure
-      .input(z.object({ itemId: z.string(), currentSnapshot: z.any() }))
+      .input(
+        z.object({
+          itemId: z.string(),
+          currentSnapshot: workbookSnapshotSchema,
+          baseVersion: z.number().int().nonnegative()
+        })
+      )
       .mutation(({ input }) => deps.workbook.saveItem(input)),
     workbookDeleteItem: t.procedure
       .input(z.object({ itemId: z.string() }))
@@ -144,7 +150,7 @@ export function buildRouter(deps: RouterDeps) {
       .input(z.object({ itemId: z.string() }))
       .mutation(({ input }) => deps.workbook.restoreItem(input)),
     workbookRevertItem: t.procedure
-      .input(z.object({ itemId: z.string() }))
+      .input(z.object({ itemId: z.string(), baseVersion: z.number().int().nonnegative() }))
       .mutation(({ input }) => deps.workbook.revertItem(input)),
     exportRun: t.procedure
       .input(z.object({ workbookId: z.string(), request: z.any() }))

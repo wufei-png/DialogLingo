@@ -18,6 +18,7 @@ type WorkbookRow = {
   id: string
   itemType: 'Expression' | 'Sentence'
   state: 'active' | 'deleted'
+  editVersion: number
   isEdited: boolean
   currentSnapshot: {
     sourceText?: string

@@ -60,7 +60,7 @@ describe('historical database upgrades', () => {
       const fixture = historicalDatabase(version)
       try {
         insertRepresentativeRows(fixture.sqlite)
-        fixture.copyThrough(4)
+        fixture.copyThrough(5)
         runMigrations(fixture.sqlite, fixture.migrationDir, { backupDir: fixture.backupDir })
 
         const search = createSessionSearch(fixture.sqlite)
@@ -79,7 +79,10 @@ describe('historical database upgrades', () => {
         ])
         expect(fixture.sqlite.pragma('integrity_check')).toEqual([{ integrity_check: 'ok' }])
         expect(fixture.sqlite.pragma('foreign_key_check')).toEqual([])
-        expect(fixture.sqlite.prepare('select count(*) as count from schema_migrations').get()).toEqual({ count: 5 })
+        expect(fixture.sqlite.prepare('select count(*) as count from schema_migrations').get()).toEqual({ count: 6 })
+        expect(
+          fixture.sqlite.prepare('select edit_version from workbook_items where id = ?').get('item')
+        ).toEqual({ edit_version: 0 })
         const workbook = createWorkbookService(fixture.filename)
         try {
           expect(workbook.listActive('book')).toHaveLength(1)
@@ -90,7 +93,7 @@ describe('historical database upgrades', () => {
           output_path: '/synthetic/export'
         })
 
-        if (version < 4) {
+        if (version < 5) {
           const backups = fs.readdirSync(fixture.backupDir)
           expect(backups).toHaveLength(1)
           const { sqlite: snapshot } = createDb(path.join(fixture.backupDir, backups[0]))
@@ -121,7 +124,7 @@ describe('historical database upgrades', () => {
         );
       `)
       fixture.sqlite.pragma('foreign_keys = ON')
-      fixture.copyThrough(4)
+      fixture.copyThrough(5)
 
       expect(() => runMigrations(fixture.sqlite, fixture.migrationDir, { backupDir: fixture.backupDir }))
         .toThrow('foreign_key_check found 1 violation')
@@ -138,8 +141,8 @@ describe('historical database upgrades', () => {
     const fixture = historicalDatabase(2)
     try {
       insertRepresentativeRows(fixture.sqlite)
-      fixture.copyThrough(4)
-      fs.writeFileSync(path.join(fixture.migrationDir, '0005_bad.sql'), 'invalid sql;')
+      fixture.copyThrough(5)
+      fs.writeFileSync(path.join(fixture.migrationDir, '0006_bad.sql'), 'invalid sql;')
       expect(() => runMigrations(fixture.sqlite, fixture.migrationDir, { backupDir: fixture.backupDir }))
         .toThrow('Database migration failed')
       expect(fixture.sqlite.prepare('select count(*) as count from schema_migrations').get()).toEqual({ count: 3 })

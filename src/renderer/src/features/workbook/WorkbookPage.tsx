@@ -41,6 +41,7 @@ type WorkbookItem = {
     sourceSpanRef: string
     excerpt: string
   }>
+  editVersion: number
   isEdited: boolean
 }
 
@@ -371,9 +372,14 @@ export function WorkbookPage(props: {
     quizAnswer: string
     tags: string[]
   }) {
+    const item = rows.find((row) => row.id === itemId)
+    if (!item) {
+      throw new Error(`Workbook item not found: ${itemId}`)
+    }
     await trpc.workbookSaveItem.mutate({
       itemId,
-      currentSnapshot: nextSnapshot
+      currentSnapshot: nextSnapshot,
+      baseVersion: item.editVersion
     })
     await invalidateWorkbook()
   }
@@ -755,7 +761,11 @@ export function WorkbookPage(props: {
             }}
             onSaveItem={saveItem}
             onRevertItem={(itemId) => {
-              void trpc.workbookRevertItem.mutate({ itemId }).then(() => {
+              const item = rows.find((row) => row.id === itemId)
+              if (!item) {
+                return
+              }
+              void trpc.workbookRevertItem.mutate({ itemId, baseVersion: item.editVersion }).then(() => {
                 void invalidateWorkbook()
               })
             }}

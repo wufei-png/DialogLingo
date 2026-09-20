@@ -59,7 +59,7 @@ describe('runMigrations', () => {
       .prepare("select count(*) as count from session_search where session_id = 's1'")
       .get() as { count: number }
 
-    expect(migrationCount.count).toBe(5)
+    expect(migrationCount.count).toBe(6)
     expect(searchRows.count).toBe(1)
 
     const indexes = sqlite
@@ -104,6 +104,10 @@ describe('runMigrations', () => {
       'turns_json',
       'updated_at'
     ])
+
+    expect(
+      sqlite.prepare("select name from pragma_table_info('workbook_items') where name = 'edit_version'").get()
+    ).toEqual({ name: 'edit_version' })
   })
 
   it('backs up an existing disk database only when migrations are pending', () => {

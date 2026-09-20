@@ -1,7 +1,7 @@
 import type { z } from 'zod'
 import { workbookItemSchema } from '../../shared/schemas/workbook'
 
-type WorkbookDraft = z.infer<typeof workbookItemSchema>
+type WorkbookDraft = Omit<z.infer<typeof workbookItemSchema>, 'editVersion'>
 
 export function buildWorkbookDrafts(input: {
   workbookId: string

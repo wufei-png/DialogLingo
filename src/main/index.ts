@@ -148,6 +148,7 @@ type WorkbookListItem = {
     sourceSpanRef: string
     excerpt: string
   }>
+  editVersion: number
   isEdited: boolean
 }
 
@@ -856,7 +857,8 @@ function listWorkbookItems(input: {
           generated_snapshot_json as generatedSnapshotJson,
           current_snapshot_json as currentSnapshotJson,
           source_refs_json as sourceRefsJson,
-          state
+          state,
+          edit_version as editVersion
         from workbook_items
         where workbook_id = ?
         order by rowid asc
@@ -870,6 +872,7 @@ function listWorkbookItems(input: {
       currentSnapshotJson: string
       sourceRefsJson: string
       state: 'active' | 'deleted'
+      editVersion: number
     }>
 
   return rows
@@ -881,6 +884,7 @@ function listWorkbookItems(input: {
       generatedSnapshot: JSON.parse(row.generatedSnapshotJson),
       currentSnapshot: JSON.parse(row.currentSnapshotJson),
       sourceRefs: JSON.parse(row.sourceRefsJson),
+      editVersion: row.editVersion,
       isEdited: row.generatedSnapshotJson !== row.currentSnapshotJson
     }))
     .filter((row) => {
@@ -1280,14 +1284,19 @@ function createRouter() {
         sourceSpanRef?: string | null
         highlightText?: string | null
       }) => previewWorkbookSource(input),
-      saveItem: async (input: { itemId: string; currentSnapshot: unknown }) => {
+      saveItem: async (input: {
+        itemId: string
+        currentSnapshot: Parameters<typeof workbookService.saveCurrentSnapshot>[1]
+        baseVersion: number
+      }) => {
         logger.debug('workbook', 'save item requested', { itemId: input.itemId })
         return {
           ok: true as const,
           itemId: input.itemId,
-          currentSnapshot: workbookService.saveCurrentSnapshot(
+          result: workbookService.saveCurrentSnapshot(
             input.itemId,
-            input.currentSnapshot
+            input.currentSnapshot,
+            input.baseVersion
           )
         }
       },
@@ -1307,12 +1316,12 @@ function createRouter() {
           result: workbookService.restoreItem(input.itemId)
         }
       },
-      revertItem: async (input: { itemId: string }) => {
+      revertItem: async (input: { itemId: string; baseVersion: number }) => {
         logger.debug('workbook', 'revert item requested', { itemId: input.itemId })
         return {
           ok: true as const,
           itemId: input.itemId,
-          result: workbookService.revertItem(input.itemId)
+          result: workbookService.revertItem(input.itemId, input.baseVersion)
         }
       }
     },
