@@ -139,7 +139,7 @@ export async function runGenerationJob(input: {
   worker.on('error', (error) => {
     logger.error('generation-worker', 'worker error', {
       jobId: input.jobId,
-      message: error.message,
+      errorName: error.name,
       elapsedSinceSpawnMs: elapsedMs(startedAt)
     })
     input.emit(
@@ -155,7 +155,7 @@ export async function runGenerationJob(input: {
         failedBatchCount: 1,
         failureReason: 'model-request-failure',
         currentSessionTitle: null,
-        currentBatchLabel: error.message
+        currentBatchLabel: 'Generation worker failed.'
       })
     )
   })

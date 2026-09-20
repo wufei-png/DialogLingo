@@ -23,6 +23,7 @@ import {
   renderGenerationPromptTemplate
 } from './prompts'
 import { rankWorkbookItems } from './ranking'
+import { sanitizeModelPrompt } from './sanitizeModelPrompt'
 
 type WorkerTurn = {
   role: 'user' | 'assistant'
@@ -832,7 +833,10 @@ export async function runEnrichmentFromCandidates(input: {
       batchIndex,
       warnings: renderedPrompt.warnings
     })
-    const prompt = renderedPrompt.prompt
+    const prompt = sanitizeModelPrompt(
+      renderedPrompt.prompt,
+      input.message.privacy.redactBeforeRemoteSend
+    )
     const request = buildBatchRequest({
       batchIndex,
       prompt,
@@ -1036,8 +1040,9 @@ export async function runEnrichmentFromCandidates(input: {
         error instanceof ModelAdapterError
           ? error.reason
           : 'model-request-failure'
-      const message =
-        error instanceof Error ? error.message : 'Model request failed.'
+      // Provider error bodies and CLI stderr may echo the request. Never store
+      // or log them with a generation checkpoint.
+      const message = `Model request failed (${reason}).`
 
       runtime.emitCheckpoint({
         kind: 'checkpoint',
