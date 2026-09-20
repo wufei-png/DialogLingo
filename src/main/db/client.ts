@@ -45,6 +45,16 @@ export function createDb(filename: string): DbClient {
     ? new BetterSqlite3(filename, { nativeBinding })
     : new BetterSqlite3(filename)
 
+  try {
+    sqlite.pragma('foreign_keys = ON')
+    if (sqlite.pragma('foreign_keys', { simple: true }) !== 1) {
+      throw new Error(`SQLite foreign key enforcement could not be enabled for ${filename}`)
+    }
+  } catch (error) {
+    sqlite.close()
+    throw error
+  }
+
   return {
     sqlite,
     db: drizzle(sqlite)

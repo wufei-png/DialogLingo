@@ -1,8 +1,5 @@
-import BetterSqlite3 from 'better-sqlite3'
 import crypto from 'node:crypto'
-import { createRequire } from 'node:module'
-import fs from 'node:fs'
-import path from 'node:path'
+import { createDb } from '../db/client'
 
 type DraftItemInput = {
   workbookId: string
@@ -12,38 +9,11 @@ type DraftItemInput = {
   sourceRefs: unknown
 }
 
-const require = createRequire(import.meta.url)
-
-function resolveNativeBinding() {
-  if (process.env.DIALOGLINGO_BETTER_SQLITE3_BINDING) {
-    return process.env.DIALOGLINGO_BETTER_SQLITE3_BINDING
-  }
-
-  if (!process.versions.electron) {
-    return undefined
-  }
-
-  // Keep workbook tests on the default Node binding while Electron uses the
-  // rebuilt native module captured by the app startup scripts.
-  const packageDir = path.dirname(require.resolve('better-sqlite3/package.json'))
-  const bindingPath = path.join(
-    packageDir,
-    'build',
-    'Release',
-    'better_sqlite3.electron.node'
-  )
-
-  return fs.existsSync(bindingPath) ? bindingPath : undefined
-}
-
 export function createWorkbookService(
   filename: string,
   options?: { runMigrations?: boolean }
 ) {
-  const nativeBinding = resolveNativeBinding()
-  const db = nativeBinding
-    ? new BetterSqlite3(filename, { nativeBinding })
-    : new BetterSqlite3(filename)
+  const { sqlite: db } = createDb(filename)
 
   if (options?.runMigrations) {
     db.exec(`
