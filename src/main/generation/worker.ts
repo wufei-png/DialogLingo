@@ -55,6 +55,7 @@ export type StartMessage = {
   sessions: WorkerSession[]
   provider: Settings['provider']
   modelBackend: Settings['modelBackend']
+  privacy: Pick<Settings['privacy'], 'redactBeforeRemoteSend'>
   generation: {
     expressionDifficulty: Settings['generation']['expressionDifficulty']
     batchSize: number

@@ -12,6 +12,7 @@ export type GenerationRunSnapshot = {
   sessionIds: string[]
   promptOverride: string | null
   generation: Settings['generation']
+  privacy: Pick<Settings['privacy'], 'redactBeforeRemoteSend'>
   modelBackend: Settings['modelBackend']
   provider: {
     baseUrl: string
@@ -19,6 +20,10 @@ export type GenerationRunSnapshot = {
   }
   runKind: GenerationRunKind
   parentJobId: string | null
+}
+
+type StoredGenerationRunSnapshot = Omit<GenerationRunSnapshot, 'privacy'> & {
+  privacy?: GenerationRunSnapshot['privacy']
 }
 
 export type JobSessionSnapshot = {
@@ -63,13 +68,16 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isCompleteGenerationRunSnapshot(
-  value: Partial<GenerationRunSnapshot> & { sessionIds?: unknown }
-): value is GenerationRunSnapshot {
+  value: Partial<StoredGenerationRunSnapshot> & { sessionIds?: unknown }
+): value is StoredGenerationRunSnapshot {
   return (
     Array.isArray(value.sessionIds) &&
     value.sessionIds.every((sessionId) => typeof sessionId === 'string') &&
     (typeof value.promptOverride === 'string' || value.promptOverride === null) &&
     isRecord(value.generation) &&
+    (value.privacy === undefined ||
+      (isRecord(value.privacy) &&
+        typeof value.privacy.redactBeforeRemoteSend === 'boolean')) &&
     typeof value.generation.batchSize === 'number' &&
     typeof value.generation.maxItemsPerSession === 'number' &&
     isRecord(value.generation.typeBalanceProfile) &&
@@ -96,6 +104,9 @@ export function buildGenerationRunSnapshot(input: {
     sessionIds: input.sessionIds,
     promptOverride: input.promptOverride?.trim() ? input.promptOverride : null,
     generation: input.settings.generation,
+    privacy: {
+      redactBeforeRemoteSend: input.settings.privacy.redactBeforeRemoteSend
+    },
     modelBackend: input.settings.modelBackend,
     provider: {
       baseUrl: input.settings.provider.baseUrl,
@@ -112,6 +123,7 @@ export function resolveGenerationSettingsForRun(input: {
 }): Pick<Settings, 'modelBackend'> & {
   provider: Settings['provider']
   generation: Settings['generation']
+  privacy: Pick<Settings['privacy'], 'redactBeforeRemoteSend'>
 } {
   return {
     provider: {
@@ -122,7 +134,8 @@ export function resolveGenerationSettingsForRun(input: {
       defaultModel: input.snapshot.provider.defaultModel
     },
     modelBackend: input.snapshot.modelBackend,
-    generation: input.snapshot.generation
+    generation: input.snapshot.generation,
+    privacy: input.snapshot.privacy
   }
 }
 
@@ -349,7 +362,7 @@ export function readGenerationRunSnapshot(
     return null
   }
 
-  const parsed = parseJson<Partial<GenerationRunSnapshot> & { sessionIds?: unknown }>(
+  const parsed = parseJson<Partial<StoredGenerationRunSnapshot> & { sessionIds?: unknown }>(
     row.selectedFiltersJson,
     {}
   )
@@ -357,7 +370,10 @@ export function readGenerationRunSnapshot(
     return null
   }
 
-  return parsed
+  return {
+    ...parsed,
+    privacy: parsed.privacy ?? { redactBeforeRemoteSend: true }
+  }
 }
 
 function validateSessionSnapshots(db: Database.Database, jobId: string) {

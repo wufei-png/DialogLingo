@@ -495,5 +495,54 @@ describe('generation checkpoint store', () => {
       apiKey: 'sk-current',
       defaultModel: 'gpt-test'
     })
+    expect(runtime.privacy.redactBeforeRemoteSend).toBe(true)
+  })
+
+  it('keeps the creation-time OFF policy through a cancelled job and resume', () => {
+    const db = createMigratedDb()
+    const snapshot = buildGenerationRunSnapshot({
+      sessionIds: ['s1'],
+      settings: {
+        ...settings,
+        privacy: { ...settings.privacy, redactBeforeRemoteSend: false }
+      },
+      runKind: 'start'
+    })
+    createGenerationJobCheckpoint({
+      db,
+      jobId: 'privacy-job',
+      createdAt: '2026-06-18T00:10:00Z',
+      snapshot,
+      sessionSnapshots: [{ sessionId: 's1', title: 'Checkpoint source', hash: 'hash-1' }]
+    })
+    db.prepare("update generation_jobs set status = 'cancelled' where id = 'privacy-job'").run()
+
+    const stored = readGenerationRunSnapshot(db, 'privacy-job')!
+    const runtime = resolveGenerationSettingsForRun({ snapshot: stored, currentSettings: settings })
+    expect(runtime.privacy.redactBeforeRemoteSend).toBe(false)
+    expect(JSON.stringify(stored)).not.toContain(settings.provider.apiKey)
+    expect({ ...stored, runKind: 'resume', parentJobId: 'privacy-job' }.privacy)
+      .toEqual({ redactBeforeRemoteSend: false })
+  })
+
+  it('defaults legacy snapshots without a privacy field to ON', () => {
+    const db = createMigratedDb()
+    const snapshot = buildGenerationRunSnapshot({ sessionIds: ['s1'], settings, runKind: 'start' })
+    createGenerationJobCheckpoint({
+      db,
+      jobId: 'legacy-privacy-job',
+      createdAt: '2026-06-18T00:10:00Z',
+      snapshot,
+      sessionSnapshots: [{ sessionId: 's1', title: 'Checkpoint source', hash: 'hash-1' }]
+    })
+    const { privacy: _privacy, ...legacy } = snapshot
+    db.prepare('update generation_jobs set selected_filters_json = ? where id = ?')
+      .run(JSON.stringify(legacy), 'legacy-privacy-job')
+    const restored = readGenerationRunSnapshot(db, 'legacy-privacy-job')!
+    expect(restored.privacy).toEqual({ redactBeforeRemoteSend: true })
+    expect(resolveGenerationSettingsForRun({
+      snapshot: restored,
+      currentSettings: { ...settings, privacy: { ...settings.privacy, redactBeforeRemoteSend: false } }
+    }).privacy.redactBeforeRemoteSend).toBe(true)
   })
 })

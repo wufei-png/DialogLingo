@@ -46,6 +46,7 @@ export async function runGenerationJob(input: {
   }>
   settings: Pick<Settings, 'modelBackend'> & {
     provider: Settings['provider']
+    privacy: Pick<Settings['privacy'], 'redactBeforeRemoteSend'>
     generation: {
       expressionDifficulty: Settings['generation']['expressionDifficulty']
       batchSize: number
@@ -172,6 +173,7 @@ export async function runGenerationJob(input: {
     provider: input.settings.provider,
     modelBackend: input.settings.modelBackend,
     generation: input.settings.generation,
+    privacy: input.settings.privacy,
     promptOverride: input.promptOverride,
     resumeCheckpoint: input.resumeCheckpoint ?? null
   })

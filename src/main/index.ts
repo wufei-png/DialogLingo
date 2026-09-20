@@ -640,6 +640,7 @@ async function startGenerationRun(input: {
   runtimeSettings: Pick<Settings, 'modelBackend'> & {
     provider: Settings['provider']
     generation: Settings['generation']
+    privacy: Pick<Settings['privacy'], 'redactBeforeRemoteSend'>
   }
   resumeCheckpoint?: Parameters<typeof runGenerationJob>[0]['resumeCheckpoint']
 }) {
@@ -738,7 +739,7 @@ async function startGenerationRun(input: {
   const worker = await runGenerationJob({
     jobId,
     sessions: sessionsForGeneration,
-    settings: input.runtimeSettings,
+    settings: { ...input.runtimeSettings, privacy: input.snapshot.privacy },
     promptOverride: input.snapshot.promptOverride ?? undefined,
     resumeCheckpoint: input.resumeCheckpoint ?? null,
     onCheckpoint: (event) => {

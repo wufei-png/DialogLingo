@@ -1,4 +1,6 @@
 import { describe, expect, it } from 'vitest'
+import { randomUUID } from 'node:crypto'
+import { unlinkSync } from 'node:fs'
 import {
   DEFAULT_APP_LOCALE,
   DEFAULT_BATCH_SIZE,
@@ -87,6 +89,7 @@ describe('createSettingsService', () => {
       },
       privacy: {
         ...current.privacy,
+        redactBeforeRemoteSend: false,
         flaggedItemExportPolicy: 'block'
       },
       scan: {
@@ -107,11 +110,27 @@ describe('createSettingsService', () => {
       }
     })
     expect(saved.privacy.flaggedItemExportPolicy).toBe('block')
+    expect(service.get().privacy.redactBeforeRemoteSend).toBe(false)
     expect(saved.scan).toMatchObject({
       scanOnLaunch: false,
       includeArchivedSessions: true
     })
     expect(service.get()).toEqual(saved)
+  })
+
+  it('retains the privacy switch after reopening the settings database', () => {
+    const filename = `${process.env.TMPDIR ?? '/tmp'}/dialoglingo-settings-${randomUUID()}.db`
+    try {
+      const first = createSettingsService(filename, { runMigrations: true })
+      first.save({
+        ...first.get(),
+        privacy: { ...first.get().privacy, redactBeforeRemoteSend: false }
+      })
+      expect(createSettingsService(filename).get().privacy.redactBeforeRemoteSend).toBe(false)
+    } finally {
+      // The database is only a synthetic settings fixture.
+      unlinkSync(filename)
+    }
   })
 
   it('persists the selected app locale', () => {

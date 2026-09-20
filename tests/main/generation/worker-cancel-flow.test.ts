@@ -74,6 +74,7 @@ function createStartMessage(): StartMessage {
         timeoutMs: 1_000
       }
     },
+    privacy: { redactBeforeRemoteSend: true },
     generation: {
       expressionDifficulty: 'average',
       batchSize: 1,
