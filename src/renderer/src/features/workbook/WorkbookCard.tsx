@@ -3,18 +3,13 @@ import { ChevronRight, FileSearch, RotateCcw, Trash2, Undo2 } from 'lucide-react
 import { useTranslation } from 'react-i18next'
 import { IconLabel } from '../../components/IconLabel'
 import { MeasuredCollapse } from '../../components/MeasuredCollapse'
+import {
+  hasUnconfirmedWorkbookCardDraft,
+  type WorkbookCardDraft
+} from './workbookCardModel'
 import type { WorkbookSaveStatus } from './workbookSaveQueue'
 
-type WorkbookSnapshotDraft = {
-  sourceText: string
-  targetText: string
-  gloss: string
-  explanation: string
-  contextText: string
-  quizPrompt: string
-  quizAnswer: string
-  tags: string[]
-}
+type WorkbookSnapshotDraft = WorkbookCardDraft
 
 type Props = {
   itemType: 'Expression' | 'Sentence'
@@ -26,6 +21,7 @@ type Props = {
   quiz: string
   quizAnswer: string
   tags: string
+  confirmedSnapshot: WorkbookSnapshotDraft
   sourceRefCount: number
   deleted?: boolean
   selected: boolean
@@ -75,18 +71,6 @@ function toSnapshot(draft: ReturnType<typeof toDraft>): WorkbookSnapshotDraft {
   }
 }
 
-function hasDraftChanged(draft: ReturnType<typeof toDraft>, props: Props) {
-  return (
-    draft.source !== props.source ||
-    draft.target !== props.target ||
-    draft.gloss !== props.gloss ||
-    draft.explanation !== props.explanation ||
-    draft.contextText !== props.contextText ||
-    draft.quiz !== props.quiz ||
-    draft.quizAnswer !== props.quizAnswer ||
-    draft.tags !== props.tags
-  )
-}
 export function WorkbookCard(props: Props) {
   const { t } = useTranslation()
   const secondaryFieldsId = useId()
@@ -124,7 +108,7 @@ export function WorkbookCard(props: Props) {
   }
 
   async function saveDraft(advance = false) {
-    if (props.deleted || !hasDraftChanged(draft, props)) {
+    if (props.deleted || !hasUnconfirmedWorkbookCardDraft(toSnapshot(draft), props.confirmedSnapshot)) {
       if (advance) {
         props.onAdvance()
       }

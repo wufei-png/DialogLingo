@@ -88,6 +88,7 @@ export function CardStream(props: {
           const row = props.rows[virtualItem.index]
           const saveState = props.saveStates.get(row.id)
           const snapshot = saveState?.draftSnapshot ?? row.currentSnapshot
+          const confirmedSnapshot = saveState?.confirmedSnapshot ?? row.currentSnapshot
           return (
             <div
               key={row.id}
@@ -106,6 +107,16 @@ export function CardStream(props: {
                 quiz={String(snapshot.quizPrompt ?? '')}
                 quizAnswer={String(snapshot.quizAnswer ?? '')}
                 tags={String((snapshot.tags ?? []).join(', '))}
+                confirmedSnapshot={{
+                  sourceText: String(confirmedSnapshot.sourceText ?? ''),
+                  targetText: String(confirmedSnapshot.targetText ?? ''),
+                  gloss: String(confirmedSnapshot.gloss ?? ''),
+                  explanation: String(confirmedSnapshot.explanation ?? ''),
+                  contextText: String(confirmedSnapshot.contextText ?? ''),
+                  quizPrompt: String(confirmedSnapshot.quizPrompt ?? ''),
+                  quizAnswer: String(confirmedSnapshot.quizAnswer ?? ''),
+                  tags: confirmedSnapshot.tags ?? []
+                }}
                 sourceRefCount={row.sourceRefs.length}
                 deleted={row.state === 'deleted'}
                 selected={props.selectedItemId === row.id}
