@@ -48,6 +48,41 @@ describe('scanSessions', () => {
     expect(namespacedTurn.id.startsWith(`${namespacedSession.id}:`)).toBe(true)
   })
 
+  it('returns source diagnostics without discarding other source sessions', async () => {
+    const db = createTestDb()
+    const registry: SourceRegistry = {
+      codex: {
+        listSessions: async () => [],
+        readSession: async () => []
+      },
+      claude: {
+        listSessions: async () => [],
+        readSession: async () => []
+      },
+      opencode: {
+        listSessions: async () => [],
+        readSession: async () => [],
+        getDiagnostics: () => [
+          {
+            sourceType: 'opencode',
+            code: 'opencode-cli-output-unsupported',
+            message: 'Synthetic diagnostic.'
+          }
+        ]
+      }
+    }
+
+    const result = await scanSessions(db, registry)
+
+    expect(result.diagnostics).toEqual([
+      {
+        sourceType: 'opencode',
+        code: 'opencode-cli-output-unsupported',
+        message: 'Synthetic diagnostic.'
+      }
+    ])
+  })
+
   it('reuses turns parsed during listing instead of reading the session again', async () => {
     const db = createTestDb()
     const readSession = vi.fn(async () => {

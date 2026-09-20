@@ -1,16 +1,50 @@
 import fs from 'node:fs'
 import path from 'node:path'
+import { spawnSync } from 'node:child_process'
 import {
   detectLanguageHint,
   matchesSessionFilters,
   type ConversationTurn,
   type SessionFilterInput,
   type SessionSummary,
-  type SourceAdapter
+  type SourceAdapter,
+  type SourceDiagnostic
 } from '../types'
 import { logger } from '../../logging'
 
 type JsonMap = Record<string, unknown>
+
+export type OpenCodeCommandResult = {
+  exitCode: number | null
+  stdout: string
+}
+
+export type OpenCodeCommandRunner = (
+  args: string[],
+  options: { dataHome: string }
+) => OpenCodeCommandResult
+
+export type OpenCodeAdapterOptions = {
+  runCommand?: OpenCodeCommandRunner
+}
+
+function runOpenCodeCommand(
+  args: string[],
+  options: { dataHome: string }
+): OpenCodeCommandResult {
+  const result = spawnSync('opencode', args, {
+    encoding: 'utf8',
+    env: {
+      ...process.env,
+      XDG_DATA_HOME: options.dataHome
+    }
+  })
+
+  return {
+    exitCode: result.error ? null : result.status,
+    stdout: result.stdout ?? ''
+  }
+}
 
 function walkSessionFiles(root: string) {
   const sessionsRoot = path.join(root, 'storage', 'session')
@@ -73,10 +107,77 @@ function findSessionFile(root: string, sessionId: string) {
   return walkSessionFiles(root).find((filePath) => readJson(filePath).id === sessionId) ?? null
 }
 
-export function createOpenCodeAdapter(root: string): SourceAdapter {
+function hasModernOpenCodeDatabase(root: string) {
+  return fs.existsSync(path.join(root, 'opencode.db'))
+}
+
+function isCliPathBoundToRoot(root: string) {
+  return path.basename(path.resolve(root)) === 'opencode'
+}
+
+function detectExportCommand(
+  runCommand: OpenCodeCommandRunner,
+  dataHome: string
+) {
+  const current = runCommand(['export', '--help'], { dataHome })
+  if (current.exitCode === 0) {
+    return ['export']
+  }
+
+  const newer = runCommand(['session', 'export', '--help'], { dataHome })
+  if (newer.exitCode === 0) {
+    return ['session', 'export']
+  }
+
+  return null
+}
+
+export function createOpenCodeAdapter(
+  root: string,
+  options?: OpenCodeAdapterOptions
+): SourceAdapter {
+  let diagnostics: SourceDiagnostic[] = []
+  const runCommand = options?.runCommand ?? runOpenCodeCommand
+
+  function addDiagnostic(code: SourceDiagnostic['code'], message: string) {
+    diagnostics.push({ sourceType: 'opencode', code, message })
+  }
+
   return {
     async listSessions(filters: SessionFilterInput) {
-      return walkSessionFiles(root)
+      diagnostics = []
+      const legacyFiles = walkSessionFiles(root)
+      if (legacyFiles.length === 0 && hasModernOpenCodeDatabase(root)) {
+        if (!isCliPathBoundToRoot(root)) {
+          addDiagnostic(
+            'opencode-cli-path-unverified',
+            'OpenCode 的现代数据目录无法与该来源路径安全绑定；已跳过 CLI 会话读取。'
+          )
+          return []
+        }
+
+        const exportCommand = detectExportCommand(runCommand, path.dirname(root))
+        if (!exportCommand) {
+          const probe = runCommand(['--version'], { dataHome: path.dirname(root) })
+          addDiagnostic(
+            probe.exitCode === null
+              ? 'opencode-cli-unavailable'
+              : 'opencode-cli-export-unsupported',
+            probe.exitCode === null
+              ? '检测到 OpenCode 现代数据，但找不到可用的 opencode CLI；未读取该来源。'
+              : '检测到 OpenCode 现代数据，但 CLI 不支持受支持的会话导出命令；未读取该来源。'
+          )
+          return []
+        }
+
+        addDiagnostic(
+          'opencode-cli-output-unsupported',
+          '检测到 OpenCode 现代数据和可用导出 CLI；当前版本尚未识别其会话导出格式。'
+        )
+        return []
+      }
+
+      return legacyFiles
         .flatMap((filePath) => {
           const session = readJson(filePath)
           const archivedAt = Number(session.archived ?? 0)
@@ -156,6 +257,10 @@ export function createOpenCodeAdapter(root: string): SourceAdapter {
             } satisfies ConversationTurn
           ]
         })
+    },
+
+    getDiagnostics() {
+      return diagnostics
     }
   }
 }

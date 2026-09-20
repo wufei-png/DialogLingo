@@ -63,9 +63,23 @@ export type SourceAdapterOptions = {
   cache?: SourceScanCache
 }
 
+export type SourceDiagnosticCode =
+  | 'opencode-cli-unavailable'
+  | 'opencode-cli-export-unsupported'
+  | 'opencode-cli-path-unverified'
+  | 'opencode-cli-output-unsupported'
+  | 'source-jsonl-line-invalid'
+
+export type SourceDiagnostic = {
+  sourceType: SourceType
+  code: SourceDiagnosticCode
+  message: string
+}
+
 export type SourceAdapter = {
   listSessions: (filters: SessionFilterInput) => Promise<SessionSummary[]>
   readSession: (id: string, options?: { locator?: string }) => Promise<ConversationTurn[]>
+  getDiagnostics?: () => SourceDiagnostic[]
 }
 
 export type SourceRegistry = Record<SourceType, SourceAdapter>
