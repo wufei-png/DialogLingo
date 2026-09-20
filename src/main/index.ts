@@ -91,7 +91,9 @@ const dbPath = resolveDbPath()
 logger.info('startup', `initializing database at ${dbPath}`)
 const { sqlite } = createDb(dbPath)
 
-runMigrations(sqlite)
+runMigrations(sqlite, undefined, {
+  backupDir: path.join(app.getPath('userData'), 'database-backups')
+})
 logger.debug('startup', 'database migrations complete')
 
 const settings = createSettingsService(dbPath, {

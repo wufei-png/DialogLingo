@@ -1,3 +1,6 @@
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { createDb } from '../../../src/main/db/client'
 import {
@@ -101,5 +104,121 @@ describe('runMigrations', () => {
       'turns_json',
       'updated_at'
     ])
+  })
+
+  it('backs up an existing disk database only when migrations are pending', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dialoglingo-migrate-'))
+    const dbPath = path.join(root, 'app.db')
+    const migrationDir = path.join(root, 'migrations')
+    const backupDir = path.join(root, 'user-data', 'database-backups')
+    fs.mkdirSync(migrationDir)
+    fs.writeFileSync(path.join(migrationDir, '0000.sql'), 'create table sample (value text not null);')
+    const { sqlite } = createDb(dbPath)
+
+    try {
+      runMigrations(sqlite, migrationDir, { backupDir })
+      sqlite.prepare('insert into sample (value) values (?)').run('saved')
+      runMigrations(sqlite, migrationDir, { backupDir })
+      expect(fs.existsSync(backupDir)).toBe(false)
+
+      fs.writeFileSync(path.join(migrationDir, '0001.sql'), 'alter table sample add column extra text;')
+      runMigrations(sqlite, migrationDir, { backupDir })
+      const backups = fs.readdirSync(backupDir)
+      expect(backups).toHaveLength(1)
+
+      const { sqlite: snapshot } = createDb(path.join(backupDir, backups[0]))
+      try {
+        expect(snapshot.pragma('integrity_check')).toEqual([{ integrity_check: 'ok' }])
+        expect(snapshot.pragma('foreign_key_check')).toEqual([])
+        expect(snapshot.prepare('select value from sample').get()).toEqual({ value: 'saved' })
+        expect(snapshot.prepare('select count(*) as count from schema_migrations').get()).toEqual({ count: 1 })
+      } finally {
+        snapshot.close()
+      }
+      expect(sqlite.prepare('select value from sample').get()).toEqual({ value: 'saved' })
+    } finally {
+      sqlite.close()
+      fs.rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('does not write migrations when the backup cannot be created', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dialoglingo-migrate-'))
+    const migrationDir = path.join(root, 'migrations')
+    fs.mkdirSync(migrationDir)
+    fs.writeFileSync(path.join(migrationDir, '0000.sql'), 'create table sample (value text);')
+    const { sqlite } = createDb(path.join(root, 'app.db'))
+
+    try {
+      runMigrations(sqlite, migrationDir)
+      const blocker = path.join(root, 'not-a-directory')
+      fs.writeFileSync(blocker, 'block')
+      fs.writeFileSync(path.join(migrationDir, '0001.sql'), 'alter table sample add column extra text;')
+
+      expect(() => runMigrations(sqlite, migrationDir, { backupDir: blocker })).toThrow('Database migration failed')
+      expect(sqlite.prepare('select count(*) as count from schema_migrations').get()).toEqual({ count: 1 })
+      expect(sqlite.prepare("select count(*) as count from pragma_table_info('sample')").get()).toEqual({ count: 1 })
+      expect(sqlite.pragma('integrity_check')).toEqual([{ integrity_check: 'ok' }])
+    } finally {
+      sqlite.close()
+      fs.rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('leaves a corrupt disk file untouched when preflight fails', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dialoglingo-migrate-'))
+    const dbPath = path.join(root, 'app.db')
+    const backupDir = path.join(root, 'backups')
+    const invalidBytes = Buffer.from('not a sqlite database')
+    fs.writeFileSync(dbPath, invalidBytes)
+
+    try {
+      const { sqlite } = createDb(dbPath)
+      try {
+        expect(() => runMigrations(sqlite, resolveDefaultMigrationsDir(), { backupDir })).toThrow(
+          'Database migration failed'
+        )
+      } finally {
+        sqlite.close()
+      }
+      expect(fs.readFileSync(dbPath)).toEqual(invalidBytes)
+      expect(fs.existsSync(backupDir)).toBe(false)
+    } finally {
+      fs.rmSync(root, { recursive: true, force: true })
+    }
+  })
+
+  it('keeps the original and snapshot usable if a later migration fails', () => {
+    const root = fs.mkdtempSync(path.join(os.tmpdir(), 'dialoglingo-migrate-'))
+    const migrationDir = path.join(root, 'migrations')
+    const backupDir = path.join(root, 'backups')
+    fs.mkdirSync(migrationDir)
+    fs.writeFileSync(path.join(migrationDir, '0000.sql'), 'create table sample (value text);')
+    const { sqlite } = createDb(path.join(root, 'app.db'))
+
+    try {
+      runMigrations(sqlite, migrationDir)
+      sqlite.prepare('insert into sample (value) values (?)').run('original')
+      fs.writeFileSync(path.join(migrationDir, '0001.sql'), 'alter table sample add column extra text;')
+      fs.writeFileSync(path.join(migrationDir, '0002.sql'), 'invalid sql;')
+
+      expect(() => runMigrations(sqlite, migrationDir, { backupDir })).toThrow('Database migration failed')
+      expect(sqlite.prepare('select value from sample').get()).toEqual({ value: 'original' })
+      expect(sqlite.prepare("select count(*) as count from pragma_table_info('sample')").get()).toEqual({ count: 1 })
+      expect(sqlite.prepare('select count(*) as count from schema_migrations').get()).toEqual({ count: 1 })
+
+      const backups = fs.readdirSync(backupDir)
+      expect(backups).toHaveLength(1)
+      const { sqlite: snapshot } = createDb(path.join(backupDir, backups[0]))
+      try {
+        expect(snapshot.prepare('select value from sample').get()).toEqual({ value: 'original' })
+        expect(snapshot.pragma('integrity_check')).toEqual([{ integrity_check: 'ok' }])
+      } finally {
+        snapshot.close()
+      }
+    } finally {
+      sqlite.close()
+      fs.rmSync(root, { recursive: true, force: true })
+    }
   })
 })
