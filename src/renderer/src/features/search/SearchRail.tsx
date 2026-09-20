@@ -39,6 +39,8 @@ type SearchSession = {
 type GenerationPromptPreview = {
   prompt: string
   candidateCount: number
+  examplePrompt: string | null
+  redactBeforeRemoteSend: boolean
 }
 
 const SEARCH_SCOPE_VALUES = ['all', 'titles', 'transcript'] as const
@@ -139,7 +141,7 @@ export function SearchRail(props: {
   onFocusSession: (sessionId: string) => void
   onToggleGroup: (groupId: string) => void
   onRescan: () => void
-  onPromptPreview: (sessionIds: string[]) => Promise<GenerationPromptPreview>
+  onPromptPreview: (sessionIds: string[], promptOverride?: string | null) => Promise<GenerationPromptPreview>
   onGenerate: (sessionIds: string[], promptOverride: string | null) => Promise<void>
 }) {
   const { t } = useTranslation()

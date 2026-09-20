@@ -16,9 +16,11 @@ type Props = {
   sessionIds: string[]
   platformSummary: SummaryRow[]
   projectSummary: SummaryRow[]
-  onLoadPrompt: (sessionIds: string[]) => Promise<{
+  onLoadPrompt: (sessionIds: string[], promptOverride?: string | null) => Promise<{
     prompt: string
     candidateCount: number
+    examplePrompt: string | null
+    redactBeforeRemoteSend: boolean
   }>
   onConfirm: (promptOverride: string | null) => void
   onCancel: () => void
@@ -42,6 +44,11 @@ export function GenerateWorkbookSheet(props: Props) {
   const [originalPrompt, setOriginalPrompt] = useState('')
   const [savedPrompt, setSavedPrompt] = useState('')
   const [candidateCount, setCandidateCount] = useState(0)
+  const [defaultExample, setDefaultExample] = useState<string | null>(null)
+  const [examplePrompt, setExamplePrompt] = useState<string | null>(null)
+  const [redactionEnabled, setRedactionEnabled] = useState(true)
+  const [loadingExample, setLoadingExample] = useState(false)
+  const [exampleError, setExampleError] = useState<string | null>(null)
   const [loadingPrompt, setLoadingPrompt] = useState(false)
   const [promptError, setPromptError] = useState<string | null>(null)
   const [focused, setFocused] = useState(false)
@@ -62,6 +69,8 @@ export function GenerateWorkbookSheet(props: Props) {
       setOriginalPrompt('')
       setSavedPrompt('')
       setCandidateCount(0)
+      setExamplePrompt(null)
+      setDefaultExample(null)
       setLoadingPrompt(false)
       setPromptError(null)
       setSaved(false)
@@ -76,6 +85,8 @@ export function GenerateWorkbookSheet(props: Props) {
     setOriginalPrompt('')
     setSavedPrompt('')
     setCandidateCount(0)
+    setExamplePrompt(null)
+    setDefaultExample(null)
 
     void props.onLoadPrompt(props.sessionIds).then(
       (preview) => {
@@ -87,6 +98,9 @@ export function GenerateWorkbookSheet(props: Props) {
         setOriginalPrompt(preview.prompt)
         setSavedPrompt(preview.prompt)
         setCandidateCount(preview.candidateCount)
+        setExamplePrompt(preview.examplePrompt)
+        setDefaultExample(preview.examplePrompt)
+        setRedactionEnabled(preview.redactBeforeRemoteSend)
         setLoadingPrompt(false)
       },
       (error) => {
@@ -103,6 +117,46 @@ export function GenerateWorkbookSheet(props: Props) {
       cancelled = true
     }
   }, [props.open, props.selectedCount, props.sessionIds, props.onLoadPrompt, sessionSignature])
+
+  useEffect(() => {
+    if (!props.open || loadingPrompt || promptError || props.selectedCount === 0) {
+      return
+    }
+    if (!promptChanged) {
+      setExamplePrompt(defaultExample)
+      setLoadingExample(false)
+      setExampleError(null)
+      return
+    }
+    if (promptBlank) {
+      setExamplePrompt(null)
+      return
+    }
+
+    let cancelled = false
+    setLoadingExample(true)
+    setExamplePrompt(null)
+    setExampleError(null)
+    const timer = window.setTimeout(() => {
+      void props.onLoadPrompt(props.sessionIds, prompt).then(
+        (preview) => {
+          if (cancelled) return
+          setExamplePrompt(preview.examplePrompt)
+          setRedactionEnabled(preview.redactBeforeRemoteSend)
+          setLoadingExample(false)
+        },
+        (error) => {
+          if (cancelled) return
+          setExampleError(error instanceof Error ? error.message : String(error))
+          setLoadingExample(false)
+        }
+      )
+    }, 250)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timer)
+    }
+  }, [props.open, props.selectedCount, props.sessionIds, props.onLoadPrompt, loadingPrompt, promptError, promptChanged, promptBlank, prompt, defaultExample])
 
   useEffect(() => {
     const textarea = textareaRef.current
@@ -180,7 +234,7 @@ export function GenerateWorkbookSheet(props: Props) {
         <section className="generation-prompt-panel">
           <div className="prompt-editor-header">
             <div>
-              <h3>{t('generateWorkbook.modelPrompt')}</h3>
+              <h3>{t('generateWorkbook.editableTemplate')}</h3>
               <p>
                 {loadingPrompt
                   ? t('generateWorkbook.preparingPrompt')
@@ -221,6 +275,16 @@ export function GenerateWorkbookSheet(props: Props) {
               />
             </div>
           )}
+        </section>
+        <section className="generation-example-panel" aria-label={t('generateWorkbook.exampleTitle')}>
+          <h3>{t('generateWorkbook.exampleTitle')}</h3>
+          <p>{t('generateWorkbook.exampleDescription')}</p>
+          <p>{t(redactionEnabled ? 'generateWorkbook.redactionOn' : 'generateWorkbook.redactionOff')}</p>
+          {loadingPrompt || loadingExample ? <p>{t('generateWorkbook.preparingExample')}</p> : null}
+          {exampleError ? <p className="prompt-editor-error">{exampleError}</p> : null}
+          {examplePrompt ? <pre className="generation-example-text">{examplePrompt}</pre> : null}
+          {!loadingPrompt && !loadingExample && !examplePrompt && !exampleError
+            ? <p>{t('generateWorkbook.noExample')}</p> : null}
         </section>
         <div className="sheet-actions">
           <button type="button" onClick={props.onCancel}>

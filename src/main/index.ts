@@ -570,13 +570,18 @@ function queryMockSessionRows(sessionIds: string[]): GenerationSessionRow[] {
   return sessions
 }
 
-function buildMockPromptPreview(selectedSessionCount: number) {
+function buildMockPromptPreview(
+  selectedSessionCount: number,
+  redactBeforeRemoteSend: boolean
+) {
   logger.debug(
     'generation-preview',
     `mock prompt preview selectedSessions=${selectedSessionCount}`
   )
   return {
     candidateCount: createMockLearningItemDrafts().length,
+    examplePrompt: null,
+    redactBeforeRemoteSend,
     prompt: [
       'Mock LLM mode is enabled.',
       `${selectedSessionCount} selected session${selectedSessionCount === 1 ? '' : 's'} will generate deterministic sample workbook items.`,
@@ -1110,7 +1115,10 @@ function createRouter() {
       }
     },
     generation: {
-      previewPrompt: async (input: { sessionIds: string[] }) => {
+      previewPrompt: async (input: {
+        sessionIds: string[]
+        promptOverride?: string | null
+      }) => {
         if (input.sessionIds.length === 0) {
           throw new Error('Select at least one session before generating.')
         }
@@ -1122,7 +1130,10 @@ function createRouter() {
         })
         const currentSettings = settings.get() as Settings
         if (isMockLlmEnabled()) {
-          const preview = buildMockPromptPreview(input.sessionIds.length)
+          const preview = buildMockPromptPreview(
+            input.sessionIds.length,
+            currentSettings.privacy.redactBeforeRemoteSend
+          )
           logger.debug('generation-preview', 'prompt preview complete', {
             selectedSessionCount: input.sessionIds.length,
             candidateCount: preview.candidateCount,
@@ -1137,7 +1148,9 @@ function createRouter() {
           sessions: sessionsForGeneration,
           expressionDifficulty: currentSettings.generation.expressionDifficulty,
           maxItemsPerSession: currentSettings.generation.maxItemsPerSession,
-          batchSize: currentSettings.generation.batchSize
+          batchSize: currentSettings.generation.batchSize,
+          promptOverride: input.promptOverride,
+          redactBeforeRemoteSend: currentSettings.privacy.redactBeforeRemoteSend
         })
         logger.debug('generation-preview', 'prompt preview complete', {
           selectedSessionCount: input.sessionIds.length,

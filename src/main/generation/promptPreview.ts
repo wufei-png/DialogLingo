@@ -1,7 +1,8 @@
 import type { ExpressionDifficulty } from '../../shared/schemas/settings'
 import { mineCandidateGroups } from './candidates'
 import { precleanTurns } from './preclean'
-import { buildGenerationPromptTemplate } from './prompts'
+import { buildGenerationPromptTemplate, renderGenerationPromptTemplate } from './prompts'
+import { sanitizeModelPrompt } from './sanitizeModelPrompt'
 
 export type GenerationPromptSession = {
   sessionId: string
@@ -44,16 +45,32 @@ export function buildGenerationPromptPreview(input: {
   expressionDifficulty: ExpressionDifficulty
   maxItemsPerSession: number
   batchSize: number
+  promptOverride?: string | null
+  redactBeforeRemoteSend: boolean
 }) {
   const candidates = collectGenerationPromptCandidates({
     sessions: input.sessions,
     maxItemsPerSession: input.maxItemsPerSession
   })
 
+  const prompt = buildGenerationPromptTemplate({
+    expressionDifficulty: input.expressionDifficulty
+  })
+  const exampleBatch = candidates.slice(0, input.batchSize)
+
   return {
     candidateCount: candidates.length,
-    prompt: buildGenerationPromptTemplate({
-      expressionDifficulty: input.expressionDifficulty
-    })
+    prompt,
+    examplePrompt:
+      exampleBatch.length > 0
+        ? sanitizeModelPrompt(
+            renderGenerationPromptTemplate({
+              template: input.promptOverride?.trim() ? input.promptOverride : prompt,
+              excerpts: exampleBatch
+            }).prompt,
+            input.redactBeforeRemoteSend
+          )
+        : null,
+    redactBeforeRemoteSend: input.redactBeforeRemoteSend
   }
 }

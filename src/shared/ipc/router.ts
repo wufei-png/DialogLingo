@@ -100,7 +100,10 @@ export function buildRouter(deps: RouterDeps) {
     projectsList: t.procedure.query(() => deps.projects.list()),
     launchScanStatus: t.procedure.query(() => deps.scan.getLaunchStatus()),
     generationPromptPreview: t.procedure
-      .input(z.object({ sessionIds: z.array(z.string()) }))
+      .input(z.object({
+        sessionIds: z.array(z.string()),
+        promptOverride: z.string().nullable().optional()
+      }))
       .query(({ input }) => deps.generation.previewPrompt(input)),
     generationStart: t.procedure
       .input(

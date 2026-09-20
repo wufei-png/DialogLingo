@@ -123,6 +123,7 @@ export function SettingsSheet(props: Props) {
   const [balanceStrength, setBalanceStrength] = useState('0.1')
   const [scanOnLaunch, setScanOnLaunch] = useState(true)
   const [includeArchivedSessions, setIncludeArchivedSessions] = useState(false)
+  const [redactBeforeRemoteSend, setRedactBeforeRemoteSend] = useState(true)
   const [flaggedItemExportPolicy, setFlaggedItemExportPolicy] =
     useState<FlaggedItemExportPolicy>('warn')
   const [saveMessage, setSaveMessage] = useState<string | null>(null)
@@ -191,6 +192,7 @@ export function SettingsSheet(props: Props) {
     setScanOnLaunch(settingsQuery.data.scan.scanOnLaunch)
     setIncludeArchivedSessions(settingsQuery.data.scan.includeArchivedSessions)
     setFlaggedItemExportPolicy(settingsQuery.data.privacy.flaggedItemExportPolicy)
+    setRedactBeforeRemoteSend(settingsQuery.data.privacy.redactBeforeRemoteSend)
     setSaveMessage(null)
     setModelOptions([])
     setModelListKey(null)
@@ -270,6 +272,7 @@ export function SettingsSheet(props: Props) {
       },
       privacy: {
         ...current.privacy,
+        redactBeforeRemoteSend,
         flaggedItemExportPolicy
       },
       scan: {
@@ -585,6 +588,21 @@ export function SettingsSheet(props: Props) {
           <h3 className="settings-section-heading">
             <IconLabel icon={Shield}>{t('settings.privacy')}</IconLabel>
           </h3>
+          <label className="settings-toggle-row">
+            <span>{t('settings.redactBeforeRemoteSend')}</span>
+            <span className="settings-switch-control">
+              <input
+                className="settings-switch-input"
+                type="checkbox"
+                checked={redactBeforeRemoteSend}
+                onChange={(event) => setRedactBeforeRemoteSend(event.currentTarget.checked)}
+              />
+              <span className="settings-switch" aria-hidden="true" />
+            </span>
+          </label>
+          <p className="settings-privacy-note">
+            {t(redactBeforeRemoteSend ? 'settings.redactionOnHelp' : 'settings.redactionOffHelp')}
+          </p>
           <label>
             <span>{t('settings.flaggedItemExportPolicy')}</span>
             <select

@@ -1112,6 +1112,8 @@ Transcript privacy is a first-order requirement.
 ### Requirements
 
 - local index by default
+- the generation run snapshots the ON/OFF privacy switch; legacy snapshots resume with ON. The final model prompt filter runs after template and excerpt rendering for API and CLI backends, covering listed credential tokens, authorization values, obvious secret assignments, and user home paths. It is limited pattern filtering, not complete anonymity. OFF skips this final filter while existing candidate pre-clean still applies.
+- prompt editing shows the reusable template separately from one rendered example batch under the current privacy setting; the example does not promise identical content for later batches. Mock generation does not call a model.
 - explicit provider configuration before remote generation
 - visible provenance from workbook item back to source session span
 - transcript pre-cleaning before provider calls

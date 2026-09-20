@@ -46,6 +46,8 @@ type TimeRangePreset = 'last-7-days' | 'last-30-days' | 'all-time'
 type GenerationPromptPreview = {
   prompt: string
   candidateCount: number
+  examplePrompt: string | null
+  redactBeforeRemoteSend: boolean
 }
 
 const SOURCE_GROUP_IDS = ['codex', 'claude', 'opencode']
@@ -436,9 +438,10 @@ export function SearchPage(props: {
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [fallbackNavigationRowId, groups, navigationRowId])
 
-  const loadGenerationPromptPreview = useCallback(async (sessionIds: string[]) => {
+  const loadGenerationPromptPreview = useCallback(async (sessionIds: string[], promptOverride?: string | null) => {
     return (await trpc.generationPromptPreview.query({
-      sessionIds
+      sessionIds,
+      promptOverride
     })) as GenerationPromptPreview
   }, [])
 
