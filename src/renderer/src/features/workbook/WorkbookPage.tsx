@@ -408,9 +408,35 @@ export function WorkbookPage(props: {
   }
 
   async function deleteItem(itemId: string) {
+    await saveQueueRef.current?.whenIdle(itemId).catch(() => {})
     setSelectedItemId((current) => selectAfterWorkbookRemoval(rows, itemId, current))
     await trpc.workbookDeleteItem.mutate({ itemId })
     await invalidateWorkbook()
+  }
+
+  async function restoreItem(itemId: string) {
+    await saveQueueRef.current?.whenIdle(itemId).catch(() => {})
+    await trpc.workbookRestoreItem.mutate({ itemId })
+    await invalidateWorkbook()
+  }
+
+  async function revertItem(itemId: string) {
+    const queue = saveQueueRef.current
+    if (!queue) {
+      return
+    }
+    queue.discardDraft(itemId)
+    await queue.whenIdle(itemId).catch(() => {})
+    const state = queue.get(itemId)
+    if (!state) {
+      return
+    }
+    const response = (await trpc.workbookRevertItem.mutate({
+      itemId,
+      baseVersion: state.editVersion
+    })) as { result: WorkbookSaveResult }
+    queue.applyServerResult(itemId, response.result)
+    await invalidateWorkbook().catch(() => {})
   }
 
   async function resumeGeneration() {
@@ -777,11 +803,7 @@ export function WorkbookPage(props: {
             onSelectItem={setSelectedItemId}
             onAdvanceSelection={selectNextItem}
             onDeleteItem={(itemId) => void deleteItem(itemId)}
-            onRestoreItem={(itemId) => {
-              void trpc.workbookRestoreItem.mutate({ itemId }).then(() => {
-                void invalidateWorkbook()
-              })
-            }}
+            onRestoreItem={(itemId) => void restoreItem(itemId)}
             onSaveItem={saveItem}
             saveStates={saveStates}
             onDraftChange={(itemId, nextSnapshot) => {
@@ -795,13 +817,7 @@ export function WorkbookPage(props: {
               await invalidateWorkbook().catch(() => {})
             }}
             onRevertItem={(itemId) => {
-              const item = rows.find((row) => row.id === itemId)
-              if (!item) {
-                return
-              }
-              void trpc.workbookRevertItem.mutate({ itemId, baseVersion: item.editVersion }).then(() => {
-                void invalidateWorkbook()
-              })
+              void revertItem(itemId).catch(() => {})
             }}
             onOpenSource={openSource}
           />

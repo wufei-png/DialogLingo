@@ -120,4 +120,35 @@ describe('WorkbookSaveQueue', () => {
       editVersion: 0
     })
   })
+
+  it('restores the last confirmed draft after Esc during an in-flight save', async () => {
+    const first = deferred<WorkbookSaveResult>()
+    const save = vi
+      .fn()
+      .mockReturnValueOnce(first.promise)
+      .mockResolvedValueOnce({
+        status: 'saved',
+        currentSnapshot: snapshot('initial'),
+        editVersion: 2
+      })
+    const queue = new WorkbookSaveQueue(save, () => {})
+    queue.syncServer([{ id: 'item', currentSnapshot: snapshot('initial'), editVersion: 0 }])
+    queue.setDraft('item', snapshot('edited'))
+    const completed = queue.requestSave('item')
+    queue.discardDraft('item')
+    first.resolve({ status: 'saved', currentSnapshot: snapshot('edited'), editVersion: 1 })
+    await completed
+
+    expect(save).toHaveBeenNthCalledWith(2, {
+      itemId: 'item',
+      currentSnapshot: snapshot('initial'),
+      baseVersion: 1
+    })
+    expect(queue.get('item')).toMatchObject({
+      confirmedSnapshot: snapshot('initial'),
+      draftSnapshot: snapshot('initial'),
+      editVersion: 2,
+      status: 'saved'
+    })
+  })
 })

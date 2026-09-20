@@ -146,6 +146,31 @@ export class WorkbookSaveQueue {
     return entry.inFlight
   }
 
+  async whenIdle(itemId: string) {
+    const entry = this.requireEntry(itemId)
+    if (entry.inFlight) {
+      await entry.inFlight
+    }
+  }
+
+  applyServerResult(itemId: string, result: WorkbookSaveResult) {
+    const entry = this.requireEntry(itemId)
+    entry.confirmedSnapshot = result.currentSnapshot
+    entry.editVersion = result.editVersion
+    if (result.status === 'conflict') {
+      entry.draftSnapshot = preserveServerOnlyFields(entry.draftSnapshot, result.currentSnapshot)
+      entry.status = 'conflict'
+      entry.error = 'conflict'
+      this.onChange()
+      throw new Error('conflict')
+    }
+
+    entry.draftSnapshot = result.currentSnapshot
+    entry.status = 'saved'
+    entry.error = null
+    this.onChange()
+  }
+
   private requireEntry(itemId: string) {
     const entry = this.entries.get(itemId)
     if (!entry) {
