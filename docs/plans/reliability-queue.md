@@ -1,6 +1,6 @@
 # DialogLingo · 可靠性实施队列
 
-状态：实施中（01–04 已完成）。核查基线：`main@24fea69f9fb1e506fb88f3238091ece2388730e4`，2026-09-21。后续会话先核对当前 HEAD、工作树和代码；此基线不是持续有效的现状声明。
+状态：实施中（01–05 已完成）。核查基线：`main@24fea69f9fb1e506fb88f3238091ece2388730e4`，2026-09-21。后续会话先核对当前 HEAD、工作树和代码；此基线不是持续有效的现状声明。
 
 ## 目标与顺序
 
@@ -12,7 +12,7 @@
 | 02 | [数据库完整性与迁移恢复](02-db-integrity-migrations.md) | P0 | 01，交付顺序 | 已实施 |
 | 03 | [工作簿可靠保存](03-workbook-durable-save.md) | P0 | 02 | 已实施 |
 | 04 | [OpenCode 与来源解析兼容](04-source-compatibility.md) | P0 | 03，交付顺序 | 已实施 |
-| 05 | [工作簿键盘焦点](05-workbook-focus.md) | P1 | 03、04，交付顺序 | 待实施 |
+| 05 | [工作簿键盘焦点](05-workbook-focus.md) | P1 | 03、04，交付顺序 | 已实施 |
 | 06 | [导出完整性与 Anki 互操作](06-export-anki.md) | P1 | 02、03、05 | 待实施 |
 | 07 | [Electron 与 IPC 边界](07-electron-ipc.md) | P1 | 03、06 | 待实施 |
 
@@ -51,6 +51,6 @@
 | 02 | `174cb6b`、`c2d5976`、`a8a3877`、审查修复 `2d064eb`；独立审查 1 项 P2 已采纳修复；最终 `npm run ci:verify` 通过（192 测试、类型检查、构建），修复后相关 18 测试与 typecheck 通过 | 真实旧版数据库、桌面启动/重启、手工恢复和跨平台运行未验证；详见 02 计划 |
 | 03 | `e6d3bf3`、`d88a560`、`c25947b`、审查修复 `a7cfd08`；独立审查 1 项 P0 已采纳修复；最终 `npm run ci:verify` 通过（199 测试、类型检查、构建），修复后相关 57 测试通过 | Electron 桌面手工快速编辑/断开 IPC Retry/重启读回、真实旧版用户数据库 migration、多窗口或跨进程冲突未验证；详见 03 计划 |
 | 04 | `182a5e5`、`e883165`、`e8d65ff`、审查修复 `b3ff3aa`；独立审查 2 项 P1、1 项 P2 均已采纳修复；最终 `npm run ci:verify` 通过（209 测试、类型检查、构建） | 真实 OpenCode CLI list/export JSON、Electron 手工扫描、真实 legacy/现代迁移目录和未来 `opencode session export` 变体未验证；详见 04 计划 |
-| 05 | 待实施 | — |
+| 05 | `5235554`、`276f38f`；阶段 1 renderer 39 项测试与类型检查通过，阶段 2 renderer 41 项测试与 `npm run ci:verify` 通过（212 测试、类型检查、构建）；独立审查以 `c6b3838` 为基线，`No findings.`，无修复提交 | 未做真实 Electron/Chromium 键盘 QA；ArrowUp/ArrowDown、完整 Tab 遍历及导出、查看来源、删除/恢复、失败重试的端到端手工流程未逐项验证；虚拟列表跨窗口只用 JSDOM 模拟尺寸与 RAF；详见 05 计划 |
 | 06 | 待实施 | — |
 | 07 | 待实施 | — |
