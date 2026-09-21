@@ -71,6 +71,7 @@ import { scanSessions } from './scan/scanSessions'
 import { createSettingsService } from './settings/service'
 import { createWorkbookService } from './workbook/service'
 import { logger } from './logging'
+import { attachRendererWindowSecurity } from './window/security'
 import {
   createDevRendererTarget,
   createIpcSenderAuthorizer,
@@ -1650,10 +1651,16 @@ function createWindow() {
     title: 'DialogLingo',
     webPreferences: {
       contextIsolation: true,
+      sandbox: true,
+      nodeIntegration: false,
+      nodeIntegrationInSubFrames: false,
+      webSecurity: true,
+      allowRunningInsecureContent: false,
       preload: preloadPath
     }
   })
 
+  attachRendererWindowSecurity(win, rendererTarget)
   ipcSenderAuthorizer.register(win.webContents)
   win.webContents.once('destroyed', () => {
     ipcSenderAuthorizer.unregister(win.webContents)
