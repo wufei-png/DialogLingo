@@ -34,7 +34,9 @@ describe('renderer window security policy', () => {
 
     expect(development).toContain("connect-src 'self' http://localhost:*")
     expect(development).toContain("ws://localhost:*")
+    expect(development).toContain("script-src 'self' 'unsafe-inline'")
     expect(packaged).toContain("connect-src 'self';")
+    expect(packaged).toContain("script-src 'self';")
     expect(packaged).not.toContain('localhost')
     expect(packaged).toContain("object-src 'none'")
   })
