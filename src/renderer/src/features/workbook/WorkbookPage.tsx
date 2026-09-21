@@ -63,6 +63,8 @@ type WorkbookSourcePreview = {
   matchedBy: 'source-span' | 'highlight-text' | 'none'
 }
 
+const EMPTY_WORKBOOK_ITEMS: WorkbookItem[] = []
+
 function getMarkedText(preview: WorkbookSourcePreview | null) {
   return preview?.turns.map((turn) => turn.text).join('\n\n') ?? ''
 }
@@ -73,6 +75,13 @@ function isTextEditingTarget(target: EventTarget | null) {
     (target.tagName === 'INPUT' ||
       target.tagName === 'TEXTAREA' ||
       target.isContentEditable)
+  )
+}
+
+function isInteractiveKeyboardTarget(target: EventTarget | null) {
+  return (
+    target instanceof Element &&
+    Boolean(target.closest('button, a, select, [role="button"]'))
   )
 }
 
@@ -207,7 +216,7 @@ export function WorkbookPage(props: {
       })) as WorkbookItem[]
   })
 
-  const rows = workbookQuery.data ?? []
+  const rows = workbookQuery.data ?? EMPTY_WORKBOOK_ITEMS
   const settingsQuery = useQuery({
     enabled: exportOpen,
     queryKey: ['settings'],
@@ -347,7 +356,10 @@ export function WorkbookPage(props: {
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
-      if (isTextEditingTarget(event.target)) {
+      if (
+        isTextEditingTarget(event.target) ||
+        isInteractiveKeyboardTarget(event.target)
+      ) {
         return
       }
 

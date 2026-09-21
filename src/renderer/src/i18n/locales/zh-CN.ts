@@ -203,6 +203,7 @@ const zhCN = {
     restartFailed: '重新生成失败。',
     itemsCount: '{{count}} 个条目',
     sourceRefsCount: '{{count}} 个来源',
+    cardLabel: '{{type}}卡片：{{source}}（{{state}}）',
     noItemsInView: '当前视图没有学习册条目。',
     tabs: {
       all: '全部',

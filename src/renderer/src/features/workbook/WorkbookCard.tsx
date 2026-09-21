@@ -74,8 +74,28 @@ function toSnapshot(draft: ReturnType<typeof toDraft>): WorkbookSnapshotDraft {
   }
 }
 
+function fromSnapshot(snapshot: WorkbookSnapshotDraft) {
+  return {
+    source: snapshot.sourceText,
+    target: snapshot.targetText,
+    gloss: snapshot.gloss,
+    explanation: snapshot.explanation,
+    contextText: snapshot.contextText,
+    quiz: snapshot.quizPrompt,
+    quizAnswer: snapshot.quizAnswer,
+    tags: snapshot.tags.join(', ')
+  }
+}
+
 function isInteractiveCardTarget(target: EventTarget | null) {
-  return target instanceof Element && Boolean(target.closest('button, input, textarea, select, a, [contenteditable="true"]'))
+  return (
+    target instanceof Element &&
+    Boolean(
+      target.closest(
+        'button, input, textarea, select, a, [contenteditable="true"]'
+      )
+    )
+  )
 }
 
 export function WorkbookCard(props: Props) {
@@ -106,6 +126,7 @@ export function WorkbookCard(props: Props) {
   }, [props.deleted, props.focusTargetRevision, props.selected])
 
   function resetDraft() {
+    setDraft(fromSnapshot(props.confirmedSnapshot))
     props.onDiscardDraft()
   }
 
@@ -157,6 +178,11 @@ export function WorkbookCard(props: Props) {
       tabIndex={props.tabIndex}
       data-workbook-card="true"
       data-workbook-item-id={props.itemId}
+      aria-label={t('workbook.cardLabel', {
+        type: t(`workbook.itemTypes.${props.itemType}`),
+        source: draft.source,
+        state: props.selected ? t('common.selected') : t('common.notSelected')
+      })}
       className={[
         'workbook-card',
         props.selected ? 'is-selected' : '',
@@ -184,20 +210,27 @@ export function WorkbookCard(props: Props) {
             {props.modified ? <span>{t('workbook.status.modified')}</span> : null}
             {props.deleted ? <span>{t('workbook.status.deleted')}</span> : null}
             {!props.deleted && props.saveStatus === 'saving' ? (
-              <span aria-live="polite">{t('workbook.status.saving')}</span>
+              <span aria-atomic="true" aria-live="polite">
+                {t('workbook.status.saving')}
+              </span>
             ) : null}
             {!props.deleted && props.saveStatus === 'saved' ? (
-              <span aria-live="polite">{t('workbook.status.saved')}</span>
+              <span aria-atomic="true" aria-live="polite">
+                {t('workbook.status.saved')}
+              </span>
             ) : null}
             {!props.deleted && (props.saveStatus === 'error' || props.saveStatus === 'conflict') ? (
-              <span aria-live="assertive">
+              <span aria-atomic="true" className="workbook-card-save-error" role="alert">
                 {props.saveStatus === 'conflict'
                   ? t('workbook.status.conflict')
                   : t('workbook.status.saveFailed')}
-                <button type="button" onClick={() => void props.onRetry().catch(() => {})}>
-                  {t('workbook.actions.retry')}
-                </button>
+                {props.saveError ? `: ${props.saveError}` : null}
               </span>
+            ) : null}
+            {!props.deleted && (props.saveStatus === 'error' || props.saveStatus === 'conflict') ? (
+              <button type="button" onClick={() => void props.onRetry().catch(() => {})}>
+                {t('workbook.actions.retry')}
+              </button>
             ) : null}
           </div>
           <div className="workbook-card-actions">

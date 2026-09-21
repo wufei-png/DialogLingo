@@ -197,6 +197,7 @@ const en = {
     restartFailed: 'Restart failed.',
     itemsCount: '{{count}} items',
     sourceRefsCount: '{{count}} source refs',
+    cardLabel: '{{type}} card: {{source}} ({{state}})',
     noItemsInView: 'No workbook items in this view.',
     tabs: {
       all: 'All',

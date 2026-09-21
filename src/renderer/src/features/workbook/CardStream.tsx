@@ -66,7 +66,8 @@ export function CardStream(props: {
     count: props.rows.length,
     getScrollElement: () => parentRef.current,
     estimateSize: () => 190,
-    overscan: 6
+    overscan: 6,
+    useFlushSync: false
   })
   const anchorRefs = useRef(new Map<string, HTMLElement>())
   const pendingFocusItemIdRef = useRef<string | null>(null)

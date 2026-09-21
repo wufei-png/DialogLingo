@@ -3751,3 +3751,13 @@ body {
     animation: none;
   }
 }
+
+.workbook-card:focus-visible {
+  outline: 3px solid rgba(217, 119, 6, 0.72);
+  outline-offset: 3px;
+}
+
+.workbook-card-save-error {
+  color: #b42318;
+  font-weight: 600;
+}
