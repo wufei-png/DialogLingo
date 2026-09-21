@@ -75,7 +75,7 @@ export const settingsSchema = z.object({
     typeBalanceProfile: z.object({
       targetExpression: z.number().min(0).max(1),
       targetSentence: z.number().min(0).max(1),
-      lambda: z.number().min(0)
+      lambda: z.number().finite().min(0).max(100)
     })
   }),
   privacy: z.object({

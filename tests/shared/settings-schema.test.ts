@@ -80,4 +80,32 @@ describe('settingsSchema', () => {
       })
     ).toThrow()
   })
+
+  it('rejects non-finite and unbounded type-balance lambdas', () => {
+    expect(() =>
+      settingsSchema.parse({
+        ...LEGACY_SETTINGS,
+        generation: {
+          ...LEGACY_SETTINGS.generation,
+          typeBalanceProfile: {
+            ...LEGACY_SETTINGS.generation.typeBalanceProfile,
+            lambda: Infinity
+          }
+        }
+      })
+    ).toThrow()
+
+    expect(() =>
+      settingsSchema.parse({
+        ...LEGACY_SETTINGS,
+        generation: {
+          ...LEGACY_SETTINGS.generation,
+          typeBalanceProfile: {
+            ...LEGACY_SETTINGS.generation.typeBalanceProfile,
+            lambda: 101
+          }
+        }
+      })
+    ).toThrow()
+  })
 })
