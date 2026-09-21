@@ -129,6 +129,8 @@ Use these notes as current implementation context when maintaining the renderer;
 
 Use this section to orient maintenance against the current code. It does not close product questions that still need explicit design discussion.
 
+The [reliability implementation queue](../../plans/reliability-queue.md) is the adopted plan for future sessions. Its planned behavior is not part of this current implementation snapshot. `Source` remains read-only throughout that plan.
+
 - Workbook layout now follows the on-demand provenance-panel direction by default. The source panel opens from `View source` as a drawer and can be pinned into a draggable split view; the pinned mode is a user preference rather than the default layout.
 - TODO: Workbook keyboard flow is partially implemented. Current cards autosave edited fields on blur, `Esc` resets the current edit buffer, `Cmd/Ctrl+Enter` saves and advances while editing, `Enter` focuses the selected card target field, `j/k` and arrow keys move card selection when not editing, and `Delete/Backspace` moves the selected active card to `Deleted`. Dedicated explicit `Save` / `Cancel` button affordances and more polished focus semantics remain open.
 - Search preview follows the current code contract: session navigation rows are title-only, while snippets/highlights belong in the focused preview pane. Empty search should not render transcript literal `<mark>` text as a highlight; preview highlighting is active only when the query is non-empty.
