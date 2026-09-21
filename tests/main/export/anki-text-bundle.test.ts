@@ -122,22 +122,33 @@ describe('writeAnkiTextBundle', () => {
     )).toBe(true)
 
     expect(bundle.files['README-import.md']).toContain('DialogLingo::Expression')
+    expect(bundle.files['README-import.md']).toContain('Allow HTML')
 
     const expressionRows = bundle.files['expression.tsv'].split('\n')
-    expect(expressionRows[0]).toBe('Front\tBack\tGloss\tContext\tExplanation\tQuiz\tTags')
-    expect(expressionRows[1].split('\t')).toHaveLength(7)
-    expect(expressionRows[1]).toContain('break\\tdown')
-    expect(expressionRows[1]).toContain('拆解<br>分析')
-    expect(expressionRows[1]).toContain('Break down the task.')
-    expect(expressionRows[1]).toContain('Prompt: What does break down mean?')
-    expect(expressionRows[1]).toContain('&lt;carefully&gt; &amp; explain &quot;why&quot;.')
-    expect(expressionRows[1]).toContain('dl::expression agent_chat')
+    expect(expressionRows.slice(0, 4)).toEqual([
+      '#separator:Tab',
+      '#html:true',
+      '#columns:Front\tBack\tGloss\tContext\tExplanation\tQuiz\tTags',
+      '#tags column:7'
+    ])
+    expect(expressionRows[4].split('\t')).toHaveLength(7)
+    expect(expressionRows[4]).toContain('break\\tdown')
+    expect(expressionRows[4]).toContain('拆解<br>分析')
+    expect(expressionRows[4]).toContain('Break down the task.')
+    expect(expressionRows[4]).toContain('Prompt: What does break down mean?')
+    expect(expressionRows[4]).toContain('&lt;carefully&gt; &amp; explain &quot;why&quot;.')
+    expect(expressionRows[4]).toContain('dl::expression agent_chat')
 
     const sentenceRows = bundle.files['sentence.tsv'].split('\n')
-    expect(sentenceRows[0]).toBe('Front\tBack\tFocus\tExplanation\tQuiz\tTags')
-    expect(sentenceRows[1]).toContain('Can you ship this today?')
-    expect(sentenceRows[1]).toContain('今天能发布吗？')
-    expect(sentenceRows[1]).toContain('ship this')
-    expect(sentenceRows[1]).toContain('dl::sentence release')
+    expect(sentenceRows.slice(0, 4)).toEqual([
+      '#separator:Tab',
+      '#html:true',
+      '#columns:Front\tBack\tFocus\tExplanation\tQuiz\tTags',
+      '#tags column:6'
+    ])
+    expect(sentenceRows[4]).toContain('Can you ship this today?')
+    expect(sentenceRows[4]).toContain('今天能发布吗？')
+    expect(sentenceRows[4]).toContain('ship this')
+    expect(sentenceRows[4]).toContain('dl::sentence release')
   })
 })

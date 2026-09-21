@@ -170,14 +170,15 @@ function sentenceToAnkiFields(
 }
 
 function writeTsvRows(headers: string[], bodyRows: string[][]): string {
-  const outputRows = [
-    headers,
-    ...bodyRows
+  const headerRows = [
+    '#separator:Tab',
+    '#html:true',
+    `#columns:${headers.join('\t')}`,
+    `#tags column:${headers.length}`
   ]
+  const dataRows = bodyRows.map((row) => row.map(escapeTsvField).join('\t'))
 
-  return outputRows
-    .map((row) => row.map(escapeTsvField).join('\t'))
-    .join('\n')
+  return [...headerRows, ...dataRows].join('\n')
 }
 
 function frontForDirection(direction: ExportDirection, english: string, translation: string): string {
@@ -260,8 +261,10 @@ function buildAnkiTextBundleReadme(input: ExportRowsInput, generatedAt: string):
     `Deck: ${input.deckName}`,
     `Generated at: ${generatedAt}`,
     '',
-    'Import expression.tsv with the DialogLingo::Expression note type.',
-    'Import sentence.tsv with the DialogLingo::Sentence note type.',
+    'Import expression.tsv with a DialogLingo::Expression note type containing Front, Back, Gloss, Context, Explanation, and Quiz fields.',
+    'Import sentence.tsv with a DialogLingo::Sentence note type containing Front, Back, Focus, Explanation, and Quiz fields.',
+    'The final Tags column is mapped to Anki note tags. Keep Allow HTML enabled so <br> line breaks and formatted fields render correctly.',
+    'The file headers preset the tab separator, HTML mode, named columns, and tags column. The headers are comments, so older Anki versions can still detect the first data row without importing a column-title pseudo-note.',
     '',
     'Only active workbook items selected by type are included. Deleted items are not exported. Flagged items follow the export policy configured in DialogLingo.',
     '',
