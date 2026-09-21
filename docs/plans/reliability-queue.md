@@ -1,6 +1,6 @@
 # DialogLingo · 可靠性实施队列
 
-状态：实施中（01–06 已完成，07 未开始）。核查基线：`main@24fea69f9fb1e506fb88f3238091ece2388730e4`，2026-09-21。后续会话先核对当前 HEAD、工作树和代码；此基线不是持续有效的现状声明。
+状态：实施中（01–07 已完成；真实端到端与发布证据门仍开放）。核查基线：`main@24fea69f9fb1e506fb88f3238091ece2388730e4`，2026-09-21。后续会话先核对当前 HEAD、工作树和代码；此基线不是持续有效的现状声明。
 
 ## 目标与顺序
 
@@ -14,7 +14,7 @@
 | 04 | [OpenCode 与来源解析兼容](04-source-compatibility.md) | P0 | 03，交付顺序 | 已实施 |
 | 05 | [工作簿键盘焦点](05-workbook-focus.md) | P1 | 03、04，交付顺序 | 已实施 |
 | 06 | [导出完整性与 Anki 互操作](06-export-anki.md) | P1 | 02、03、05 | 已实施 |
-| 07 | [Electron 与 IPC 边界](07-electron-ipc.md) | P1 | 03、06 | 待实施 |
+| 07 | [Electron 与 IPC 边界](07-electron-ipc.md) | P1 | 03、06 | 已实施 |
 
 01 → 02 → 03 → 04 → 05 → 06 → 07 是执行顺序。04 与 05 的代码依赖较少，仍按该顺序交接，避免并行会话互相覆盖。新增业务 migration 只能在 02 完成后进入主线。
 
@@ -53,4 +53,18 @@
 | 04 | `182a5e5`、`e883165`、`e8d65ff`、审查修复 `b3ff3aa`；独立审查 2 项 P1、1 项 P2 均已采纳修复；最终 `npm run ci:verify` 通过（209 测试、类型检查、构建） | 真实 OpenCode CLI list/export JSON、Electron 手工扫描、真实 legacy/现代迁移目录和未来 `opencode session export` 变体未验证；详见 04 计划 |
 | 05 | `5235554`、`276f38f`；阶段 1 renderer 39 项测试与类型检查通过，阶段 2 renderer 41 项测试与 `npm run ci:verify` 通过（212 测试、类型检查、构建）；独立审查以 `c6b3838` 为基线，`No findings.`，无修复提交 | 未做真实 Electron/Chromium 键盘 QA；ArrowUp/ArrowDown、完整 Tab 遍历及导出、查看来源、删除/恢复、失败重试的端到端手工流程未逐项验证；虚拟列表跨窗口只用 JSDOM 模拟尺寸与 RAF；详见 05 计划 |
 | 06 | `bf42301`、`9d7895d`、`cce8872`；阶段 1/2/3 依次验证并逐阶段本地提交；最终 `npm run ci:verify` 通过（62 files、223 tests、类型检查、构建）；Anki 25.09.5 disposable runtime 验证 text 无伪 note、字段/HTML/tags 映射和 APKG 二次导入无重复 | 未完成 Anki GUI 手工导入/渲染；未验证断电、跨平台 rename/文件锁、真实 Electron 打包启动和完整桌面端导出；两个 delegated review 任务未返回最终结论，本地只读复核未确认 P0–P3；APKG note type 仍是现有 Basic 风格 Front/Back；详见 06 计划 |
-| 07 | 待实施 | — |
+| 07 | `b114a52`、`ea81dca`；delegated review 发现 5 项 P1–P3，逐项修复 `d30fc60`、`2376f19`、`0b6f4c5`、`f6c4eab`、`a5c48ea`；最终 `npm run ci:verify` 通过（65 files、242 tests、类型检查、构建），build 后 Node ABI 与生产 CSP 检查通过 | 未取得本次代码对应的 DMG/ZIP packaged launch/export；dev server 实际 React Refresh、Electron 运行时 sender/redirect 攻击测试、Windows/Linux、签名/公证及完整桌面端导出未验证；直接启动当前 dist 时本机历史超大 JSONL 导致 launch scan 失败；详见 07 计划 |
+
+## 队列剩余证据门
+
+“已实施”只表示计划代码和自动化验收完成；下列证据仍未闭合：
+
+- **01**：真实 provider 发送、Electron UI 手工操作、打包启动。
+- **02**：真实旧版用户数据库、桌面重启/手工恢复、跨平台运行。
+- **03**：Electron 快速编辑与断开 IPC Retry/重启读回、真实旧库 migration、多窗口或跨进程冲突。
+- **04**：真实 OpenCode CLI list/export JSON、Electron 手工扫描、真实 legacy/现代目录迁移和未来 `opencode session export` 变体。
+- **05**：真实 Electron/Chromium 键盘 QA、完整 Tab/Arrow/导出/来源/删除恢复/失败重试流程，以及真实虚拟列表跨窗口行为。
+- **06**：Anki GUI 手工导入/渲染、断电、跨平台 rename/文件锁、真实 Electron 打包启动和完整桌面端导出；APKG note type 仍未做新的产品决策。
+- **07**：当前构建产生的 DMG/ZIP launch/export、dev server React Refresh、真实 Electron/electron-trpc sender/frame/redirect/new-window 运行时验证、Windows/Linux packaged smoke，以及签名/公证。
+
+正式签名、公证和三平台 packaged smoke 仍属于发布任务；这些门关闭前不能把 `ci:verify` 或本机静态/mocked 检查表述为发布证明。
