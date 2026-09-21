@@ -38,12 +38,12 @@ export const expressionDifficultySchema = z.enum(['easy', 'average', 'hard'])
 export const appLocaleSchema = z.enum(['en', 'zh-CN'])
 
 const cliCommandSettingsSchema = z.object({
-  executablePath: z.string().max(4_096).default(''),
-  model: z.string().max(256).default('')
+  executablePath: z.string().default(''),
+  model: z.string().default('')
 })
 
 const cliModelDiscoverySettingsSchema = z.object({
-  executablePath: z.string().max(4_096).default('')
+  executablePath: z.string().default('')
 })
 
 export const modelBackendSchema = z
@@ -54,7 +54,7 @@ export const modelBackendSchema = z
         codex: cliCommandSettingsSchema.default(DEFAULT_MODEL_BACKEND.cli.codex),
         claude: cliCommandSettingsSchema.default(DEFAULT_MODEL_BACKEND.cli.claude),
         opencode: cliCommandSettingsSchema.default(DEFAULT_MODEL_BACKEND.cli.opencode),
-        timeoutMs: z.number().int().positive().max(600_000).default(DEFAULT_CLI_TIMEOUT_MS)
+        timeoutMs: z.number().int().positive().default(DEFAULT_CLI_TIMEOUT_MS)
       })
       .default(DEFAULT_MODEL_BACKEND.cli)
   })
@@ -62,20 +62,20 @@ export const modelBackendSchema = z
 
 export const settingsSchema = z.object({
   provider: z.object({
-    baseUrl: z.string().max(2_048),
-    apiKey: z.string().max(32_768),
-    defaultModel: z.string().max(256)
+    baseUrl: z.string(),
+    apiKey: z.string(),
+    defaultModel: z.string()
   }),
   modelBackend: modelBackendSchema,
   generation: z.object({
     expressionDifficulty: expressionDifficultySchema.default(DEFAULT_EXPRESSION_DIFFICULTY),
-    batchSize: z.number().int().positive().max(256).default(DEFAULT_BATCH_SIZE),
-    boundedConcurrency: z.number().int().positive().max(64),
-    maxItemsPerSession: z.number().int().positive().max(1_000),
+    batchSize: z.number().int().positive().default(DEFAULT_BATCH_SIZE),
+    boundedConcurrency: z.number().int().positive(),
+    maxItemsPerSession: z.number().int().positive(),
     typeBalanceProfile: z.object({
       targetExpression: z.number().min(0).max(1),
       targetSentence: z.number().min(0).max(1),
-      lambda: z.number().finite().min(0).max(100)
+      lambda: z.number().finite().min(0)
     })
   }),
   privacy: z.object({
@@ -85,10 +85,10 @@ export const settingsSchema = z.object({
   scan: z.object({
     pathOverrides: z.array(
       z.object({
-        platform: z.string().min(1).max(64),
-        path: z.string().min(1).max(4_096)
+        platform: z.string(),
+        path: z.string()
       })
-    ).max(100),
+    ),
     scanOnLaunch: z.boolean(),
     includeArchivedSessions: z.boolean()
   }),
@@ -112,6 +112,110 @@ export const settingsSchema = z.object({
     workbookSourcePinned: false
   })
 })
+
+const ipcCliCommandSettingsSchema = z
+  .object({
+    executablePath: z.string().max(4_096).default(''),
+    model: z.string().max(256).default('')
+  })
+  .strict()
+
+const ipcModelBackendSchema = z
+  .object({
+    kind: modelBackendKindSchema.default(DEFAULT_MODEL_BACKEND.kind),
+    cli: z
+      .object({
+        codex: ipcCliCommandSettingsSchema.default(DEFAULT_MODEL_BACKEND.cli.codex),
+        claude: ipcCliCommandSettingsSchema.default(DEFAULT_MODEL_BACKEND.cli.claude),
+        opencode: ipcCliCommandSettingsSchema.default(DEFAULT_MODEL_BACKEND.cli.opencode),
+        timeoutMs: z
+          .number()
+          .int()
+          .positive()
+          .max(600_000)
+          .default(DEFAULT_CLI_TIMEOUT_MS)
+      })
+      .strict()
+      .default(DEFAULT_MODEL_BACKEND.cli)
+  })
+  .strict()
+  .default(DEFAULT_MODEL_BACKEND)
+
+export const ipcSettingsSchema = z
+  .object({
+    provider: z
+      .object({
+        baseUrl: z.string().max(2_048),
+        apiKey: z.string().max(32_768),
+        defaultModel: z.string().max(256)
+      })
+      .strict(),
+    modelBackend: ipcModelBackendSchema,
+    generation: z
+      .object({
+        expressionDifficulty: expressionDifficultySchema.default(
+          DEFAULT_EXPRESSION_DIFFICULTY
+        ),
+        batchSize: z.number().int().positive().max(256).default(DEFAULT_BATCH_SIZE),
+        boundedConcurrency: z.number().int().positive().max(64),
+        maxItemsPerSession: z.number().int().positive().max(1_000),
+        typeBalanceProfile: z
+          .object({
+            targetExpression: z.number().min(0).max(1),
+            targetSentence: z.number().min(0).max(1),
+            lambda: z.number().finite().min(0).max(100)
+          })
+          .strict()
+      })
+      .strict(),
+    privacy: z
+      .object({
+        redactBeforeRemoteSend: z.boolean(),
+        flaggedItemExportPolicy: z.enum(['block', 'warn'])
+      })
+      .strict(),
+    scan: z
+      .object({
+        pathOverrides: z
+          .array(
+            z
+              .object({
+                platform: z.string().min(1).max(64),
+                path: z.string().min(1).max(4_096)
+              })
+              .strict()
+          )
+          .max(100),
+        scanOnLaunch: z.boolean(),
+        includeArchivedSessions: z.boolean()
+      })
+      .strict(),
+    ui: z
+      .object({
+        locale: appLocaleSchema.default(DEFAULT_APP_LOCALE),
+        splitRatio: z
+          .number()
+          .finite()
+          .min(MIN_SPLIT_RATIO)
+          .max(MAX_SPLIT_RATIO)
+          .default(DEFAULT_SPLIT_RATIO),
+        workbookSplitRatio: z
+          .number()
+          .finite()
+          .min(MIN_SPLIT_RATIO)
+          .max(MAX_SPLIT_RATIO)
+          .default(DEFAULT_WORKBOOK_SPLIT_RATIO),
+        workbookSourcePinned: z.boolean().default(false)
+      })
+      .strict()
+      .default({
+        locale: DEFAULT_APP_LOCALE,
+        splitRatio: DEFAULT_SPLIT_RATIO,
+        workbookSplitRatio: DEFAULT_WORKBOOK_SPLIT_RATIO,
+        workbookSourcePinned: false
+      })
+  })
+  .strict()
 
 export const modelOptionSchema = z.object({
   id: z.string(),

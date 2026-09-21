@@ -129,6 +129,23 @@ describe('privileged IPC router', () => {
     expect(deps.settings.save).not.toHaveBeenCalled()
   })
 
+  it('rejects settings values outside the IPC bounds before persistence', async () => {
+    const { deps } = createDeps()
+    const router = buildRouter(deps)
+    const caller = router.createCaller(authorized)
+
+    await expect(
+      caller.settingsSave({
+        ...DEFAULT_SETTINGS,
+        generation: {
+          ...DEFAULT_SETTINGS.generation,
+          boundedConcurrency: 65
+        }
+      })
+    ).rejects.toMatchObject({ code: 'BAD_REQUEST' })
+    expect(deps.settings.save).not.toHaveBeenCalled()
+  })
+
   it('bounds workbook snapshots and still passes valid workbook and export calls', async () => {
     const { deps, exportRun, workbookSaveItem } = createDeps()
     const router = buildRouter(deps)

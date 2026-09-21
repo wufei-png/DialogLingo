@@ -1,6 +1,6 @@
 import { z } from 'zod'
 import { exportRequestSchema } from './export'
-import { modelListInputSchema, settingsSchema } from './settings'
+import { ipcSettingsSchema, modelListInputSchema } from './settings'
 import { workbookListTabSchema } from './workbook'
 
 const ipcIdentifierSchema = z.string().trim().min(1).max(512)
@@ -113,7 +113,7 @@ export const exportChooseOutputDirectoryInputSchema = z
   })
   .strict()
 
-export const ipcSettingsSaveSchema = settingsSchema.strict()
+export const ipcSettingsSaveSchema = ipcSettingsSchema
 export const ipcModelListInputSchema = modelListInputSchema.strict()
 
 export type GenerationJobInput = z.infer<typeof generationJobInputSchema>

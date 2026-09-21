@@ -118,6 +118,27 @@ describe('createSettingsService', () => {
     expect(service.get()).toEqual(saved)
   })
 
+  it('reads persisted settings that exceed the IPC input caps', () => {
+    const service = createSettingsService(':memory:', { runMigrations: true })
+    const current = service.get()
+
+    const saved = service.save({
+      ...current,
+      generation: {
+        ...current.generation,
+        batchSize: 1_024,
+        boundedConcurrency: 128,
+        maxItemsPerSession: 2_000,
+        typeBalanceProfile: {
+          ...current.generation.typeBalanceProfile,
+          lambda: 101
+        }
+      }
+    })
+
+    expect(service.get()).toEqual(saved)
+  })
+
   it('retains the privacy switch after reopening the settings database', () => {
     const filename = `${process.env.TMPDIR ?? '/tmp'}/dialoglingo-settings-${randomUUID()}.db`
     let first: ReturnType<typeof createSettingsService> | undefined

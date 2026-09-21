@@ -5,6 +5,7 @@ import {
   DEFAULT_EXPRESSION_DIFFICULTY,
   DEFAULT_SPLIT_RATIO,
   DEFAULT_WORKBOOK_SPLIT_RATIO,
+  ipcSettingsSchema,
   settingsSchema
 } from '../../src/shared/schemas/settings'
 
@@ -81,9 +82,22 @@ describe('settingsSchema', () => {
     ).toThrow()
   })
 
-  it('rejects non-finite and unbounded type-balance lambdas', () => {
-    expect(() =>
+  it('keeps persistence parsing compatible while bounding IPC lambdas', () => {
+    expect(
       settingsSchema.parse({
+        ...LEGACY_SETTINGS,
+        generation: {
+          ...LEGACY_SETTINGS.generation,
+          typeBalanceProfile: {
+            ...LEGACY_SETTINGS.generation.typeBalanceProfile,
+            lambda: 101
+          }
+        }
+      }).generation.typeBalanceProfile.lambda
+    ).toBe(101)
+
+    expect(() =>
+      ipcSettingsSchema.parse({
         ...LEGACY_SETTINGS,
         generation: {
           ...LEGACY_SETTINGS.generation,
@@ -96,7 +110,7 @@ describe('settingsSchema', () => {
     ).toThrow()
 
     expect(() =>
-      settingsSchema.parse({
+      ipcSettingsSchema.parse({
         ...LEGACY_SETTINGS,
         generation: {
           ...LEGACY_SETTINGS.generation,
