@@ -12,6 +12,7 @@ import type { WorkbookSaveStatus } from './workbookSaveQueue'
 type WorkbookSnapshotDraft = WorkbookCardDraft
 
 type Props = {
+  itemId: string
   itemType: 'Expression' | 'Sentence'
   source: string
   target: string
@@ -27,6 +28,8 @@ type Props = {
   selected: boolean
   modified: boolean
   focusTargetRevision: number
+  tabIndex: number
+  anchorRef: (element: HTMLElement | null) => void
   onSelect: () => void
   onDelete: () => void
   onRestore: () => void
@@ -71,6 +74,10 @@ function toSnapshot(draft: ReturnType<typeof toDraft>): WorkbookSnapshotDraft {
   }
 }
 
+function isInteractiveCardTarget(target: EventTarget | null) {
+  return target instanceof Element && Boolean(target.closest('button, input, textarea, select, a, [contenteditable="true"]'))
+}
+
 export function WorkbookCard(props: Props) {
   const { t } = useTranslation()
   const secondaryFieldsId = useId()
@@ -107,6 +114,13 @@ export function WorkbookCard(props: Props) {
     props.onDraftChange(toSnapshot(nextDraft))
   }
 
+  function handleCardClick(event: React.MouseEvent<HTMLElement>) {
+    props.onSelect()
+    if (!isInteractiveCardTarget(event.target)) {
+      event.currentTarget.focus()
+    }
+  }
+
   async function saveDraft(advance = false) {
     if (props.deleted || !hasUnconfirmedWorkbookCardDraft(toSnapshot(draft), props.confirmedSnapshot)) {
       if (advance) {
@@ -139,13 +153,18 @@ export function WorkbookCard(props: Props) {
 
   return (
     <article
+      ref={props.anchorRef}
+      tabIndex={props.tabIndex}
+      data-workbook-card="true"
+      data-workbook-item-id={props.itemId}
       className={[
         'workbook-card',
         props.selected ? 'is-selected' : '',
         props.modified ? 'is-modified' : '',
         props.deleted ? 'is-deleted' : ''
       ].filter(Boolean).join(' ')}
-      onClick={props.onSelect}
+      onClick={handleCardClick}
+      onFocusCapture={props.onSelect}
     >
       <div className="workbook-card-ribbon" aria-hidden="true" />
       <div className="workbook-card-header">

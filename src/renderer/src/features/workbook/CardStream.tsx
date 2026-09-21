@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from 'react'
+import { useCallback, useEffect, useMemo, useRef } from 'react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useTranslation } from 'react-i18next'
 import { WorkbookCard } from './WorkbookCard'
@@ -42,6 +42,7 @@ type WorkbookRow = {
 export function CardStream(props: {
   rows: WorkbookRow[]
   selectedItemId: string | null
+  selectionFocusRevision: number
   focusTargetRevision: number
   onSelectItem: (itemId: string) => void
   onAdvanceSelection: () => void
@@ -67,12 +68,97 @@ export function CardStream(props: {
     estimateSize: () => 190,
     overscan: 6
   })
+  const anchorRefs = useRef(new Map<string, HTMLElement>())
+  const pendingFocusItemIdRef = useRef<string | null>(null)
+  const lastSelectionFocusRevisionRef = useRef(0)
+  const focusRetryCountRef = useRef(0)
+  const focusTimerRef = useRef<number | null>(null)
+  const focusAttemptRef = useRef<() => void>(() => {})
+
+  const scheduleFocusAttempt = useCallback(() => {
+    if (focusTimerRef.current !== null) {
+      window.clearTimeout(focusTimerRef.current)
+    }
+
+    focusTimerRef.current = window.setTimeout(() => {
+      focusTimerRef.current = null
+      focusAttemptRef.current()
+    }, 0)
+  }, [])
+
+  focusAttemptRef.current = () => {
+    const itemId = pendingFocusItemIdRef.current
+    if (!itemId) {
+      return
+    }
+
+    const anchor = anchorRefs.current.get(itemId)
+    if (anchor) {
+      anchor.focus({ preventScroll: true })
+      pendingFocusItemIdRef.current = null
+      focusRetryCountRef.current = 0
+      return
+    }
+
+    if (focusRetryCountRef.current >= 20) {
+      pendingFocusItemIdRef.current = null
+      return
+    }
+
+    focusRetryCountRef.current += 1
+    scheduleFocusAttempt()
+  }
+
+  const registerAnchor = useCallback(
+    (itemId: string, element: HTMLElement | null) => {
+      if (element) {
+        anchorRefs.current.set(itemId, element)
+        if (pendingFocusItemIdRef.current === itemId) {
+          scheduleFocusAttempt()
+        }
+        return
+      }
+
+      anchorRefs.current.delete(itemId)
+    },
+    [scheduleFocusAttempt]
+  )
+
+  useEffect(() => {
+    return () => {
+      if (focusTimerRef.current !== null) {
+        window.clearTimeout(focusTimerRef.current)
+      }
+    }
+  }, [])
 
   useEffect(() => {
     if (selectedIndex >= 0) {
       virtualizer.scrollToIndex(selectedIndex, { align: 'auto' })
     }
   }, [selectedIndex, virtualizer])
+
+  useEffect(() => {
+    if (
+      props.selectionFocusRevision <= lastSelectionFocusRevisionRef.current ||
+      props.selectedItemId == null ||
+      selectedIndex < 0
+    ) {
+      return
+    }
+
+    lastSelectionFocusRevisionRef.current = props.selectionFocusRevision
+    pendingFocusItemIdRef.current = props.selectedItemId
+    focusRetryCountRef.current = 0
+    virtualizer.scrollToIndex(selectedIndex, { align: 'auto' })
+    scheduleFocusAttempt()
+  }, [
+    props.selectedItemId,
+    props.selectionFocusRevision,
+    scheduleFocusAttempt,
+    selectedIndex,
+    virtualizer
+  ])
 
   if (props.rows.length === 0) {
     return <div className="workbook-empty-list">{t('workbook.noItemsInView')}</div>
@@ -98,6 +184,7 @@ export function CardStream(props: {
               style={{ transform: `translateY(${virtualItem.start}px)` }}
             >
               <WorkbookCard
+                itemId={row.id}
                 itemType={row.itemType}
                 source={String(snapshot.sourceText ?? '')}
                 target={String(snapshot.targetText ?? '')}
@@ -121,6 +208,8 @@ export function CardStream(props: {
                 deleted={row.state === 'deleted'}
                 selected={props.selectedItemId === row.id}
                 modified={row.isEdited}
+                tabIndex={props.selectedItemId === row.id ? 0 : -1}
+                anchorRef={(element) => registerAnchor(row.id, element)}
                 focusTargetRevision={props.focusTargetRevision}
                 onSelect={() => props.onSelectItem(row.id)}
                 onDelete={() => props.onDeleteItem(row.id)}

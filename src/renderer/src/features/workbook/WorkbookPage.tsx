@@ -133,6 +133,7 @@ export function WorkbookPage(props: {
   )
   const [sourceRefIndex, setSourceRefIndex] = useState(0)
   const [activeMatchIndex, setActiveMatchIndex] = useState(0)
+  const [selectionFocusRevision, setSelectionFocusRevision] = useState(0)
   const [focusTargetRevision, setFocusTargetRevision] = useState(0)
   const [exportOpen, setExportOpen] = useState(false)
   const [stoppedActionPending, setStoppedActionPending] = useState<
@@ -329,6 +330,9 @@ export function WorkbookPage(props: {
     const reconciled = reconcileWorkbookSelection(rows, selectedItemId)
     if (reconciled !== selectedItemId) {
       setSelectedItemId(reconciled)
+      if (reconciled !== null) {
+        setSelectionFocusRevision((current) => current + 1)
+      }
     }
   }, [rows, selectedItemId])
 
@@ -349,13 +353,13 @@ export function WorkbookPage(props: {
 
       if (event.key === 'j' || event.key === 'ArrowDown') {
         event.preventDefault()
-        setSelectedItemId((current) => moveWorkbookSelection(rows, current, 1))
+        moveSelection(1)
         return
       }
 
       if (event.key === 'k' || event.key === 'ArrowUp') {
         event.preventDefault()
-        setSelectedItemId((current) => moveWorkbookSelection(rows, current, -1))
+        moveSelection(-1)
         return
       }
 
@@ -378,6 +382,11 @@ export function WorkbookPage(props: {
     window.addEventListener('keydown', handleKeyDown)
     return () => window.removeEventListener('keydown', handleKeyDown)
   }, [rows, selectedItem, selectedItemId])
+
+  function moveSelection(direction: 1 | -1) {
+    setSelectedItemId((current) => moveWorkbookSelection(rows, current, direction))
+    setSelectionFocusRevision((current) => current + 1)
+  }
 
   async function invalidateWorkbook() {
     if (!props.workbookId) {
@@ -410,6 +419,7 @@ export function WorkbookPage(props: {
   async function deleteItem(itemId: string) {
     await saveQueueRef.current?.whenIdle(itemId).catch(() => {})
     setSelectedItemId((current) => selectAfterWorkbookRemoval(rows, itemId, current))
+    setSelectionFocusRevision((current) => current + 1)
     await trpc.workbookDeleteItem.mutate({ itemId })
     await invalidateWorkbook()
   }
@@ -508,7 +518,7 @@ export function WorkbookPage(props: {
   }
 
   function selectNextItem() {
-    setSelectedItemId((current) => moveWorkbookSelection(rows, current, 1))
+    moveSelection(1)
   }
 
   function openSource(itemId: string) {
@@ -799,6 +809,7 @@ export function WorkbookPage(props: {
           <CardStream
             rows={rows}
             selectedItemId={selectedItemId}
+            selectionFocusRevision={selectionFocusRevision}
             focusTargetRevision={focusTargetRevision}
             onSelectItem={setSelectedItemId}
             onAdvanceSelection={selectNextItem}
