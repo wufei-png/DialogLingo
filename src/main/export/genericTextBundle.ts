@@ -1,4 +1,5 @@
 import {
+  createExportFileEntry,
   createExportManifest,
   escapeCsvField,
   escapeHtml,
@@ -45,27 +46,25 @@ export interface LegacyGenericTextBundleInput {
 }
 
 export function buildGenericTextBundle(input: ExportRowsInput): TextBundleOutput {
-  const files = [
-    'expression.csv',
-    'sentence.csv',
-    'expression.md',
-    'sentence.md',
-    'manifest.json'
-  ]
+  const payloadFiles = {
+    'expression.csv': writeExpressionCsv(input.expressions),
+    'sentence.csv': writeSentenceCsv(input.sentences),
+    'expression.md': writeExpressionMarkdown(input.expressions),
+    'sentence.md': writeSentenceMarkdown(input.sentences)
+  }
   const manifest = createExportManifest({
     ...input,
     format: 'generic-text-bundle',
-    files
+    files: Object.entries(payloadFiles).map(([filePath, contents]) =>
+      createExportFileEntry(filePath, contents)
+    )
   })
 
   return {
     manifest,
     files: {
       'manifest.json': JSON.stringify(manifest, null, 2),
-      'expression.csv': writeExpressionCsv(input.expressions),
-      'sentence.csv': writeSentenceCsv(input.sentences),
-      'expression.md': writeExpressionMarkdown(input.expressions),
-      'sentence.md': writeSentenceMarkdown(input.sentences)
+      ...payloadFiles
     }
   }
 }

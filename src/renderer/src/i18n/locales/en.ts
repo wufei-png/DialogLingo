@@ -295,6 +295,7 @@ const en = {
     exporting: 'Exporting...',
     exportSuccess: 'Exported to {{path}}',
     exportFailed: 'Export failed: {{message}}',
+    outputFiles: 'Bundle files',
     noWorkbookSelected: 'No workbook selected.',
     format: 'Format',
     exportAnkiPackage: 'Anki Package (.apkg)',
@@ -306,6 +307,8 @@ const en = {
     exportAnkiPackageDetail: '.apkg',
     exportAnkiTextBundleDetail: '.tsv + .md + .json',
     exportGenericTextBundleDetail: '.csv + .md + .json',
+    genericSourceWarning:
+      'Generic CSV files include source references that may contain transcript text. Review before sharing.',
     exportAnkiPackageDescription: 'Primary Anki import target.',
     exportAnkiTextBundleDescription: 'Anki-ready text files for review or backup.',
     exportGenericTextBundleDescription: 'Portable text files for other tools.',

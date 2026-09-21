@@ -36,6 +36,8 @@ type ExportConfirmResult =
       ok: true
       outputLocation: string
       outputPath?: string
+      outputFiles?: string[]
+      manifestPath?: string | null
     }
   | {
       ok: false
@@ -109,6 +111,7 @@ export function ExportModal({
   const [exportingFormat, setExportingFormat] = useState<ExportFormat | null>(null)
   const [exportMessage, setExportMessage] = useState<string | null>(null)
   const [exportError, setExportError] = useState<string | null>(null)
+  const [exportFiles, setExportFiles] = useState<string[] | null>(null)
 
   useEffect(() => {
     if (!open || outputLocation) {
@@ -136,6 +139,7 @@ export function ExportModal({
   async function runExport(format: ExportFormat) {
     setExportMessage(null)
     setExportError(null)
+    setExportFiles(null)
     setExportingFormat(format)
 
     try {
@@ -163,6 +167,7 @@ export function ExportModal({
       })
 
       if (result.ok) {
+        setExportFiles(result.outputFiles ?? null)
         setExportMessage(
           t('export.exportSuccess', {
             path: result.outputPath ?? result.outputLocation
@@ -270,6 +275,11 @@ export function ExportModal({
             })}
           </div>
         </section>
+        {selectedFormat === 'generic-text-bundle' ? (
+          <p className="export-status-message is-warning">
+            {t('export.genericSourceWarning')}
+          </p>
+        ) : null}
         <div className="export-field-list">
           <label className="export-field">
             <span className="export-field-copy">
@@ -409,6 +419,18 @@ export function ExportModal({
         ) : null}
         {exportError ? (
           <p className="export-status-message is-error">{exportError}</p>
+        ) : null}
+        {exportFiles && exportFiles.length > 0 ? (
+          <details className="export-files" open>
+            <summary>{t('export.outputFiles')}</summary>
+            <ul>
+              {exportFiles.map((file) => (
+                <li key={file}>
+                  <code>{file}</code>
+                </li>
+              ))}
+            </ul>
+          </details>
         ) : null}
       </div>
     </div>

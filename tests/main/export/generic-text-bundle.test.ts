@@ -92,7 +92,7 @@ describe('writeGenericTextBundle', () => {
 
     const manifest = JSON.parse(bundle.files['manifest.json'])
     expect(manifest).toMatchObject({
-      schemaVersion: 1,
+      schemaVersion: 2,
       workbookId: 'w1',
       format: 'generic-text-bundle',
       deckName: 'DialogLingo',
@@ -106,13 +106,22 @@ describe('writeGenericTextBundle', () => {
         claude: 1
       },
       files: [
-        'expression.csv',
-        'sentence.csv',
-        'expression.md',
-        'sentence.md',
-        'manifest.json'
+        { path: 'expression.csv' },
+        { path: 'sentence.csv' },
+        { path: 'expression.md' },
+        { path: 'sentence.md' }
       ]
     })
+
+    expect(manifest.files.map((file: { path: string }) => file.path)).toEqual([
+      'expression.csv',
+      'sentence.csv',
+      'expression.md',
+      'sentence.md'
+    ])
+    expect(manifest.files.every((file: { sizeBytes: number; sha256: string }) =>
+      file.sizeBytes > 0 && /^[a-f0-9]{64}$/.test(file.sha256)
+    )).toBe(true)
 
     expect(bundle.files['expression.csv']).toContain('"break down, not ""skip"""')
     expect(bundle.files['expression.csv']).toContain('Analyze instead of skipping.')

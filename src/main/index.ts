@@ -1,6 +1,5 @@
 import crypto from 'node:crypto'
 import { existsSync, mkdirSync } from 'node:fs'
-import { mkdir, writeFile } from 'node:fs/promises'
 import { createRequire } from 'node:module'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -13,17 +12,16 @@ import type { Settings } from '../shared/schemas/settings'
 import { createDb } from './db/client'
 import { runMigrations } from './db/migrate'
 import { chooseExportFallback } from './errors/sourceIssues'
-import { writeAnkiTextBundle } from './export/ankiTextBundle'
+import { buildAnkiTextBundle } from './export/ankiTextBundle'
 import { buildAnkiPackage } from './export/apkg'
-import { writeGenericTextBundle } from './export/genericTextBundle'
-import {
-  createUniqueExportSubdirectory,
-  ensureApkgFileName,
-  normalizeExportOutputName
-} from './export/outputDirectory'
+import { buildGenericTextBundle } from './export/genericTextBundle'
+import { commitExportDirectory } from './export/commit'
+import { diagnoseStartedExportRuns } from './export/diagnostics'
+import { ensureApkgFileName, normalizeExportOutputName } from './export/outputDirectory'
 import {
   countExportRows,
   filterExportableItems,
+  mergeExcludedItemCounts,
   type ExportDirection,
   type ExportFormat,
   type ExportRowsInput,
@@ -101,6 +99,19 @@ runMigrations(sqlite, undefined, {
 })
 logger.debug('startup', 'database migrations complete')
 const exportRunStore = createExportRunStore(sqlite)
+void diagnoseStartedExportRuns(sqlite)
+  .then((diagnostics) => {
+    for (const diagnostic of diagnostics) {
+      if (diagnostic.status === 'complete-directory') {
+        logger.info('export', 'recovered complete directory for started run', diagnostic)
+      } else {
+        logger.warn('export', 'started export run needs recovery attention', diagnostic)
+      }
+    }
+  })
+  .catch((error) => {
+    logger.error('export', 'could not inspect started export runs', error)
+  })
 
 const settings = createSettingsService(dbPath, {
   runMigrations: true
@@ -852,6 +863,7 @@ function childSnapshotFromSource(input: {
 function listWorkbookItems(input: {
   workbookId: string
   tab: 'all' | 'expressions' | 'sentences' | 'deleted'
+  includeDeleted?: boolean
 }): WorkbookListItem[] {
   const rows = sqlite
     .prepare(
@@ -903,7 +915,7 @@ function listWorkbookItems(input: {
       if (input.tab === 'sentences') {
         return row.state === 'active' && row.itemType === 'Sentence'
       }
-      return row.state === 'active'
+      return input.includeDeleted === true || row.state === 'active'
     })
 }
 
@@ -1353,7 +1365,8 @@ function createRouter() {
       }) => {
         const items = listWorkbookItems({
           workbookId: input.workbookId,
-          tab: 'all'
+          tab: 'all',
+          includeDeleted: true
         })
         const rows = toLegacyExportRows(items)
         const selectedItemCounts = countExportRows(rows.expressions, rows.sentences)
@@ -1374,28 +1387,12 @@ function createRouter() {
         })
         const outputLocation = expandOutputPath(input.request.outputLocation)
         let outputPath = outputLocation
-        const isTextBundle =
-          input.request.format === 'anki-text-bundle' ||
-          input.request.format === 'generic-text-bundle'
+        let outputFiles: string[] = []
+        let manifestPath: string | null = null
         const outputName = normalizeExportOutputName(
           input.request.outputName,
           input.request.deckName
         )
-        const exportInput: ExportRowsInput = {
-          workbookId: input.workbookId,
-          deckName: input.request.deckName,
-          direction: input.request.direction,
-          tagPrefix: input.request.tagPrefix,
-          includedItemTypes: includedItemTypes(input.request),
-          selectedItemCounts,
-          expressions: expressionRows.items,
-          sentences: sentenceRows.items
-        }
-        const exportedItemCounts = countExportRows(
-          exportInput.expressions,
-          exportInput.sentences
-        )
-        const exportWarnings = [...expressionRows.warnings, ...sentenceRows.warnings]
         const exportRunId = crypto.randomUUID()
         const startedAt = new Date().toISOString()
         exportRunStore.start({
@@ -1409,9 +1406,41 @@ function createRouter() {
             direction: input.request.direction,
             outputName,
             selectedItemCounts,
-            includedItemTypes: exportInput.includedItemTypes
+            includedItemTypes: includedItemTypes(input.request)
           }
         })
+        const exportInput: ExportRowsInput = {
+          workbookId: input.workbookId,
+          deckName: input.request.deckName,
+          direction: input.request.direction,
+          tagPrefix: input.request.tagPrefix,
+          runId: exportRunId,
+          appVersion: app.getVersion(),
+          includedItemTypes: includedItemTypes(input.request),
+          selectedItemCounts,
+          exportPolicy: {
+            includeExpressions: input.request.includeExpressions,
+            includeSentences: input.request.includeSentences,
+            keepFlaggedItems: input.request.keepFlaggedItems ?? false,
+            flaggedItemExportPolicy: flaggedPolicy
+          },
+          excludedItemCounts: mergeExcludedItemCounts(
+            expressionRows.excludedItemCounts,
+            sentenceRows.excludedItemCounts
+          ),
+          warningCodes: [
+            ...expressionRows.warningCodes,
+            ...sentenceRows.warningCodes
+          ],
+          expressions: expressionRows.items,
+          sentences: sentenceRows.items
+        }
+        const exportedItemCounts = countExportRows(
+          exportInput.expressions,
+          exportInput.sentences
+        )
+        const exportWarnings = [...expressionRows.warnings, ...sentenceRows.warnings]
+        let failurePhase: 'build' | 'write' | 'database' = 'build'
         logger.info('export', 'run requested', {
           exportRunId,
           workbookId: input.workbookId,
@@ -1425,27 +1454,47 @@ function createRouter() {
 
         try {
           if (input.request.format === 'anki-text-bundle') {
-            outputPath = await createUniqueExportSubdirectory(
-              outputLocation,
-              outputName
-            )
-            await writeAnkiTextBundle(outputPath, exportInput)
+            const output = buildAnkiTextBundle(exportInput)
+            failurePhase = 'write'
+            const { ['manifest.json']: _manifest, ...payloadFiles } = output.files
+            const committed = await commitExportDirectory({
+              parentDirectory: outputLocation,
+              preferredName: outputName,
+              manifest: output.manifest,
+              files: payloadFiles
+            })
+            outputPath = committed.outputPath
+            outputFiles = committed.files
+            manifestPath = committed.manifestPath
           } else if (input.request.format === 'generic-text-bundle') {
-            outputPath = await createUniqueExportSubdirectory(
-              outputLocation,
-              outputName
-            )
-            await writeGenericTextBundle(outputPath, exportInput)
+            const output = buildGenericTextBundle(exportInput)
+            failurePhase = 'write'
+            const { ['manifest.json']: _manifest, ...payloadFiles } = output.files
+            const committed = await commitExportDirectory({
+              parentDirectory: outputLocation,
+              preferredName: outputName,
+              manifest: output.manifest,
+              files: payloadFiles
+            })
+            outputPath = committed.outputPath
+            outputFiles = committed.files
+            manifestPath = committed.manifestPath
           } else {
-            const output = await buildAnkiPackage(exportInput)
-            const filePath = outputLocation.endsWith('.apkg')
-              ? outputLocation
-              : path.join(outputLocation, ensureApkgFileName(outputName))
-            outputPath = filePath
-            await mkdir(path.dirname(filePath), { recursive: true })
-            await writeFile(filePath, output.data)
+            const fileName = ensureApkgFileName(outputName)
+            const output = await buildAnkiPackage(exportInput, {}, { fileName })
+            failurePhase = 'write'
+            const committed = await commitExportDirectory({
+              parentDirectory: outputLocation,
+              preferredName: outputName,
+              manifest: output.manifest,
+              files: { [fileName]: output.data }
+            })
+            outputPath = committed.outputPath
+            outputFiles = committed.files
+            manifestPath = committed.manifestPath
           }
 
+          failurePhase = 'database'
           exportRunStore.complete({
             id: exportRunId,
             outputPath,
@@ -1458,7 +1507,11 @@ function createRouter() {
               selectedItemCounts,
               exportedItemCounts,
               includedItemTypes: exportInput.includedItemTypes,
-              warnings: exportWarnings
+              excludedItemCounts: exportInput.excludedItemCounts,
+              warningCodes: exportInput.warningCodes,
+              warnings: exportWarnings,
+              outputFiles,
+              manifestPath
             }
           })
 
@@ -1475,7 +1528,10 @@ function createRouter() {
             workbookId: input.workbookId,
             format: input.request.format,
             outputLocation,
-            outputPath
+            outputPath,
+            outputFiles,
+            manifestPath,
+            exportRunId
           }
         } catch (error) {
           const errorMessage = exportErrorMessage(error)
@@ -1490,7 +1546,7 @@ function createRouter() {
             exportRunStore.fail({
               id: exportRunId,
               failedAt: new Date().toISOString(),
-              code: classifyExportFailure(error),
+              code: classifyExportFailure(error, failurePhase),
               message: errorMessage,
               metadata: {
                 deckName: input.request.deckName,
@@ -1500,6 +1556,8 @@ function createRouter() {
                 selectedItemCounts,
                 exportedItemCounts,
                 includedItemTypes: exportInput.includedItemTypes,
+                excludedItemCounts: exportInput.excludedItemCounts,
+                warningCodes: exportInput.warningCodes,
                 warnings: exportWarnings
               }
             })

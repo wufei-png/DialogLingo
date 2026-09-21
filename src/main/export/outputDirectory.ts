@@ -1,4 +1,6 @@
+import crypto from 'node:crypto'
 import { mkdir } from 'node:fs/promises'
+import { access } from 'node:fs/promises'
 import path from 'node:path'
 
 const WINDOWS_RESERVED_NAMES = /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(\..*)?$/i
@@ -62,4 +64,61 @@ export async function createUniqueExportSubdirectory(
   }
 
   throw new Error(`Could not create a unique export directory for ${preferredName}`)
+}
+
+export interface ExportDirectoryPlan {
+  parentDirectory: string
+  finalDirectory: string
+  stagingDirectory: string
+}
+
+export async function createExportDirectoryPlan(
+  parentDirectory: string,
+  preferredName: string
+): Promise<ExportDirectoryPlan> {
+  await mkdir(parentDirectory, { recursive: true })
+  const finalDirectory = await findAvailableExportDirectory(
+    parentDirectory,
+    preferredName
+  )
+  const stagingDirectory = path.join(
+    parentDirectory,
+    `.${path.basename(finalDirectory)}.${crypto.randomUUID()}.staging`
+  )
+  await mkdir(stagingDirectory)
+
+  return {
+    parentDirectory,
+    finalDirectory,
+    stagingDirectory
+  }
+}
+
+async function findAvailableExportDirectory(
+  parentDirectory: string,
+  preferredName: string
+) {
+  const normalizedName = normalizeExportOutputName(preferredName, 'DialogLingo Export')
+
+  for (let index = 0; index < 1000; index += 1) {
+    const suffix = index === 0 ? '' : `-${index + 1}`
+    const candidate = path.join(parentDirectory, `${normalizedName}${suffix}`)
+    if (!(await pathExists(candidate))) {
+      return candidate
+    }
+  }
+
+  throw new Error(`Could not create a unique export directory for ${normalizedName}`)
+}
+
+async function pathExists(candidate: string) {
+  try {
+    await access(candidate)
+    return true
+  } catch (error) {
+    if (isNodeError(error) && error.code === 'ENOENT') {
+      return false
+    }
+    throw error
+  }
 }

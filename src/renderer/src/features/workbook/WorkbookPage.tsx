@@ -889,10 +889,12 @@ export function WorkbookPage(props: {
             workbookId: props.workbookId,
             request: payload
           })) as
-            | {
+              | {
                 ok: true
                 outputLocation: string
                 outputPath?: string
+                outputFiles?: string[]
+                manifestPath?: string | null
               }
             | {
                 ok: false

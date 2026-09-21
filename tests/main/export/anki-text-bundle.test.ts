@@ -81,7 +81,7 @@ describe('writeAnkiTextBundle', () => {
 
     const manifest = JSON.parse(bundle.files['manifest.json'])
     expect(manifest).toMatchObject({
-      schemaVersion: 1,
+      schemaVersion: 2,
       workbookId: 'w1',
       format: 'anki-text-bundle',
       deckName: 'DialogLingo',
@@ -105,8 +105,21 @@ describe('writeAnkiTextBundle', () => {
       sourcePlatformSummary: {
         codex: 1
       },
-      files: ['expression.tsv', 'sentence.tsv', 'README-import.md', 'manifest.json']
+      files: [
+        { path: 'expression.tsv' },
+        { path: 'sentence.tsv' },
+        { path: 'README-import.md' }
+      ]
     })
+
+    expect(manifest.files.map((file: { path: string }) => file.path)).toEqual([
+      'expression.tsv',
+      'sentence.tsv',
+      'README-import.md'
+    ])
+    expect(manifest.files.every((file: { sizeBytes: number; sha256: string }) =>
+      file.sizeBytes > 0 && /^[a-f0-9]{64}$/.test(file.sha256)
+    )).toBe(true)
 
     expect(bundle.files['README-import.md']).toContain('DialogLingo::Expression')
 

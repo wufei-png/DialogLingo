@@ -1,4 +1,5 @@
 import {
+  createExportFileEntry,
   createExportManifest,
   type ExportManifest,
   type ExportRowsInput,
@@ -21,6 +22,10 @@ export interface AnkiPackageOutput {
 
 export interface AnkiPackageDependencies {
   createDeck?: (deckName: string) => AnkiDeckWriter | Promise<AnkiDeckWriter>
+}
+
+export interface AnkiPackageBuildOptions {
+  fileName?: string
 }
 
 export interface LegacyApkgInput {
@@ -48,7 +53,8 @@ export interface LegacyApkgInput {
 
 export async function buildAnkiPackage(
   input: ExportRowsInput,
-  dependencies: AnkiPackageDependencies = {}
+  dependencies: AnkiPackageDependencies = {},
+  options: AnkiPackageBuildOptions = {}
 ): Promise<AnkiPackageOutput> {
   const deck = await (dependencies.createDeck ?? createDefaultDeck)(input.deckName)
 
@@ -63,10 +69,11 @@ export async function buildAnkiPackage(
   }
 
   const data = await deck.save()
+  const fileName = options.fileName ?? 'deck.apkg'
   const manifest = createExportManifest({
     ...input,
     format: 'anki-package',
-    files: []
+    files: [createExportFileEntry(fileName, data)]
   })
 
   return {

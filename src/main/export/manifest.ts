@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto'
+
 export const EXPORT_FORMATS = [
   'anki-package',
   'anki-text-bundle',
@@ -23,6 +25,26 @@ export interface ExportPolicyItem {
   state: WorkbookItemState
   flagged?: boolean
   isFlagged?: boolean
+}
+
+export interface ExportManifestPolicy {
+  includeExpressions: boolean
+  includeSentences: boolean
+  keepFlaggedItems: boolean
+  flaggedItemExportPolicy: FlaggedItemExportPolicy
+}
+
+export interface ExportExcludedItemCounts {
+  inactive: number
+  type: number
+  flagged: number
+  total: number
+}
+
+export interface ExportManifestFile {
+  path: string
+  sizeBytes: number
+  sha256: string
 }
 
 export interface ExpressionExportRow extends ExportPolicyItem {
@@ -67,6 +89,11 @@ export interface ExportRowsInput {
   generatedAt?: string
   includedItemTypes?: StudyItemType[]
   selectedItemCounts?: ExportItemCounts
+  runId?: string
+  appVersion?: string
+  exportPolicy?: ExportManifestPolicy
+  excludedItemCounts?: ExportExcludedItemCounts
+  warningCodes?: string[]
   sourcePlatformSummary?: Record<string, number>
   expressions: ExpressionExportRow[]
   sentences: SentenceExportRow[]
@@ -87,11 +114,15 @@ export type ExportPolicyResult<T extends ExportPolicyItem> = T[] & {
     flagged: string[]
   }
   warnings: string[]
+  warningCodes: string[]
+  excludedItemCounts: ExportExcludedItemCounts
 }
 
 export interface ExportManifest {
-  schemaVersion: 1
+  schemaVersion: 2
   appName: 'DialogLingo'
+  appVersion: string
+  runId: string
   workbookId: string
   format: ExportFormat
   deckName: string
@@ -100,9 +131,12 @@ export interface ExportManifest {
   includedItemTypes: StudyItemType[]
   selectedItemCounts: ExportItemCounts
   exportedItemCounts: ExportItemCounts
+  excludedItemCounts: ExportExcludedItemCounts
   itemCounts: ExportItemCounts
+  policy: ExportManifestPolicy
+  warningCodes: string[]
   sourcePlatformSummary: Record<string, number>
-  files: string[]
+  files: ExportManifestFile[]
 }
 
 export interface TextBundleOutput {
@@ -127,21 +161,31 @@ export function filterExportableItems<T extends ExportPolicyItem>(
     flagged: []
   }
   result.warnings = []
+  result.warningCodes = []
+  result.excludedItemCounts = {
+    inactive: 0,
+    type: 0,
+    flagged: 0,
+    total: 0
+  }
 
   for (const item of items) {
     if (item.state !== 'active') {
       result.excluded.inactive.push(item.id)
+      result.excludedItemCounts.inactive += 1
       continue
     }
 
     if (!isIncludedType(item, normalizedPolicy)) {
       result.excluded.type.push(item.id)
+      result.excludedItemCounts.type += 1
       continue
     }
 
     if (isFlagged(item)) {
       if (normalizedPolicy.flaggedItemExportPolicy === 'block' || !normalizedPolicy.keepFlaggedItems) {
         result.excluded.flagged.push(item.id)
+        result.excludedItemCounts.flagged += 1
         continue
       }
     }
@@ -149,13 +193,20 @@ export function filterExportableItems<T extends ExportPolicyItem>(
     result.push(item)
   }
 
+  result.excludedItemCounts.total =
+    result.excludedItemCounts.inactive +
+    result.excludedItemCounts.type +
+    result.excludedItemCounts.flagged
+
   if (result.excluded.flagged.length > 0) {
     const count = result.excluded.flagged.length
     const noun = pluralize(count, 'item')
     if (normalizedPolicy.flaggedItemExportPolicy === 'block') {
       result.warnings.push(`${count} flagged ${noun} was blocked by export policy.`)
+      result.warningCodes.push('flagged-items-blocked')
     } else {
       result.warnings.push(`${count} flagged ${noun} was excluded from the export.`)
+      result.warningCodes.push('flagged-items-excluded')
     }
   }
 
@@ -164,6 +215,7 @@ export function filterExportableItems<T extends ExportPolicyItem>(
     result.warnings.push(
       `${includedFlaggedCount} flagged ${pluralize(includedFlaggedCount, 'item')} is included in the export.`
     )
+    result.warningCodes.push('flagged-items-included')
   }
 
   // Keep array compatibility for existing callers while exposing a named
@@ -179,14 +231,22 @@ export function filterExportableItems<T extends ExportPolicyItem>(
 export function createExportManifest(
   input: ExportRowsInput & {
     format: ExportFormat
-    files: string[]
+    files: ExportManifestFile[] | string[]
   }
 ): ExportManifest {
   const exportedItemCounts = countExportRows(input.expressions, input.sentences)
+  const exportPolicy = input.exportPolicy ?? {
+    includeExpressions: input.includedItemTypes?.includes('Expression') ?? input.expressions.length > 0,
+    includeSentences: input.includedItemTypes?.includes('Sentence') ?? input.sentences.length > 0,
+    keepFlaggedItems: false,
+    flaggedItemExportPolicy: 'warn' as const
+  }
 
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     appName: 'DialogLingo',
+    appVersion: input.appVersion ?? '0.2.3',
+    runId: input.runId ?? 'untracked',
     workbookId: input.workbookId,
     format: input.format,
     deckName: input.deckName,
@@ -195,12 +255,46 @@ export function createExportManifest(
     includedItemTypes: input.includedItemTypes ?? inferIncludedItemTypes(input),
     selectedItemCounts: input.selectedItemCounts ?? exportedItemCounts,
     exportedItemCounts,
+    excludedItemCounts: input.excludedItemCounts ?? emptyExcludedItemCounts(),
     itemCounts: exportedItemCounts,
+    policy: exportPolicy,
+    warningCodes: uniqueStrings(input.warningCodes ?? []),
     sourcePlatformSummary:
       input.sourcePlatformSummary ??
       countSourcePlatforms([...input.expressions, ...input.sentences]),
-    files: input.files
+    files: input.files.map((file) =>
+      typeof file === 'string'
+        ? { path: file, sizeBytes: 0, sha256: '' }
+        : file
+    )
   }
+}
+
+export function createExportFileEntry(
+  filePath: string,
+  contents: string | Uint8Array
+): ExportManifestFile {
+  const bytes = typeof contents === 'string' ? Buffer.from(contents, 'utf8') : Buffer.from(contents)
+  return {
+    path: filePath,
+    sizeBytes: bytes.byteLength,
+    sha256: createHash('sha256').update(bytes).digest('hex')
+  }
+}
+
+export function mergeExcludedItemCounts(
+  ...counts: ExportExcludedItemCounts[]
+): ExportExcludedItemCounts {
+  const merged = counts.reduce(
+    (total, current) => ({
+      inactive: total.inactive + current.inactive,
+      type: total.type + current.type,
+      flagged: total.flagged + current.flagged,
+      total: total.total + current.total
+    }),
+    emptyExcludedItemCounts()
+  )
+  return merged
 }
 
 export function countExportRows(
@@ -301,6 +395,19 @@ function uniqueTags(tags: string[]): string[] {
   }
 
   return result
+}
+
+function uniqueStrings(values: string[]): string[] {
+  return [...new Set(values)]
+}
+
+function emptyExcludedItemCounts(): ExportExcludedItemCounts {
+  return {
+    inactive: 0,
+    type: 0,
+    flagged: 0,
+    total: 0
+  }
 }
 
 function inferIncludedItemTypes(input: Pick<ExportRowsInput, 'expressions' | 'sentences'>) {

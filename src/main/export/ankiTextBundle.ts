@@ -1,5 +1,6 @@
 import {
   buildAnkiTags,
+  createExportFileEntry,
   createExportManifest,
   escapeTsvField,
   htmlLineBreaks,
@@ -58,26 +59,32 @@ export interface LegacyAnkiTextBundleInput {
 }
 
 export function buildAnkiTextBundle(input: ExportRowsInput): TextBundleOutput {
-  const files = ['expression.tsv', 'sentence.tsv', 'README-import.md', 'manifest.json']
+  const generatedAt = input.generatedAt ?? new Date().toISOString()
+  const payloadFiles = {
+    'expression.tsv': writeTsvRows(
+      ['Front', 'Back', 'Gloss', 'Context', 'Explanation', 'Quiz', 'Tags'],
+      input.expressions.map((row) => expressionToAnkiFields(row, input))
+    ),
+    'sentence.tsv': writeTsvRows(
+      ['Front', 'Back', 'Focus', 'Explanation', 'Quiz', 'Tags'],
+      input.sentences.map((row) => sentenceToAnkiFields(row, input))
+    ),
+    'README-import.md': buildAnkiTextBundleReadme(input, generatedAt)
+  }
   const manifest = createExportManifest({
     ...input,
     format: 'anki-text-bundle',
-    files
+    generatedAt,
+    files: Object.entries(payloadFiles).map(([filePath, contents]) =>
+      createExportFileEntry(filePath, contents)
+    )
   })
 
   return {
     manifest,
     files: {
       'manifest.json': JSON.stringify(manifest, null, 2),
-      'README-import.md': buildAnkiTextBundleReadme(input, manifest.generatedAt),
-      'expression.tsv': writeTsvRows(
-        ['Front', 'Back', 'Gloss', 'Context', 'Explanation', 'Quiz', 'Tags'],
-        input.expressions.map((row) => expressionToAnkiFields(row, input))
-      ),
-      'sentence.tsv': writeTsvRows(
-        ['Front', 'Back', 'Focus', 'Explanation', 'Quiz', 'Tags'],
-        input.sentences.map((row) => sentenceToAnkiFields(row, input))
-      )
+      ...payloadFiles
     }
   }
 }
