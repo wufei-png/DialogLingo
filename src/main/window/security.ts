@@ -33,6 +33,12 @@ export function attachRendererWindowSecurity(
     }
   })
 
+  webContents.on('will-redirect', (details) => {
+    if (!isAllowedRendererNavigation(details.url, target, details.isMainFrame)) {
+      details.preventDefault()
+    }
+  })
+
   webContents.on('will-frame-navigate', (details) => {
     if (!isAllowedRendererNavigation(details.url, target, details.isMainFrame)) {
       details.preventDefault()

@@ -1,9 +1,11 @@
-import { describe, expect, it } from 'vitest'
+import type { BrowserWindow } from 'electron'
+import { describe, expect, it, vi } from 'vitest'
 import {
   createDevRendererTarget,
   createPackagedRendererTarget
 } from '../../../src/main/ipc/sender'
 import {
+  attachRendererWindowSecurity,
   getRendererContentSecurityPolicy,
   isAllowedRendererNavigation
 } from '../../../src/main/window/security'
@@ -22,6 +24,37 @@ describe('renderer window security policy', () => {
 
     expect(isAllowedRendererNavigation('file:///app/dist/renderer/index.html', target)).toBe(true)
     expect(isAllowedRendererNavigation('file:///app/dist/renderer/other.html', target)).toBe(false)
+  })
+
+  it('guards server redirects with the same renderer target policy', () => {
+    type RedirectDetails = {
+      url: string
+      isMainFrame: boolean
+      preventDefault: () => void
+    }
+
+    const listeners = new Map<string, (details: RedirectDetails) => void>()
+    const webContents = {
+      setWindowOpenHandler: vi.fn(),
+      on: vi.fn((event: string, listener: unknown) => {
+        listeners.set(event, listener as (details: RedirectDetails) => void)
+      })
+    }
+    const target = createDevRendererTarget('http://localhost:5173/')
+
+    attachRendererWindowSecurity(
+      { webContents } as unknown as BrowserWindow,
+      target
+    )
+
+    const details = {
+      url: 'https://example.com/redirected',
+      isMainFrame: true,
+      preventDefault: vi.fn()
+    }
+    listeners.get('will-redirect')?.(details)
+
+    expect(details.preventDefault).toHaveBeenCalledOnce()
   })
 
   it('keeps development and packaged CSP capabilities distinct', () => {
