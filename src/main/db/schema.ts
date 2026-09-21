@@ -132,5 +132,11 @@ export const exportRunsTable = sqliteTable('export_runs', {
   exportType: text('export_type').notNull(),
   outputPath: text('output_path').notNull(),
   createdAt: text('created_at').notNull(),
-  metadataJson: text('metadata_json').notNull()
+  metadataJson: text('metadata_json').notNull(),
+  status: text('status').notNull(),
+  startedAt: text('started_at').notNull(),
+  completedAt: text('completed_at'),
+  failedAt: text('failed_at'),
+  errorCode: text('error_code'),
+  errorMessage: text('error_message')
 })

@@ -29,6 +29,11 @@ import {
   type ExportRowsInput,
   type StudyItemType
 } from './export/manifest'
+import {
+  classifyExportFailure,
+  createExportRunStore,
+  exportErrorMessage
+} from './export/runStatus'
 import { buildWorkbookExportRows } from './export/workbookRows'
 import {
   buildGenerationRunSnapshot,
@@ -95,6 +100,7 @@ runMigrations(sqlite, undefined, {
   backupDir: path.join(app.getPath('userData'), 'database-backups')
 })
 logger.debug('startup', 'database migrations complete')
+const exportRunStore = createExportRunStore(sqlite)
 
 const settings = createSettingsService(dbPath, {
   runMigrations: true
@@ -1390,7 +1396,24 @@ function createRouter() {
           exportInput.sentences
         )
         const exportWarnings = [...expressionRows.warnings, ...sentenceRows.warnings]
+        const exportRunId = crypto.randomUUID()
+        const startedAt = new Date().toISOString()
+        exportRunStore.start({
+          id: exportRunId,
+          workbookId: input.workbookId,
+          exportType: input.request.format,
+          outputPath: outputLocation,
+          startedAt,
+          metadata: {
+            deckName: input.request.deckName,
+            direction: input.request.direction,
+            outputName,
+            selectedItemCounts,
+            includedItemTypes: exportInput.includedItemTypes
+          }
+        })
         logger.info('export', 'run requested', {
+          exportRunId,
           workbookId: input.workbookId,
           format: input.request.format,
           outputLocation,
@@ -1423,37 +1446,21 @@ function createRouter() {
             await writeFile(filePath, output.data)
           }
 
-          sqlite
-            .prepare(
-              `
-                insert into export_runs (
-                  id,
-                  workbook_id,
-                  export_type,
-                  output_path,
-                  created_at,
-                  metadata_json
-                )
-                values (?, ?, ?, ?, ?, ?)
-              `
-            )
-            .run(
-              crypto.randomUUID(),
-              input.workbookId,
-              input.request.format,
-              outputPath,
-              new Date().toISOString(),
-              JSON.stringify({
-                deckName: input.request.deckName,
-                direction: input.request.direction,
-                outputName,
-                keepFlaggedItems: input.request.keepFlaggedItems ?? false,
-                selectedItemCounts,
-                exportedItemCounts,
-                includedItemTypes: exportInput.includedItemTypes,
-                warnings: exportWarnings
-              })
-            )
+          exportRunStore.complete({
+            id: exportRunId,
+            outputPath,
+            completedAt: new Date().toISOString(),
+            metadata: {
+              deckName: input.request.deckName,
+              direction: input.request.direction,
+              outputName,
+              keepFlaggedItems: input.request.keepFlaggedItems ?? false,
+              selectedItemCounts,
+              exportedItemCounts,
+              includedItemTypes: exportInput.includedItemTypes,
+              warnings: exportWarnings
+            }
+          })
 
           logger.info('export', 'run complete', {
             workbookId: input.workbookId,
@@ -1471,12 +1478,37 @@ function createRouter() {
             outputPath
           }
         } catch (error) {
+          const errorMessage = exportErrorMessage(error)
           logger.error('export', 'run failed', {
+            exportRunId,
             workbookId: input.workbookId,
             format: input.request.format,
             outputLocation,
-            message: error instanceof Error ? error.message : String(error)
+            message: errorMessage
           })
+          try {
+            exportRunStore.fail({
+              id: exportRunId,
+              failedAt: new Date().toISOString(),
+              code: classifyExportFailure(error),
+              message: errorMessage,
+              metadata: {
+                deckName: input.request.deckName,
+                direction: input.request.direction,
+                outputName,
+                keepFlaggedItems: input.request.keepFlaggedItems ?? false,
+                selectedItemCounts,
+                exportedItemCounts,
+                includedItemTypes: exportInput.includedItemTypes,
+                warnings: exportWarnings
+              }
+            })
+          } catch (statusError) {
+            logger.error('export', 'could not record failed export run', {
+              exportRunId,
+              message: exportErrorMessage(statusError)
+            })
+          }
           return {
             ok: false as const,
             workbookId: input.workbookId,
@@ -1485,7 +1517,7 @@ function createRouter() {
               requested: input.request.format,
               failed: true
             }),
-            message: error instanceof Error ? error.message : String(error)
+            message: errorMessage
           }
         }
       }

@@ -60,7 +60,7 @@ describe('historical database upgrades', () => {
       const fixture = historicalDatabase(version)
       try {
         insertRepresentativeRows(fixture.sqlite)
-        fixture.copyThrough(5)
+        fixture.copyThrough(6)
         runMigrations(fixture.sqlite, fixture.migrationDir, { backupDir: fixture.backupDir })
 
         const search = createSessionSearch(fixture.sqlite)
@@ -79,7 +79,7 @@ describe('historical database upgrades', () => {
         ])
         expect(fixture.sqlite.pragma('integrity_check')).toEqual([{ integrity_check: 'ok' }])
         expect(fixture.sqlite.pragma('foreign_key_check')).toEqual([])
-        expect(fixture.sqlite.prepare('select count(*) as count from schema_migrations').get()).toEqual({ count: 6 })
+        expect(fixture.sqlite.prepare('select count(*) as count from schema_migrations').get()).toEqual({ count: 7 })
         expect(
           fixture.sqlite.prepare('select edit_version from workbook_items where id = ?').get('item')
         ).toEqual({ edit_version: 0 })
@@ -91,6 +91,13 @@ describe('historical database upgrades', () => {
         }
         expect(fixture.sqlite.prepare('select output_path from export_runs where id = ?').get('export')).toEqual({
           output_path: '/synthetic/export'
+        })
+        expect(
+          fixture.sqlite.prepare('select status, started_at, completed_at from export_runs where id = ?').get('export')
+        ).toEqual({
+          status: 'completed',
+          started_at: '2026-01-01',
+          completed_at: '2026-01-01'
         })
 
         if (version < 5) {
