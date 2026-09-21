@@ -76,4 +76,11 @@ describe('IPC sender authorization', () => {
       'loopback HTTP(S) origin'
     )
   })
+
+  it('accepts bracketed IPv6 loopback development URLs', () => {
+    expect(createDevRendererTarget('http://[::1]:5173/')).toMatchObject({
+      kind: 'dev',
+      origin: 'http://[::1]:5173'
+    })
+  })
 })
