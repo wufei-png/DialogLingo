@@ -21,6 +21,24 @@ export function ensureApkgFileName(outputName: string) {
   return outputName.toLowerCase().endsWith('.apkg') ? outputName : `${outputName}.apkg`
 }
 
+export function assertValidExportParentDirectory(parentDirectory: string) {
+  if (!parentDirectory || parentDirectory.includes('\u0000') || !path.isAbsolute(parentDirectory)) {
+    throw new Error('Export output location must be an absolute path.')
+  }
+}
+
+export function assertSafeExportOutputName(outputName: string) {
+  if (
+    !outputName ||
+    outputName === '.' ||
+    outputName === '..' ||
+    outputName.includes('\u0000') ||
+    path.basename(outputName) !== outputName
+  ) {
+    throw new Error('Export output name must be a single safe path component.')
+  }
+}
+
 function sanitizeFolderName(folderName: string) {
   const normalized = folderName
     .trim()
@@ -76,6 +94,8 @@ export async function createExportDirectoryPlan(
   parentDirectory: string,
   preferredName: string
 ): Promise<ExportDirectoryPlan> {
+  assertValidExportParentDirectory(parentDirectory)
+  assertSafeExportOutputName(normalizeExportOutputName(preferredName, 'DialogLingo Export'))
   await mkdir(parentDirectory, { recursive: true })
   const finalDirectory = await findAvailableExportDirectory(
     parentDirectory,

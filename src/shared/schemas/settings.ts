@@ -38,12 +38,12 @@ export const expressionDifficultySchema = z.enum(['easy', 'average', 'hard'])
 export const appLocaleSchema = z.enum(['en', 'zh-CN'])
 
 const cliCommandSettingsSchema = z.object({
-  executablePath: z.string().default(''),
-  model: z.string().default('')
+  executablePath: z.string().max(4_096).default(''),
+  model: z.string().max(256).default('')
 })
 
 const cliModelDiscoverySettingsSchema = z.object({
-  executablePath: z.string().default('')
+  executablePath: z.string().max(4_096).default('')
 })
 
 export const modelBackendSchema = z
@@ -54,7 +54,7 @@ export const modelBackendSchema = z
         codex: cliCommandSettingsSchema.default(DEFAULT_MODEL_BACKEND.cli.codex),
         claude: cliCommandSettingsSchema.default(DEFAULT_MODEL_BACKEND.cli.claude),
         opencode: cliCommandSettingsSchema.default(DEFAULT_MODEL_BACKEND.cli.opencode),
-        timeoutMs: z.number().int().positive().default(DEFAULT_CLI_TIMEOUT_MS)
+        timeoutMs: z.number().int().positive().max(600_000).default(DEFAULT_CLI_TIMEOUT_MS)
       })
       .default(DEFAULT_MODEL_BACKEND.cli)
   })
@@ -62,16 +62,16 @@ export const modelBackendSchema = z
 
 export const settingsSchema = z.object({
   provider: z.object({
-    baseUrl: z.string(),
-    apiKey: z.string(),
-    defaultModel: z.string()
+    baseUrl: z.string().max(2_048),
+    apiKey: z.string().max(32_768),
+    defaultModel: z.string().max(256)
   }),
   modelBackend: modelBackendSchema,
   generation: z.object({
     expressionDifficulty: expressionDifficultySchema.default(DEFAULT_EXPRESSION_DIFFICULTY),
-    batchSize: z.number().int().positive().default(DEFAULT_BATCH_SIZE),
-    boundedConcurrency: z.number().int().positive(),
-    maxItemsPerSession: z.number().int().positive(),
+    batchSize: z.number().int().positive().max(256).default(DEFAULT_BATCH_SIZE),
+    boundedConcurrency: z.number().int().positive().max(64),
+    maxItemsPerSession: z.number().int().positive().max(1_000),
     typeBalanceProfile: z.object({
       targetExpression: z.number().min(0).max(1),
       targetSentence: z.number().min(0).max(1),
@@ -85,10 +85,10 @@ export const settingsSchema = z.object({
   scan: z.object({
     pathOverrides: z.array(
       z.object({
-        platform: z.string(),
-        path: z.string()
+        platform: z.string().min(1).max(64),
+        path: z.string().min(1).max(4_096)
       })
-    ),
+    ).max(100),
     scanOnLaunch: z.boolean(),
     includeArchivedSessions: z.boolean()
   }),
@@ -123,8 +123,8 @@ export const modelListInputSchema = z.object({
   backendKind: modelBackendKindSchema,
   provider: z
     .object({
-      baseUrl: z.string(),
-      apiKey: z.string()
+      baseUrl: z.string().max(2_048),
+      apiKey: z.string().max(32_768)
     })
     .optional(),
   cli: z
@@ -132,7 +132,7 @@ export const modelListInputSchema = z.object({
       codex: cliModelDiscoverySettingsSchema.default({ executablePath: '' }),
       claude: cliModelDiscoverySettingsSchema.default({ executablePath: '' }),
       opencode: cliModelDiscoverySettingsSchema.default({ executablePath: '' }),
-      timeoutMs: z.number().int().positive().default(DEFAULT_CLI_TIMEOUT_MS)
+      timeoutMs: z.number().int().positive().max(600_000).default(DEFAULT_CLI_TIMEOUT_MS)
     })
     .optional()
 })

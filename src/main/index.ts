@@ -2,10 +2,12 @@ import crypto from 'node:crypto'
 import { existsSync, mkdirSync } from 'node:fs'
 import { createRequire } from 'node:module'
 import path from 'node:path'
-import { fileURLToPath } from 'node:url'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { app, BrowserWindow, dialog } from 'electron'
+import type { IpcMainInvokeEvent } from 'electron'
 import type { OpenDialogOptions } from 'electron'
 import { buildRouter } from '../shared/ipc/router'
+import type { IpcAuthorization } from '../shared/ipc/context'
 import type { ScanEvent } from '../shared/ipc/events'
 import type { GenerationInputBatch } from '../shared/schemas/jobs'
 import type { Settings } from '../shared/schemas/settings'
@@ -17,7 +19,12 @@ import { buildAnkiPackage } from './export/apkg'
 import { buildGenericTextBundle } from './export/genericTextBundle'
 import { commitExportDirectory } from './export/commit'
 import { diagnoseStartedExportRuns } from './export/diagnostics'
-import { ensureApkgFileName, normalizeExportOutputName } from './export/outputDirectory'
+import {
+  assertSafeExportOutputName,
+  assertValidExportParentDirectory,
+  ensureApkgFileName,
+  normalizeExportOutputName
+} from './export/outputDirectory'
 import {
   countExportRows,
   filterExportableItems,
@@ -64,6 +71,12 @@ import { scanSessions } from './scan/scanSessions'
 import { createSettingsService } from './settings/service'
 import { createWorkbookService } from './workbook/service'
 import { logger } from './logging'
+import {
+  createDevRendererTarget,
+  createIpcSenderAuthorizer,
+  createPackagedRendererTarget,
+  type RendererTarget
+} from './ipc/sender'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const require = createRequire(import.meta.url)
@@ -71,6 +84,9 @@ const { createIPCHandler } = require('electron-trpc/main') as {
   createIPCHandler: (input: {
     router: ReturnType<typeof buildRouter>
     windows: BrowserWindow[]
+    createContext: (input: {
+      event: IpcMainInvokeEvent
+    }) => Promise<{ ipc: IpcAuthorization }>
   }) => {
     attachWindow: (window: BrowserWindow) => void
   }
@@ -969,10 +985,13 @@ async function chooseExportOutputDirectory(input: {
   const defaultPath = currentPath
     ? expandOutputPath(currentPath)
     : getDefaultExportDirectory()
+  const safeDefaultPath = path.isAbsolute(defaultPath) && !defaultPath.includes('\u0000')
+    ? defaultPath
+    : getDefaultExportDirectory()
   const owner = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
   const options: OpenDialogOptions = {
     title: input.title,
-    defaultPath,
+    defaultPath: safeDefaultPath,
     properties: ['openDirectory', 'createDirectory']
   }
   const result = owner
@@ -1363,6 +1382,8 @@ function createRouter() {
           keepFlaggedItems?: boolean
         }
       }) => {
+        const outputLocation = expandOutputPath(input.request.outputLocation)
+        assertValidExportParentDirectory(outputLocation)
         const items = listWorkbookItems({
           workbookId: input.workbookId,
           tab: 'all',
@@ -1385,7 +1406,6 @@ function createRouter() {
           keepFlaggedItems: input.request.keepFlaggedItems ?? false,
           flaggedItemExportPolicy: flaggedPolicy
         })
-        const outputLocation = expandOutputPath(input.request.outputLocation)
         let outputPath = outputLocation
         let outputFiles: string[] = []
         let manifestPath: string | null = null
@@ -1393,6 +1413,7 @@ function createRouter() {
           input.request.outputName,
           input.request.deckName
         )
+        assertSafeExportOutputName(outputName)
         const exportRunId = crypto.randomUUID()
         const startedAt = new Date().toISOString()
         exportRunStore.start({
@@ -1584,6 +1605,8 @@ function createRouter() {
 }
 
 const router = createRouter()
+let rendererTarget: RendererTarget | null = null
+const ipcSenderAuthorizer = createIpcSenderAuthorizer(() => rendererTarget)
 let ipcHandler:
   | {
       attachWindow: (window: BrowserWindow) => void
@@ -1613,6 +1636,10 @@ function resolvePreloadPath() {
 
 function createWindow() {
   const preloadPath = resolvePreloadPath()
+  const rendererPath = path.join(__dirname, '../renderer/index.html')
+  rendererTarget = process.env.ELECTRON_RENDERER_URL
+    ? createDevRendererTarget(process.env.ELECTRON_RENDERER_URL)
+    : createPackagedRendererTarget(pathToFileURL(rendererPath).href)
   logger.info('window', 'creating browser window', { preloadPath })
 
   const win = new BrowserWindow({
@@ -1625,6 +1652,11 @@ function createWindow() {
       contextIsolation: true,
       preload: preloadPath
     }
+  })
+
+  ipcSenderAuthorizer.register(win.webContents)
+  win.webContents.once('destroyed', () => {
+    ipcSenderAuthorizer.unregister(win.webContents)
   })
 
   win.webContents.on('did-fail-load', (_event, errorCode, errorDescription, validatedURL) => {
@@ -1647,7 +1679,10 @@ function createWindow() {
   if (!ipcHandler) {
     ipcHandler = createIPCHandler({
       router,
-      windows: [win]
+      windows: [win],
+      createContext: async ({ event }) => ({
+        ipc: ipcSenderAuthorizer.authorize(event)
+      })
     })
   } else {
     ipcHandler.attachWindow(win)
@@ -1657,7 +1692,6 @@ function createWindow() {
     logger.info('window', `loading renderer url ${process.env.ELECTRON_RENDERER_URL}`)
     void win.loadURL(process.env.ELECTRON_RENDERER_URL)
   } else {
-    const rendererPath = path.join(__dirname, '../renderer/index.html')
     logger.info('window', `loading renderer file ${rendererPath}`)
     void win.loadFile(rendererPath)
   }

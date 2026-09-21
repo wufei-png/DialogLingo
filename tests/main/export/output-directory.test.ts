@@ -3,6 +3,8 @@ import os from 'node:os'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
+  assertSafeExportOutputName,
+  assertValidExportParentDirectory,
   createUniqueExportSubdirectory,
   ensureApkgFileName,
   normalizeExportOutputName
@@ -20,6 +22,19 @@ describe('export output directories', () => {
   it('adds the Anki package extension only when needed', () => {
     expect(ensureApkgFileName('DialogLingo')).toBe('DialogLingo.apkg')
     expect(ensureApkgFileName('DialogLingo.apkg')).toBe('DialogLingo.apkg')
+  })
+
+  it('requires a native absolute parent and a single safe output name', () => {
+    expect(() => assertValidExportParentDirectory('relative/path')).toThrow(
+      'absolute path'
+    )
+    expect(() => assertValidExportParentDirectory('/tmp\u0000unsafe')).toThrow(
+      'absolute path'
+    )
+    expect(() => assertSafeExportOutputName('../outside')).toThrow(
+      'single safe path component'
+    )
+    expect(() => assertSafeExportOutputName('DialogLingo')).not.toThrow()
   })
 
   it('creates a new unique subdirectory for bundle exports', async () => {

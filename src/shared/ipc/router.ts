@@ -1,25 +1,64 @@
-import { initTRPC } from '@trpc/server'
-import { z } from 'zod'
-import { modelListInputSchema, settingsSchema } from '../schemas/settings'
-import { workbookListTabSchema, workbookSnapshotSchema } from '../schemas/workbook'
+import { initTRPC, TRPCError } from '@trpc/server'
+import type { AppRouterContext } from './context'
+import {
+  exportChooseOutputDirectoryInputSchema,
+  exportRunInputSchema,
+  generationJobInputSchema,
+  generationRunInputSchema,
+  ipcModelListInputSchema,
+  ipcSettingsSaveSchema,
+  jobSnapshotInputSchema,
+  noIpcInputSchema,
+  sessionPreviewInputSchema,
+  sessionSearchInputSchema,
+  workbookItemActionInputSchema,
+  workbookListInputSchema,
+  workbookPreviewSourceInputSchema,
+  workbookRevertInputSchema,
+  workbookSaveItemInputSchema,
+  type ExportRunInput,
+  type ExportChooseOutputDirectoryInput,
+  type GenerationJobInput,
+  type GenerationRunInput,
+  type IpcModelListInput,
+  type IpcSettings,
+  type SessionPreviewInput,
+  type SessionSearchInput,
+  type WorkbookItemActionInput,
+  type WorkbookListInput,
+  type WorkbookPreviewSourceInput,
+  type WorkbookRevertInput,
+  type WorkbookSaveItemInput
+} from '../schemas/ipc'
+import type { Settings } from '../schemas/settings'
 
-const t = initTRPC.create()
+const t = initTRPC.context<AppRouterContext>().create()
+const ipcProcedure = t.procedure.use(({ ctx, next }) => {
+  if (ctx.ipc?.authorized !== true) {
+    throw new TRPCError({
+      code: 'FORBIDDEN',
+      message: 'IPC sender is not authorized.'
+    })
+  }
+
+  return next()
+})
 
 export type RouterDeps = {
   settings: {
-    get: () => unknown
-    save: (next: any) => unknown
-    reset: () => unknown
+    get: () => Settings
+    save: (next: IpcSettings) => unknown
+    reset: () => Settings
   }
   modelCatalog: {
-    list: (input: any) => Promise<unknown>
+    list: (input: IpcModelListInput) => Promise<unknown>
   }
   jobs: {
     getSnapshot: (jobId: string) => unknown
   }
   sessions: {
-    search: (input: any) => unknown
-    preview: (input: any) => unknown
+    search: (input: SessionSearchInput) => unknown
+    preview: (input: SessionPreviewInput) => unknown
     rescan: () => Promise<unknown>
   }
   projects: {
@@ -40,133 +79,92 @@ export type RouterDeps = {
     }
   }
   generation: {
-    previewPrompt: (input: any) => Promise<unknown>
-    start: (input: any) => Promise<unknown>
-    resume: (input: any) => Promise<unknown>
-    restart: (input: any) => Promise<unknown>
-    cancel: (input: any) => Promise<unknown>
+    previewPrompt: (input: GenerationRunInput) => Promise<unknown>
+    start: (input: GenerationRunInput) => Promise<unknown>
+    resume: (input: GenerationJobInput) => Promise<unknown>
+    restart: (input: GenerationJobInput) => Promise<unknown>
+    cancel: (input: GenerationJobInput) => Promise<unknown>
   }
   workbook: {
-    list: (input: any) => unknown
-    previewSource: (input: any) => unknown
-    saveItem: (input: any) => Promise<unknown>
-    deleteItem: (input: any) => Promise<unknown>
-    restoreItem: (input: any) => Promise<unknown>
-    revertItem: (input: any) => Promise<unknown>
+    list: (input: WorkbookListInput) => unknown
+    previewSource: (input: WorkbookPreviewSourceInput) => unknown
+    saveItem: (input: WorkbookSaveItemInput) => Promise<unknown>
+    deleteItem: (input: WorkbookItemActionInput) => Promise<unknown>
+    restoreItem: (input: WorkbookItemActionInput) => Promise<unknown>
+    revertItem: (input: WorkbookRevertInput) => Promise<unknown>
   }
   exportRuns: {
-    run: (input: any) => Promise<unknown>
+    run: (input: ExportRunInput) => Promise<unknown>
     defaultOutputLocation: () => string
-    chooseOutputDirectory: (input: any) => Promise<unknown>
+    chooseOutputDirectory: (input: ExportChooseOutputDirectoryInput) => Promise<unknown>
   }
 }
 
 export function buildRouter(deps: RouterDeps) {
   return t.router({
-    settingsGet: t.procedure.query(() => deps.settings.get()),
-    settingsSave: t.procedure
-      .input(settingsSchema)
+    settingsGet: ipcProcedure.input(noIpcInputSchema).query(() => deps.settings.get()),
+    settingsSave: ipcProcedure
+      .input(ipcSettingsSaveSchema)
       .mutation(({ input }) => deps.settings.save(input)),
-    settingsReset: t.procedure.mutation(() => deps.settings.reset()),
-    settingsListModels: t.procedure
-      .input(modelListInputSchema)
+    settingsReset: ipcProcedure.input(noIpcInputSchema).mutation(() => deps.settings.reset()),
+    settingsListModels: ipcProcedure
+      .input(ipcModelListInputSchema)
       .query(({ input }) => deps.modelCatalog.list(input)),
-    jobSnapshot: t.procedure
-      .input(z.object({ jobId: z.string() }))
+    jobSnapshot: ipcProcedure
+      .input(jobSnapshotInputSchema)
       .query(({ input }) => deps.jobs.getSnapshot(input.jobId)),
-    sessionSearch: t.procedure
-      .input(
-        z.object({
-          query: z.string(),
-          scope: z.enum(['all', 'titles', 'transcript']),
-          groupBy: z.enum(['platform', 'time', 'project']),
-          timeRange: z.object({ from: z.string(), to: z.string() }).nullable(),
-          projects: z.array(z.string()),
-          platforms: z.array(z.enum(['codex', 'claude', 'opencode'])),
-          includeArchived: z.boolean()
-        })
-      )
+    sessionSearch: ipcProcedure
+      .input(sessionSearchInputSchema)
       .query(({ input }) => deps.sessions.search(input)),
-    sessionPreview: t.procedure
-      .input(
-        z.object({
-          sessionId: z.string(),
-          query: z.string().default(''),
-          scope: z.enum(['all', 'titles', 'transcript']).default('all')
-        })
-      )
+    sessionPreview: ipcProcedure
+      .input(sessionPreviewInputSchema)
       .query(({ input }) => deps.sessions.preview(input)),
-    sessionRescan: t.procedure.mutation(() => deps.sessions.rescan()),
-    projectsList: t.procedure.query(() => deps.projects.list()),
-    launchScanStatus: t.procedure.query(() => deps.scan.getLaunchStatus()),
-    generationPromptPreview: t.procedure
-      .input(z.object({
-        sessionIds: z.array(z.string()),
-        promptOverride: z.string().nullable().optional()
-      }))
+    sessionRescan: ipcProcedure.input(noIpcInputSchema).mutation(() => deps.sessions.rescan()),
+    projectsList: ipcProcedure.input(noIpcInputSchema).query(() => deps.projects.list()),
+    launchScanStatus: ipcProcedure.input(noIpcInputSchema).query(() => deps.scan.getLaunchStatus()),
+    generationPromptPreview: ipcProcedure
+      .input(generationRunInputSchema)
       .query(({ input }) => deps.generation.previewPrompt(input)),
-    generationStart: t.procedure
-      .input(
-        z.object({
-          sessionIds: z.array(z.string()),
-          promptOverride: z.string().nullable().optional()
-        })
-      )
+    generationStart: ipcProcedure
+      .input(generationRunInputSchema)
       .mutation(({ input }) => deps.generation.start(input)),
-    generationResume: t.procedure
-      .input(z.object({ jobId: z.string() }))
+    generationResume: ipcProcedure
+      .input(generationJobInputSchema)
       .mutation(({ input }) => deps.generation.resume(input)),
-    generationRestart: t.procedure
-      .input(z.object({ jobId: z.string() }))
+    generationRestart: ipcProcedure
+      .input(generationJobInputSchema)
       .mutation(({ input }) => deps.generation.restart(input)),
-    generationCancel: t.procedure
-      .input(z.object({ jobId: z.string() }))
+    generationCancel: ipcProcedure
+      .input(generationJobInputSchema)
       .mutation(({ input }) => deps.generation.cancel(input)),
-    workbookList: t.procedure
-      .input(z.object({ workbookId: z.string(), tab: workbookListTabSchema }))
+    workbookList: ipcProcedure
+      .input(workbookListInputSchema)
       .query(({ input }) => deps.workbook.list(input)),
-    workbookPreviewSource: t.procedure
-      .input(
-        z.object({
-          sessionId: z.string(),
-          sourceSpanRef: z.string().nullable().optional(),
-          highlightText: z.string().nullable().optional()
-        })
-      )
+    workbookPreviewSource: ipcProcedure
+      .input(workbookPreviewSourceInputSchema)
       .query(({ input }) => deps.workbook.previewSource(input)),
-    workbookSaveItem: t.procedure
-      .input(
-        z.object({
-          itemId: z.string(),
-          currentSnapshot: workbookSnapshotSchema,
-          baseVersion: z.number().int().nonnegative()
-        })
-      )
+    workbookSaveItem: ipcProcedure
+      .input(workbookSaveItemInputSchema)
       .mutation(({ input }) => deps.workbook.saveItem(input)),
-    workbookDeleteItem: t.procedure
-      .input(z.object({ itemId: z.string() }))
+    workbookDeleteItem: ipcProcedure
+      .input(workbookItemActionInputSchema)
       .mutation(({ input }) => deps.workbook.deleteItem(input)),
-    workbookRestoreItem: t.procedure
-      .input(z.object({ itemId: z.string() }))
+    workbookRestoreItem: ipcProcedure
+      .input(workbookItemActionInputSchema)
       .mutation(({ input }) => deps.workbook.restoreItem(input)),
-    workbookRevertItem: t.procedure
-      .input(z.object({ itemId: z.string(), baseVersion: z.number().int().nonnegative() }))
+    workbookRevertItem: ipcProcedure
+      .input(workbookRevertInputSchema)
       .mutation(({ input }) => deps.workbook.revertItem(input)),
-    exportRun: t.procedure
-      .input(z.object({ workbookId: z.string(), request: z.any() }))
+    exportRun: ipcProcedure
+      .input(exportRunInputSchema)
       .mutation(({ input }) => deps.exportRuns.run(input)),
-    exportDefaultOutputLocation: t.procedure.query(() =>
+    exportDefaultOutputLocation: ipcProcedure.input(noIpcInputSchema).query(() =>
       deps.exportRuns.defaultOutputLocation()
     ),
-    exportChooseOutputDirectory: t.procedure
-      .input(
-        z.object({
-          currentPath: z.string().nullable().optional(),
-          title: z.string().optional()
-        })
-      )
+    exportChooseOutputDirectory: ipcProcedure
+      .input(exportChooseOutputDirectoryInputSchema)
       .mutation(({ input }) => deps.exportRuns.chooseOutputDirectory(input)),
-    appHealth: t.procedure.query(() => ({ ok: true as const }))
+    appHealth: ipcProcedure.input(noIpcInputSchema).query(() => ({ ok: true as const }))
   })
 }
 
