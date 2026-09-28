@@ -27,7 +27,7 @@ type Props = {
   deleted?: boolean
   selected: boolean
   modified: boolean
-  focusTargetRevision: number
+  focusTargetRequest: { itemId: string; revision: number } | null
   tabIndex: number
   anchorRef: (element: HTMLElement | null) => void
   onSelect: () => void
@@ -102,6 +102,7 @@ export function WorkbookCard(props: Props) {
   const { t } = useTranslation()
   const secondaryFieldsId = useId()
   const targetRef = useRef<HTMLInputElement | null>(null)
+  const lastHandledTargetRevisionRef = useRef(0)
   const [expanded, setExpanded] = useState(false)
   const [draft, setDraft] = useState(toDraft(props))
 
@@ -119,11 +120,18 @@ export function WorkbookCard(props: Props) {
   ])
 
   useEffect(() => {
-    if (props.selected && props.focusTargetRevision > 0 && !props.deleted) {
+    const request = props.focusTargetRequest
+    if (
+      props.selected &&
+      !props.deleted &&
+      request?.itemId === props.itemId &&
+      request.revision > lastHandledTargetRevisionRef.current
+    ) {
+      lastHandledTargetRevisionRef.current = request.revision
       targetRef.current?.focus()
       targetRef.current?.select()
     }
-  }, [props.deleted, props.focusTargetRevision, props.selected])
+  }, [props.deleted, props.focusTargetRequest, props.itemId, props.selected])
 
   function resetDraft() {
     setDraft(fromSnapshot(props.confirmedSnapshot))

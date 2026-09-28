@@ -43,7 +43,7 @@ export function CardStream(props: {
   rows: WorkbookRow[]
   selectedItemId: string | null
   selectionFocusRevision: number
-  focusTargetRevision: number
+  focusTargetRequest: { itemId: string; revision: number } | null
   onSelectItem: (itemId: string) => void
   onAdvanceSelection: () => void
   onDeleteItem: (itemId: string) => void
@@ -211,7 +211,7 @@ export function CardStream(props: {
                 modified={row.isEdited}
                 tabIndex={props.selectedItemId === row.id ? 0 : -1}
                 anchorRef={(element) => registerAnchor(row.id, element)}
-                focusTargetRevision={props.focusTargetRevision}
+                focusTargetRequest={props.focusTargetRequest}
                 onSelect={() => props.onSelectItem(row.id)}
                 onDelete={() => props.onDeleteItem(row.id)}
                 onRestore={() => props.onRestoreItem(row.id)}

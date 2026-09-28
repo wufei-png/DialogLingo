@@ -143,7 +143,10 @@ export function WorkbookPage(props: {
   const [sourceRefIndex, setSourceRefIndex] = useState(0)
   const [activeMatchIndex, setActiveMatchIndex] = useState(0)
   const [selectionFocusRevision, setSelectionFocusRevision] = useState(0)
-  const [focusTargetRevision, setFocusTargetRevision] = useState(0)
+  const [focusTargetRequest, setFocusTargetRequest] = useState<{
+    itemId: string
+    revision: number
+  } | null>(null)
   const [exportOpen, setExportOpen] = useState(false)
   const [stoppedActionPending, setStoppedActionPending] = useState<
     'resume' | 'restart' | null
@@ -154,6 +157,7 @@ export function WorkbookPage(props: {
   const [saveStates, setSaveStates] = useState<Map<string, WorkbookSaveState>>(
     () => new Map()
   )
+  const focusTargetRevisionRef = useRef(0)
   const activeBatchRef = useRef<HTMLElement | null>(null)
   const saveQueueRef = useRef<WorkbookSaveQueue | null>(null)
 
@@ -377,7 +381,11 @@ export function WorkbookPage(props: {
 
       if (event.key === 'Enter' && selectedItemId) {
         event.preventDefault()
-        setFocusTargetRevision((current) => current + 1)
+        focusTargetRevisionRef.current += 1
+        setFocusTargetRequest({
+          itemId: selectedItemId,
+          revision: focusTargetRevisionRef.current
+        })
         return
       }
 
@@ -822,8 +830,11 @@ export function WorkbookPage(props: {
             rows={rows}
             selectedItemId={selectedItemId}
             selectionFocusRevision={selectionFocusRevision}
-            focusTargetRevision={focusTargetRevision}
-            onSelectItem={setSelectedItemId}
+            focusTargetRequest={focusTargetRequest}
+            onSelectItem={(itemId) => {
+              setSelectedItemId(itemId)
+              setFocusTargetRequest(null)
+            }}
             onAdvanceSelection={selectNextItem}
             onDeleteItem={(itemId) => void deleteItem(itemId)}
             onRestoreItem={(itemId) => void restoreItem(itemId)}

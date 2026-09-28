@@ -117,7 +117,7 @@ function cardProps(overrides: Record<string, unknown> = {}) {
     sourceRefCount: 1,
     selected: true,
     modified: false,
-    focusTargetRevision: 0,
+    focusTargetRequest: null,
     tabIndex: 0,
     anchorRef: vi.fn(),
     onSelect: vi.fn(),
@@ -339,6 +339,22 @@ describe('workbook keyboard and accessible focus behavior', () => {
     expect(textKey.defaultPrevented).toBe(false)
     expect(deleteKey.defaultPrevented).toBe(false)
     expect(document.activeElement).toBe(targetInput)
+
+    const nextCardControl = first?.querySelector<HTMLButtonElement>('button')
+    expect(nextCardControl).not.toBeNull()
+    await act(async () => {
+      nextCardControl?.focus()
+    })
+    await settle()
+    expect(document.activeElement).toBe(nextCardControl)
+
+    await act(async () => {
+      first?.focus()
+    })
+    const secondEnter = await dispatchKey(first!, 'Enter')
+    await settle()
+    expect(secondEnter.defaultPrevented).toBe(true)
+    expect(document.activeElement).toBe(first?.querySelector('input'))
 
     const deleteButton = [...container.querySelectorAll<HTMLButtonElement>('button')].find(
       (button) => button.textContent?.includes('Delete')

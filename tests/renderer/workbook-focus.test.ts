@@ -83,7 +83,7 @@ function makeProps(rows: Row[], selectedItemId: string | null, selectionFocusRev
     rows,
     selectedItemId,
     selectionFocusRevision,
-    focusTargetRevision: 0,
+    focusTargetRequest: null,
     onSelectItem: vi.fn(),
     onAdvanceSelection: vi.fn(),
     onDeleteItem: vi.fn(),
