@@ -67,6 +67,7 @@ export type SourceDiagnosticCode =
   | 'opencode-cli-unavailable'
   | 'opencode-cli-export-unsupported'
   | 'opencode-cli-path-unverified'
+  | 'opencode-cli-global-list-unsupported'
   | 'opencode-cli-output-unsupported'
   | 'opencode-cli-output-too-large'
   | 'opencode-cli-timeout'

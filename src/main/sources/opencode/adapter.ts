@@ -19,6 +19,15 @@ import { logger } from '../../logging'
 
 type JsonMap = Record<string, unknown>
 
+const GLOBAL_SESSION_QUERY = `
+  select id, title, directory,
+    time_created as createdAt,
+    time_updated as updatedAt,
+    time_archived as archivedAt
+  from session
+  order by time_updated desc, id desc
+`
+
 export type { OpenCodeCommandResult, OpenCodeCommandRunner } from './command'
 
 export type OpenCodeAdapterOptions = SourceAdapterOptions & {
@@ -175,17 +184,37 @@ function toOpenCodeSummary(
   }
 }
 
-function parseSessionList(stdout: string, fallbackTime: number) {
+function parseGlobalSessionList(stdout: string, fallbackTime: number) {
   const parsed = JSON.parse(stdout) as unknown
-  const root = asMap(parsed)
-  const sessions = Array.isArray(parsed)
-    ? asMaps(parsed)
-    : asMaps(root?.sessions ?? root?.items ?? root?.data)
+  if (!Array.isArray(parsed)) {
+    throw new Error('OpenCode database query returned a non-array result')
+  }
 
-  return sessions.flatMap((session) => {
-    const id = stringValue(session.id, session.sessionID, session.sessionId)
+  return parsed.map((row) => {
+    const session = asMap(row)
+    if (
+      !session ||
+      typeof session.id !== 'string' ||
+      !session.id.trim() ||
+      typeof session.title !== 'string' ||
+      typeof session.directory !== 'string' ||
+      !session.directory.trim() ||
+      typeof session.createdAt !== 'number' ||
+      !Number.isFinite(session.createdAt) ||
+      typeof session.updatedAt !== 'number' ||
+      !Number.isFinite(session.updatedAt) ||
+      !('archivedAt' in session) ||
+      (session.archivedAt !== null &&
+        (typeof session.archivedAt !== 'number' || !Number.isFinite(session.archivedAt)))
+    ) {
+      throw new Error('OpenCode database query returned an invalid session row')
+    }
+    const id = session.id
     const summary = toOpenCodeSummary(session, `opencode-cli:${id}`, fallbackTime)
-    return summary ? [summary] : []
+    if (!summary) {
+      throw new Error('OpenCode database query returned a session without an ID')
+    }
+    return summary
   })
 }
 
@@ -359,33 +388,36 @@ export function createOpenCodeAdapter(
       return []
     }
 
-    const listed = await runCommand(
-      ['session', 'list', '--format', 'json', '--max-count', '-1'],
-      commandOptions
-    )
+    // session list is scoped to the CLI's current project. The documented db
+    // command reads the selected database, including sessions in other projects.
+    const listed = await runCommand(['db', GLOBAL_SESSION_QUERY, '--format', 'json'], commandOptions)
     if (listed.failure) {
       addCommandFailureDiagnostic(listed, '列出会话')
       return []
     }
     if (listed.exitCode !== 0) {
       addDiagnostic(
-        'opencode-cli-output-unsupported',
-        'OpenCode CLI 无法列出该现代来源中的会话；未读取该来源。'
+        'opencode-cli-global-list-unsupported',
+        'OpenCode CLI 不支持当前数据库的跨项目会话查询；未读取该来源。'
       )
       return []
     }
     if (!listed.stdout.trim()) {
+      addDiagnostic(
+        'opencode-cli-global-list-unsupported',
+        'OpenCode CLI 跨项目会话查询未返回 JSON；未读取该来源。'
+      )
       return []
     }
 
     try {
-      return parseSessionList(listed.stdout, Date.now())
+      return parseGlobalSessionList(listed.stdout, Date.now())
         .filter((summary) => matchesSessionFilters(summary, filters))
         .sort((left, right) => right.updatedAt.localeCompare(left.updatedAt))
     } catch {
       addDiagnostic(
-        'opencode-cli-output-unsupported',
-        'OpenCode CLI 返回了无法识别的会话列表格式；未读取该来源。'
+        'opencode-cli-global-list-unsupported',
+        'OpenCode CLI 返回了无法识别的跨项目会话查询结果；未读取该来源。'
       )
       return []
     }

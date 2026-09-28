@@ -21,23 +21,24 @@ const filters = {
 }
 
 const modernRoot = 'tests/fixtures/opencode-modern/opencode'
-const modernList = JSON.stringify({
-  sessions: [
-    {
-      id: 'ses_modern_active',
-      title: 'Modern OpenCode session',
-      directory: '/workspace/modern',
-      time: { created: 1773143205910, updated: 1773143685086 }
-    },
-    {
-      id: 'ses_modern_archived',
-      title: 'Archived modern session',
-      directory: '/workspace/archived',
-      archived: 1773143690000,
-      time: { created: 1773143205910, updated: 1773143690000 }
-    }
-  ]
-})
+const modernList = JSON.stringify([
+  {
+    id: 'ses_modern_active',
+    title: 'Modern OpenCode session',
+    directory: '/workspace/modern',
+    createdAt: 1773143205910,
+    updatedAt: 1773143685086,
+    archivedAt: null
+  },
+  {
+    id: 'ses_modern_archived',
+    title: 'Archived modern session',
+    directory: '/workspace/archived',
+    createdAt: 1773143205910,
+    updatedAt: 1773143690000,
+    archivedAt: 1773143690000
+  }
+])
 const modernExport = JSON.stringify({
   session: {
     id: 'ses_modern_active',
@@ -66,7 +67,7 @@ function modernRunner(): OpenCodeCommandRunner {
         stderr: args[0] === 'export' ? 'opencode export [sessionID]' : ''
       }
     }
-    if (args.join(' ') === 'session list --format json --max-count -1') {
+    if (args[0] === 'db' && args[2] === '--format' && args[3] === 'json') {
       return { exitCode: 0, stdout: modernList }
     }
     if (args.join(' ') === 'export ses_modern_active') {
@@ -120,7 +121,7 @@ describe('createOpenCodeAdapter', () => {
     ])
   })
 
-  it('maps supported CLI list and export output while preserving archive and source references', async () => {
+  it('maps the global database list and CLI export while preserving archive and source references', async () => {
     const adapter = createOpenCodeAdapter(modernRoot, { runCommand: modernRunner() })
 
     const sessions = await adapter.listSessions(filters)
@@ -150,6 +151,73 @@ describe('createOpenCodeAdapter', () => {
         sourceSpanRef: 'opencode-cli:ses_modern_active:message:msg_modern_assistant'
       }
     ])
+  })
+
+  it('lists sessions from multiple projects without using the current-project CLI list', async () => {
+    const runner = vi.fn(async (args: string[]) => {
+      if (args.join(' ') === 'export --help') {
+        return { exitCode: 0, stdout: '', stderr: 'opencode export [sessionID]' }
+      }
+      if (args[0] === 'db') {
+        return {
+          exitCode: 0,
+          stdout: JSON.stringify([
+            {
+              id: 'ses_first_project',
+              title: 'First project',
+              directory: '/workspace/first',
+              createdAt: 1773143205910,
+              updatedAt: 1773143685086,
+              archivedAt: null
+            },
+            {
+              id: 'ses_second_project',
+              title: 'Second project',
+              directory: '/workspace/second',
+              createdAt: 1773143205910,
+              updatedAt: 1773143685086,
+              archivedAt: null
+            }
+          ])
+        }
+      }
+      return { exitCode: 1, stdout: '' }
+    })
+    const adapter = createOpenCodeAdapter(modernRoot, { runCommand: runner })
+
+    const sessions = await adapter.listSessions(filters)
+
+    expect(sessions.map(({ id, projectPath }) => [id, projectPath])).toEqual([
+      ['ses_first_project', '/workspace/first'],
+      ['ses_second_project', '/workspace/second']
+    ])
+    expect(runner.mock.calls.some(([args]) => args[0] === 'session' && args[1] === 'list'))
+      .toBe(false)
+    expect(adapter.getDiagnostics?.()).toEqual([])
+  })
+
+  it.each([
+    { name: 'an unsupported database command', result: { exitCode: 1, stdout: '' } },
+    {
+      name: 'an incomplete database row',
+      result: { exitCode: 0, stdout: '[{"id":"ses_missing_fields"}]' }
+    },
+    { name: 'a non-array database result', result: { exitCode: 0, stdout: '{"sessions":[]}' } }
+  ])('reports $name without silently returning a scoped list', async ({ result }) => {
+    const runner = vi.fn(async (args: string[]) => {
+      if (args.join(' ') === 'export --help') {
+        return { exitCode: 0, stdout: '', stderr: 'opencode export [sessionID]' }
+      }
+      return result
+    })
+    const adapter = createOpenCodeAdapter(modernRoot, { runCommand: runner })
+
+    await expect(adapter.listSessions(filters)).resolves.toEqual([])
+    expect(adapter.getDiagnostics?.()).toEqual([
+      expect.objectContaining({ code: 'opencode-cli-global-list-unsupported' })
+    ])
+    expect(runner.mock.calls.some(([args]) => args[0] === 'session' && args[1] === 'list'))
+      .toBe(false)
   })
 
   it('caches a modern CLI export with the OpenCode parser version', async () => {
@@ -184,9 +252,11 @@ describe('createOpenCodeAdapter', () => {
 
     expect(runner.mock.calls.filter(([args]) => args.join(' ') === 'export --help')).toHaveLength(1)
     expect(runner.mock.calls).toContainEqual([
-      ['session', 'list', '--format', 'json', '--max-count', '-1'],
+      ['db', expect.stringContaining('from session'), '--format', 'json'],
       expect.objectContaining({ databasePath: path.join(modernRoot, 'opencode.db') })
     ])
+    expect(runner.mock.calls.some(([args]) => args[0] === 'session' && args[1] === 'list'))
+      .toBe(false)
 
     await adapter.listSessions(filters)
     expect(runner.mock.calls.filter(([args]) => args.join(' ') === 'export --help')).toHaveLength(2)
@@ -290,7 +360,7 @@ describe('createOpenCodeAdapter', () => {
           stderr: args[0] === 'export' ? 'opencode export [sessionID]' : ''
         }
       }
-      if (args.join(' ') === 'session list --format json --max-count -1') {
+      if (args[0] === 'db' && args[2] === '--format' && args[3] === 'json') {
         return { exitCode: 0, stdout: modernList }
       }
       if (args.join(' ') === 'export ses_modern_active') {
