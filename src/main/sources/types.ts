@@ -68,6 +68,8 @@ export type SourceDiagnosticCode =
   | 'opencode-cli-export-unsupported'
   | 'opencode-cli-path-unverified'
   | 'opencode-cli-output-unsupported'
+  | 'opencode-cli-output-too-large'
+  | 'opencode-cli-timeout'
   | 'source-jsonl-line-invalid'
 
 export type SourceDiagnostic = {

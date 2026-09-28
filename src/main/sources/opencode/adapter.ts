@@ -1,6 +1,10 @@
 import fs from 'node:fs'
 import path from 'node:path'
-import { spawnSync } from 'node:child_process'
+import {
+  runOpenCodeCommand,
+  type OpenCodeCommandResult,
+  type OpenCodeCommandRunner
+} from './command'
 import {
   detectLanguageHint,
   matchesSessionFilters,
@@ -15,36 +19,10 @@ import { logger } from '../../logging'
 
 type JsonMap = Record<string, unknown>
 
-export type OpenCodeCommandResult = {
-  exitCode: number | null
-  stdout: string
-}
-
-export type OpenCodeCommandRunner = (
-  args: string[],
-  options: { dataHome: string }
-) => OpenCodeCommandResult
+export type { OpenCodeCommandResult, OpenCodeCommandRunner } from './command'
 
 export type OpenCodeAdapterOptions = SourceAdapterOptions & {
   runCommand?: OpenCodeCommandRunner
-}
-
-function runOpenCodeCommand(
-  args: string[],
-  options: { dataHome: string }
-): OpenCodeCommandResult {
-  const result = spawnSync('opencode', args, {
-    encoding: 'utf8',
-    env: {
-      ...process.env,
-      XDG_DATA_HOME: options.dataHome
-    }
-  })
-
-  return {
-    exitCode: result.error ? null : result.status,
-    stdout: result.stdout ?? ''
-  }
 }
 
 function walkSessionFiles(root: string) {
@@ -270,25 +248,49 @@ function parseExport(
 }
 
 function modernDatabaseFingerprint(root: string) {
-  const stats = fs.statSync(path.join(root, 'opencode.db'))
-  return { sizeBytes: stats.size, mtimeMs: stats.mtimeMs }
+  const database = fs.statSync(path.join(root, 'opencode.db'))
+  const walPath = path.join(root, 'opencode.db-wal')
+  let wal: fs.Stats | null = null
+  try {
+    wal = fs.statSync(walPath)
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code !== 'ENOENT') {
+      throw error
+    }
+  }
+  return {
+    sizeBytes: database.size + (wal?.size ?? 0),
+    mtimeMs: Math.max(database.mtimeMs, wal?.mtimeMs ?? 0)
+  }
 }
 
-function detectExportCommand(
+async function detectExportCommand(
   runCommand: OpenCodeCommandRunner,
-  dataHome: string
+  options: { dataHome: string; databasePath: string }
 ) {
-  const current = runCommand(['export', '--help'], { dataHome })
-  if (current.exitCode === 0) {
-    return ['export']
+  const current = await runCommand(['export', '--help'], options)
+  if (current.failure) {
+    return { command: null, failure: current.failure }
+  }
+  if (
+    current.exitCode === 0 &&
+    /^\s*opencode export(?:\s|$)/m.test(current.stderr || current.stdout)
+  ) {
+    return { command: ['export'] }
   }
 
-  const newer = runCommand(['session', 'export', '--help'], { dataHome })
-  if (newer.exitCode === 0) {
-    return ['session', 'export']
+  const newer = await runCommand(['session', 'export', '--help'], options)
+  if (newer.failure) {
+    return { command: null, failure: newer.failure }
+  }
+  if (
+    newer.exitCode === 0 &&
+    /^\s*opencode session export(?:\s|$)/m.test(newer.stderr || newer.stdout)
+  ) {
+    return { command: ['session', 'export'] }
   }
 
-  return null
+  return { command: null }
 }
 
 export function createOpenCodeAdapter(
@@ -298,6 +300,11 @@ export function createOpenCodeAdapter(
   let diagnostics: SourceDiagnostic[] = []
   const unreadableSessionIds = new Set<string>()
   const runCommand = adapterOptions?.runCommand ?? runOpenCodeCommand
+  const commandOptions = {
+    dataHome: path.dirname(root),
+    databasePath: path.join(root, 'opencode.db')
+  }
+  let exportCommandProbe: ReturnType<typeof detectExportCommand> | null = null
 
   function addDiagnostic(code: SourceDiagnostic['code'], message: string) {
     diagnostics.push({ sourceType: 'opencode', code, message })
@@ -312,14 +319,35 @@ export function createOpenCodeAdapter(
     addDiagnostic(code, message)
   }
 
-  function getExportCommand() {
-    return detectExportCommand(runCommand, path.dirname(root))
+  function addCommandFailureDiagnostic(result: OpenCodeCommandResult, operation: string) {
+    if (result.failure === 'timeout') {
+      addDiagnostic('opencode-cli-timeout', `OpenCode CLI ${operation}超时；已跳过该来源。`)
+    } else if (result.failure === 'output-too-large') {
+      addDiagnostic('opencode-cli-output-too-large', `OpenCode CLI ${operation}输出超过 32 MiB；已跳过该来源。`)
+    } else if (result.failure === 'spawn-error') {
+      addDiagnostic('opencode-cli-unavailable', `无法启动 OpenCode CLI 完成${operation}；已跳过该来源。`)
+    } else {
+      addDiagnostic('opencode-cli-output-unsupported', `OpenCode CLI ${operation}失败；已跳过该来源。`)
+    }
   }
 
-  function listModernSessions(filters: SessionFilterInput) {
-    const exportCommand = getExportCommand()
-    if (!exportCommand) {
-      const probe = runCommand(['--version'], { dataHome: path.dirname(root) })
+  function getExportCommand() {
+    exportCommandProbe ??= detectExportCommand(runCommand, commandOptions)
+    return exportCommandProbe
+  }
+
+  async function listModernSessions(filters: SessionFilterInput) {
+    const exportProbe = await getExportCommand()
+    if (!exportProbe.command) {
+      if (exportProbe.failure) {
+        addCommandFailureDiagnostic({ exitCode: null, stdout: '', failure: exportProbe.failure }, '能力探测')
+        return []
+      }
+      const probe = await runCommand(['--version'], commandOptions)
+      if (probe.failure) {
+        addCommandFailureDiagnostic(probe, '版本探测')
+        return []
+      }
       addDiagnostic(
         probe.exitCode === null
           ? 'opencode-cli-unavailable'
@@ -331,9 +359,14 @@ export function createOpenCodeAdapter(
       return []
     }
 
-    const listed = runCommand(['session', 'list', '--format', 'json'], {
-      dataHome: path.dirname(root)
-    })
+    const listed = await runCommand(
+      ['session', 'list', '--format', 'json', '--max-count', '-1'],
+      commandOptions
+    )
+    if (listed.failure) {
+      addCommandFailureDiagnostic(listed, '列出会话')
+      return []
+    }
     if (listed.exitCode !== 0) {
       addDiagnostic(
         'opencode-cli-output-unsupported',
@@ -362,6 +395,7 @@ export function createOpenCodeAdapter(
     async listSessions(filters: SessionFilterInput) {
       diagnostics = []
       unreadableSessionIds.clear()
+      exportCommandProbe = null
       const legacyFiles = walkSessionFiles(root)
       if (legacyFiles.length === 0 && hasModernOpenCodeDatabase(root)) {
         if (!isCliPathBoundToRoot(root)) {
@@ -427,8 +461,20 @@ export function createOpenCodeAdapter(
           return cached.turns
         }
 
-        const exportCommand = getExportCommand()
-        if (!exportCommand) {
+        const exportProbe = await getExportCommand()
+        if (!exportProbe.command) {
+          if (exportProbe.failure) {
+            markUnreadableSession(
+              sessionId,
+              exportProbe.failure === 'timeout'
+                ? 'opencode-cli-timeout'
+                : exportProbe.failure === 'output-too-large'
+                  ? 'opencode-cli-output-too-large'
+                  : 'opencode-cli-unavailable',
+              'OpenCode CLI 能力探测失败；未读取该会话。'
+            )
+            return []
+          }
           markUnreadableSession(
             sessionId,
             'opencode-cli-export-unsupported',
@@ -436,9 +482,25 @@ export function createOpenCodeAdapter(
           )
           return []
         }
-        const exported = runCommand([...exportCommand, sessionId], {
-          dataHome: path.dirname(root)
-        })
+        const exported = await runCommand([...exportProbe.command, sessionId], commandOptions)
+        if (exported.failure === 'timeout' || exported.failure === 'output-too-large') {
+          markUnreadableSession(
+            sessionId,
+            exported.failure === 'timeout' ? 'opencode-cli-timeout' : 'opencode-cli-output-too-large',
+            exported.failure === 'timeout'
+              ? 'OpenCode CLI 导出会话超时；未读取该会话。'
+              : 'OpenCode CLI 导出超过 32 MiB；未读取该会话。'
+          )
+          return []
+        }
+        if (exported.failure === 'spawn-error') {
+          markUnreadableSession(
+            sessionId,
+            'opencode-cli-unavailable',
+            '无法启动 OpenCode CLI 导出会话；未读取该会话。'
+          )
+          return []
+        }
         if (exported.exitCode !== 0) {
           markUnreadableSession(
             sessionId,

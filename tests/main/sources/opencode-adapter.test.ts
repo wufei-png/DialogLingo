@@ -1,3 +1,6 @@
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
 import { scanSessions } from '../../../src/main/scan/scanSessions'
 import { createPreviewQuery } from '../../../src/main/search/queryPreview'
@@ -55,11 +58,15 @@ const modernExport = JSON.stringify({
 })
 
 function modernRunner(): OpenCodeCommandRunner {
-  return (args) => {
+  return async (args) => {
     if (args.at(-1) === '--help') {
-      return { exitCode: args[0] === 'export' ? 0 : 1, stdout: '' }
+      return {
+        exitCode: args[0] === 'export' ? 0 : 1,
+        stdout: '',
+        stderr: args[0] === 'export' ? 'opencode export [sessionID]' : ''
+      }
     }
-    if (args.join(' ') === 'session list --format json') {
+    if (args.join(' ') === 'session list --format json --max-count -1') {
       return { exitCode: 0, stdout: modernList }
     }
     if (args.join(' ') === 'export ses_modern_active') {
@@ -71,7 +78,7 @@ function modernRunner(): OpenCodeCommandRunner {
 
 describe('createOpenCodeAdapter', () => {
   it('reconstructs ordered turns from session/message/part fixture files', async () => {
-    const runner: OpenCodeCommandRunner = () => {
+    const runner: OpenCodeCommandRunner = async () => {
       throw new Error('legacy storage must not invoke the CLI')
     }
     const adapter = createOpenCodeAdapter('tests/fixtures/opencode', { runCommand: runner })
@@ -84,7 +91,7 @@ describe('createOpenCodeAdapter', () => {
   })
 
   it('reports a typed diagnostic when modern storage lacks a usable CLI', async () => {
-    const runner: OpenCodeCommandRunner = () => ({
+    const runner: OpenCodeCommandRunner = async () => ({
       exitCode: null,
       stdout: ''
     })
@@ -100,7 +107,7 @@ describe('createOpenCodeAdapter', () => {
   })
 
   it('does not read global CLI data when a path override cannot be bound to it', async () => {
-    const runner: OpenCodeCommandRunner = () => {
+    const runner: OpenCodeCommandRunner = async () => {
       throw new Error('CLI must not run for an unverified override')
     }
     const adapter = createOpenCodeAdapter('tests/fixtures/opencode-modern/custom-root', {
@@ -164,7 +171,89 @@ describe('createOpenCodeAdapter', () => {
 
     expect(turns).toHaveLength(2)
     expect(runner).not.toHaveBeenCalled()
-    expect(cacheVersion.parserVersion).toBe('opencode-parser-v2')
+    expect(cacheVersion.parserVersion).toBe('opencode-parser-v3')
+  })
+
+  it('reuses the export capability probe within a scan', async () => {
+    const runner = vi.fn(modernRunner())
+    const adapter = createOpenCodeAdapter(modernRoot, { runCommand: runner })
+
+    await adapter.listSessions(filters)
+    await adapter.readSession('ses_modern_active', { locator: 'opencode-cli:ses_modern_active' })
+    await adapter.readSession('ses_modern_active', { locator: 'opencode-cli:ses_modern_active' })
+
+    expect(runner.mock.calls.filter(([args]) => args.join(' ') === 'export --help')).toHaveLength(1)
+    expect(runner.mock.calls).toContainEqual([
+      ['session', 'list', '--format', 'json', '--max-count', '-1'],
+      expect.objectContaining({ databasePath: path.join(modernRoot, 'opencode.db') })
+    ])
+
+    await adapter.listSessions(filters)
+    expect(runner.mock.calls.filter(([args]) => args.join(' ') === 'export --help')).toHaveLength(2)
+  })
+
+  it('invalidates a cached export when the WAL changes without changing the main database', async () => {
+    const temporaryRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'dialoglingo-opencode-wal-'))
+    const sourceRoot = path.join(temporaryRoot, 'opencode')
+    fs.mkdirSync(sourceRoot)
+    fs.writeFileSync(path.join(sourceRoot, 'opencode.db'), 'synthetic database')
+    const db = createTestDb()
+    const runner = vi.fn(modernRunner())
+
+    try {
+      const adapter = createOpenCodeAdapter(sourceRoot, {
+        cache: createSqliteSourceScanCache(db),
+        runCommand: runner
+      })
+      await adapter.readSession('ses_modern_active', { locator: 'opencode-cli:ses_modern_active' })
+      const mainStat = fs.statSync(path.join(sourceRoot, 'opencode.db'))
+      fs.writeFileSync(path.join(sourceRoot, 'opencode.db-wal'), 'new transaction')
+      await adapter.readSession('ses_modern_active', { locator: 'opencode-cli:ses_modern_active' })
+
+      expect(runner.mock.calls.filter(([args]) => args.join(' ') === 'export ses_modern_active'))
+        .toHaveLength(2)
+      expect(fs.statSync(path.join(sourceRoot, 'opencode.db')).mtimeMs).toBe(mainStat.mtimeMs)
+    } finally {
+      db.close()
+      fs.rmSync(temporaryRoot, { recursive: true, force: true })
+    }
+  })
+
+  it('rejects a misleading fallback help response', async () => {
+    const runner: OpenCodeCommandRunner = async (args) => {
+      if (args.join(' ') === 'session export --help') {
+        return { exitCode: 0, stdout: '', stderr: 'opencode session\nmanage sessions' }
+      }
+      if (args.join(' ') === '--version') {
+        return { exitCode: 0, stdout: '1.18.11' }
+      }
+      return { exitCode: 1, stdout: '' }
+    }
+    const adapter = createOpenCodeAdapter(modernRoot, { runCommand: runner })
+
+    await expect(adapter.listSessions(filters)).resolves.toEqual([])
+    expect(adapter.getDiagnostics?.()).toEqual([
+      expect.objectContaining({ code: 'opencode-cli-export-unsupported' })
+    ])
+  })
+
+  it.each([
+    ['timeout', 'opencode-cli-timeout'],
+    ['output-too-large', 'opencode-cli-output-too-large']
+  ] as const)('reports %s when a modern export fails', async (failure, code) => {
+    const successfulRunner = modernRunner()
+    const runner: OpenCodeCommandRunner = async (args, options) =>
+      args.join(' ') === 'export ses_modern_active'
+        ? { exitCode: null, stdout: '', failure }
+        : successfulRunner(args, options)
+    const adapter = createOpenCodeAdapter(modernRoot, { runCommand: runner })
+
+    await expect(adapter.readSession('ses_modern_active', {
+      locator: 'opencode-cli:ses_modern_active'
+    })).resolves.toEqual([])
+    expect(adapter.getDiagnostics?.()).toEqual([
+      expect.objectContaining({ code })
+    ])
   })
 
   it('carries modern CLI turns through scan, search, and preview', async () => {
@@ -193,11 +282,15 @@ describe('createOpenCodeAdapter', () => {
 
   it('keeps indexed modern turns when a later CLI export fails', async () => {
     let allowExport = true
-    const runner: OpenCodeCommandRunner = (args) => {
+    const runner: OpenCodeCommandRunner = async (args) => {
       if (args.at(-1) === '--help') {
-        return { exitCode: args[0] === 'export' ? 0 : 1, stdout: '' }
+        return {
+          exitCode: args[0] === 'export' ? 0 : 1,
+          stdout: '',
+          stderr: args[0] === 'export' ? 'opencode export [sessionID]' : ''
+        }
       }
-      if (args.join(' ') === 'session list --format json') {
+      if (args.join(' ') === 'session list --format json --max-count -1') {
         return { exitCode: 0, stdout: modernList }
       }
       if (args.join(' ') === 'export ses_modern_active') {

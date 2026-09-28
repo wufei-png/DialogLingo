@@ -12,7 +12,7 @@ describe('createCodexAdapter', () => {
   it('uses an adapter-specific cache parser version', () => {
     expect(getSourceParserVersion('codex')).toBe('codex-parser-v3')
     expect(getSourceParserVersion('claude')).toBe('claude-parser-v3')
-    expect(getSourceParserVersion('opencode')).toBe('opencode-parser-v2')
+    expect(getSourceParserVersion('opencode')).toBe('opencode-parser-v3')
   })
 
   it('lists sessions from fixture rollouts', async () => {

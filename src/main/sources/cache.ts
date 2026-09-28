@@ -16,7 +16,7 @@ type SourceScanCacheRow = {
 const SOURCE_PARSER_VERSIONS: Record<SourceType, string> = {
   codex: 'codex-parser-v3',
   claude: 'claude-parser-v3',
-  opencode: 'opencode-parser-v2'
+  opencode: 'opencode-parser-v3'
 }
 
 export function getSourceParserVersion(sourceType: SourceType) {
